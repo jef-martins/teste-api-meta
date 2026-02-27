@@ -1,5 +1,7 @@
 const express = require('express');
+const path    = require('path');
 const rotasConversas = require('./routes/conversas');
+const rotasAdmin     = require('./routes/admin');
 
 class AppServer {
     constructor() {
@@ -16,12 +18,16 @@ class AppServer {
     }
 
     _configurarRotas() {
+        // Serve o painel admin (arquivos estáticos da pasta /telas)
+        this.app.use('/telas', express.static(path.join(__dirname, '../telas')));
+
         // Rotas da API
         this.app.use('/api', rotasConversas);
+        this.app.use('/admin', rotasAdmin);
 
         // Health check
         this.app.get('/', (req, res) => {
-            res.json({ status: 'online', mensagem: 'Venon Bot API rodando!', origin: 'AppServer Class' });
+            res.json({ status: 'online', mensagem: 'WPPConnect Bot API rodando!', origem: 'AppServer' });
         });
     }
 
