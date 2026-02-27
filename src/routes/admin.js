@@ -4,9 +4,6 @@ const path     = require('path');
 
 const router = express.Router();
 
-// Serve os arquivos estáticos da pasta /telas
-router.use('/', express.static(path.join(__dirname, '../../telas')));
-
 // ── Estados ──────────────────────────────────────────────────────────────────
 
 router.get('/estados', async (req, res) => {
