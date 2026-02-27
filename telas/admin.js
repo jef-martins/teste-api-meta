@@ -377,7 +377,7 @@ async function renderizarVisual() {
     const [origem, destino] = key.split(':::');
     const label = entradas.join(', ');
     // Aumenta a grossura da linha principal e tamanho do texto
-    graph += `  ${origem} -->|"<span style='font-size:16px;font-weight:bold'>${label}</span>"| ${destino}\n`;
+    graph += `  ${origem} -->|"<span style='font-size:22px;font-weight:bold;color:#fff;background:#21262d;padding:4px;border-radius:4px'>${label}</span>"| ${destino}\n`;
   });
 
   if (transicoesCache.length === 0) {
