@@ -23,6 +23,7 @@ class BotWhatsApp {
                 autoClose: 0, // 0 = Nunca fechar automaticamente aguardando o QR
                 catchQR: (base64Qr, asciiQR) => {
                     console.log('\n[Bot] ✨ Escaneie o QR Code para conectar ✨\n');
+                    console.log(asciiQR); // AQUI: Imprime o QRCode no terminal!
                 },
                 headless: true,
                 browserArgs: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
