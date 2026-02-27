@@ -3,7 +3,7 @@ const estadoRepository = require('../database/estadoRepository');
 
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Herda de Bot (motor de estados + persistência).
+// Herda de Bot (motor de persistência WPPConnect).
 // Implementa steps genéricos controlados 100% pelo campo `config` na tabela
 // bot_estado_config. Para adicionar ou alterar um passo do fluxo, basta
 // editar o banco — sem alterar código JS.
@@ -31,8 +31,8 @@ class Handler extends Bot {
     // }
     // ─────────────────────────────────────────────────────────────────────────
 
-    async _handlerMensagem(message, chatId, corpo) {
-        const estadoAtual = this.estadosUsuarios.get(chatId);
+    async _handlerMensagem(message, chatId, corpo, engine) {
+        const estadoAtual = engine.estadosUsuarios.get(chatId);
         const config      = (await estadoRepository.obterConfigEstado(estadoAtual))?.config ?? {};
         const mensagens   = config.mensagens ?? [];
 
@@ -41,7 +41,7 @@ class Handler extends Bot {
         }
 
         if (config.transicaoAutomatica || config.transicao_automatica) {
-            await this._transitarPorEntrada(chatId, estadoAtual, '*', message, true);
+            await engine.transitarPorEntrada(chatId, estadoAtual, '*', message, true);
         }
     }
 
@@ -49,7 +49,7 @@ class Handler extends Bot {
     // STEP: _handlerCapturar
     //
     // Coleta UMA ou MAIS informações do usuário, uma por vez.
-    // Os valores são armazenados em memória (this.dadosCapturados) pelo chatId.
+    // Os valores são armazenados em memória (engine.dadosCapturados) pelo chatId.
     //
     // ── Modo simples (um campo só): igual ao comportamento anterior ──
     // {
@@ -75,13 +75,13 @@ class Handler extends Bot {
     // O _handlerRequisicao lê os dados da memória automaticamente.
     // ─────────────────────────────────────────────────────────────────────────
 
-    async _handlerCapturar(message, chatId, corpo) {
-        const estadoAtual = this.estadosUsuarios.get(chatId);
+    async _handlerCapturar(message, chatId, corpo, engine) {
+        const estadoAtual = engine.estadosUsuarios.get(chatId);
         const config      = (await estadoRepository.obterConfigEstado(estadoAtual))?.config ?? {};
 
         // ── Modo multi-campo: config.campos é um array ──
         if (Array.isArray(config.campos) && config.campos.length > 0) {
-            return await this._handlerCapturarMulti(message, chatId, corpo, estadoAtual, config);
+            return await this._handlerCapturarMulti(message, chatId, corpo, estadoAtual, config, engine);
         }
 
         // ── Modo simples (comportamento original) ──
@@ -108,20 +108,20 @@ class Handler extends Bot {
 
         // Salva o valor na memória SOMENTE se campoSalvar estiver explicitamente configurado
         const chave = config.campoSalvar || config.campoEnviar;
-        if (chave) this._salvarDado(chatId, chave, corpo);
+        if (chave) engine.salvarDado(chatId, chave, corpo);
 
         // Confirmação antes de avançar
         if (config.mensagemConfirmacao) {
-            const texto = this._interpolar(config.mensagemConfirmacao, { valor: corpo });
+            const texto = engine.interpolar(config.mensagemConfirmacao, { valor: corpo });
             await this.enviarResposta(message, texto);
         }
 
-        await this._avancarEstado(chatId, proximo, corpo);
+        await engine.avancarEstado(chatId, proximo, corpo);
 
         // Executa o handler do próximo estado
         const configProximo = await estadoRepository.obterConfigEstado(proximo);
         if (configProximo && typeof this[configProximo.handler] === 'function') {
-            await this[configProximo.handler](message, chatId, '');
+            await this[configProximo.handler](message, chatId, '', engine);
         }
     }
 
@@ -129,9 +129,9 @@ class Handler extends Bot {
     // Lógica interna de captura multi-campo (chamada pelo _handlerCapturar)
     // ─────────────────────────────────────────────────────────────────────────
 
-    async _handlerCapturarMulti(message, chatId, corpo, estadoAtual, config) {
+    async _handlerCapturarMulti(message, chatId, corpo, estadoAtual, config, engine) {
         const campos = config.campos;
-        const dados  = this._obterDados(chatId);
+        const dados  = engine.obterDados(chatId);
 
         // Descobre qual é o próximo campo ainda não preenchido
         const proximoCampo = campos.find(c => !(c.nome in dados));
@@ -156,8 +156,8 @@ class Handler extends Bot {
         }
 
         // Salva o valor na memória com o nome do campo
-        this._salvarDado(chatId, proximoCampo.nome, corpo);
-        const dadosAtualizados = this._obterDados(chatId);
+        engine.salvarDado(chatId, proximoCampo.nome, corpo);
+        const dadosAtualizados = engine.obterDados(chatId);
 
         // Verifica se ainda há campos por preencher
         const proximoCampoRestante = campos.find(c => !(c.nome in dadosAtualizados));
@@ -170,7 +170,7 @@ class Handler extends Bot {
 
         // ── Todos os campos preenchidos: confirma e avança ──
         if (config.mensagemConfirmacao) {
-            const texto = this._interpolar(config.mensagemConfirmacao, dadosAtualizados);
+            const texto = engine.interpolar(config.mensagemConfirmacao, dadosAtualizados);
             await this.enviarResposta(message, texto);
         }
 
@@ -180,11 +180,11 @@ class Handler extends Bot {
             return;
         }
 
-        await this._avancarEstado(chatId, proximo, '[multi-captura concluída]');
+        await engine.avancarEstado(chatId, proximo, '[multi-captura concluída]');
 
         const configProximo = await estadoRepository.obterConfigEstado(proximo);
         if (configProximo && typeof this[configProximo.handler] === 'function') {
-            await this[configProximo.handler](message, chatId, '');
+            await this[configProximo.handler](message, chatId, '', engine);
         }
     }
 
@@ -210,8 +210,8 @@ class Handler extends Bot {
     // }
     // ─────────────────────────────────────────────────────────────────────────
 
-    async _handlerLista(message, chatId, corpo) {
-        const estadoAtual = this.estadosUsuarios.get(chatId);
+    async _handlerLista(message, chatId, corpo, engine) {
+        const estadoAtual = engine.estadosUsuarios.get(chatId);
         let config = (await estadoRepository.obterConfigEstado(estadoAtual))?.config ?? {};
 
         if (typeof config === 'string') config = JSON.parse(config);
@@ -220,10 +220,10 @@ class Handler extends Bot {
         if (corpo) {
             const proximo = await estadoRepository.buscarProximoEstado(estadoAtual, corpo);
             if (proximo) {
-                await this._avancarEstado(chatId, proximo, corpo);
+                await engine.avancarEstado(chatId, proximo, corpo);
                 const configProximo = await estadoRepository.obterConfigEstado(proximo);
                 if (configProximo && typeof this[configProximo.handler] === 'function') {
-                    return await this[configProximo.handler](message, chatId, '');
+                    return await this[configProximo.handler](message, chatId, '', engine);
                 }
             } else {
                 return await this.enviarResposta(message, config.mensagemInvalida ?? '⚠️ Opção inválida.');
@@ -286,19 +286,19 @@ class Handler extends Bot {
     // }
     // ─────────────────────────────────────────────────────────────────────────
 
-    async _handlerBotoes(message, chatId, corpo) {
-        const estadoAtual = this.estadosUsuarios.get(chatId);
+    async _handlerBotoes(message, chatId, corpo, engine) {
+        const estadoAtual = engine.estadosUsuarios.get(chatId);
         const config      = (await estadoRepository.obterConfigEstado(estadoAtual))?.config ?? {};
 
-        // ── Botão pressionado (selectedButtonId mapeado em Bot._processarMensagem) ──
+        // ── Botão pressionado (selectedButtonId mapeado no process da Engine) ──
         if (corpo) {
             const proximo = await estadoRepository.buscarProximoEstado(estadoAtual, corpo);
 
             if (proximo) {
-                await this._avancarEstado(chatId, proximo, corpo);
+                await engine.avancarEstado(chatId, proximo, corpo);
                 const configProximo = await estadoRepository.obterConfigEstado(proximo);
                 if (configProximo && typeof this[configProximo.handler] === 'function') {
-                    await this[configProximo.handler](message, chatId, '');
+                    await this[configProximo.handler](message, chatId, '', engine);
                 }
                 return;
             }
@@ -329,7 +329,7 @@ class Handler extends Bot {
     //
     // Faz uma requisição HTTP, exibe a resposta formatada e avança o estado.
     // Integra-se com o _handlerCapturar: lê os dados capturados em memória
-    // (this.dadosCapturados) e os envia automaticamente no body/query.
+    // (engine.dadosCapturados) e os envia automaticamente no body/query.
     //
     // ── Modos de montagem do body/url ──
     //
@@ -351,11 +351,11 @@ class Handler extends Bot {
     // Qualquer modo aceita "transicaoAutomatica": true para avançar após a req.
     // ─────────────────────────────────────────────────────────────────────────
 
-    async _handlerRequisicao(message, chatId, corpo) {
-        const estadoAtual = this.estadosUsuarios.get(chatId);
+    async _handlerRequisicao(message, chatId, corpo, engine) {
+        const estadoAtual = engine.estadosUsuarios.get(chatId);
         const config      = (await estadoRepository.obterConfigEstado(estadoAtual))?.config ?? {};
 
-        const dadosMemoria   = this._obterDados(chatId);
+        const dadosMemoria   = engine.obterDados(chatId);
         const usandoBodyFixo = config.body && typeof config.body === 'object' && !Array.isArray(config.body);
         const usandoMulti    = Array.isArray(config.camposEnviar) && config.camposEnviar.length > 0;
 
@@ -366,11 +366,11 @@ class Handler extends Bot {
         if (corpo && corpo.toLowerCase() === palavraSair) {
             const proximo = await estadoRepository.buscarProximoEstado(estadoAtual, corpo);
             if (proximo) {
-                this._limparDados(chatId);
-                await this._avancarEstado(chatId, proximo, corpo);
+                engine.limparDados(chatId);
+                await engine.avancarEstado(chatId, proximo, corpo);
                 const configProximo = await estadoRepository.obterConfigEstado(proximo);
                 if (configProximo && typeof this[configProximo.handler] === 'function') {
-                    await this[configProximo.handler](message, chatId, '');
+                    await this[configProximo.handler](message, chatId, '', engine);
                 }
                 return;
             }
@@ -387,7 +387,7 @@ class Handler extends Bot {
         try {
             const metodo  = (config.metodo ?? 'GET').toUpperCase();
             const tudo    = { valor: corpo, ...dadosMemoria };
-            const urlBase = this._interpolar(config.url ?? '', tudo);
+            const urlBase = engine.interpolar(config.url ?? '', tudo);
             const headers = { 'Content-Type': 'application/json', ...(config.headers ?? {}) };
 
             let bodyObj;
@@ -397,7 +397,7 @@ class Handler extends Bot {
                 bodyObj = Object.fromEntries(
                     Object.entries(config.body).map(([k, v]) => [
                         k,
-                        typeof v === 'string' ? this._interpolar(v, tudo) : v
+                        typeof v === 'string' ? engine.interpolar(v, tudo) : v
                     ])
                 );
                 console.log(`[Bot] [${chatId}] _handlerRequisicao body fixo interpolado:`, JSON.stringify(bodyObj));
@@ -450,7 +450,7 @@ class Handler extends Bot {
                 console.error(`[Bot] API Error HTTP ${statusHttp}`, JSON.stringify(resposta));
                 await this.enviarResposta(message, config.mensagemErro ?? '❌ Erro ao processar a solicitação.');
             } else {
-                const valorExtraido = this._extrairValorPath(resposta, config.campoResposta);
+                const valorExtraido = engine.extrairValorPath(resposta, config.campoResposta);
 
                 if (valorExtraido === '' || valorExtraido === null || valorExtraido === undefined) {
                     await this.enviarResposta(message, config.mensagemNaoEncontrado ?? '🤷‍♂️ Não encontrado.');
@@ -469,7 +469,7 @@ class Handler extends Bot {
                                 ])
                             );
                             const vars = { resposta: item, valor: corpo, ...dadosMemoria, ...objLimpo };
-                            return this._interpolar(config.mensagemSucesso ?? '✅ {resposta}', vars);
+                            return engine.interpolar(config.mensagemSucesso ?? '✅ {resposta}', vars);
                         });
                         await this.enviarResposta(message, partes.join(`\n\n${separador}\n\n`));
                     }
@@ -488,7 +488,7 @@ class Handler extends Bot {
                         variaveis = { ...variaveis, ...objLimpo };
                     }
 
-                    const msgSucesso = this._interpolar(
+                    const msgSucesso = engine.interpolar(
                         config.mensagemSucesso ?? '✅ Resposta: {resposta}',
                         variaveis
                     );
@@ -506,11 +506,11 @@ class Handler extends Bot {
         // - multi-campo: limpa os campos coletados
         // - campo salvo via _handlerCapturar: limpa se campoSalvar está configurado
         if (config.limparDados !== false && (usandoBodyFixo || usandoMulti || config.campoSalvar)) {
-            this._limparDados(chatId);
+            engine.limparDados(chatId);
         }
 
         if (config.transicaoAutomatica || config.transicao_automatica) {
-            await this._transitarPorEntrada(chatId, estadoAtual, '*', message, true);
+            await engine.transitarPorEntrada(chatId, estadoAtual, '*', message, true);
         }
     }
 }
