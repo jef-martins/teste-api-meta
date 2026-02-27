@@ -3,11 +3,11 @@ let estadosCache = [];
 
 // ── Handlers predefinidos com campos padrão ──────────────────────────────────
 const HANDLER_DEFAULTS = {
-  _handlerMensagem:   [['mensagens','array','["Olá! Como posso ajudar?"]'],['transicaoAutomatica','bool','false']],
-  _handlerCapturar:   [['mensagemPedir','string',''],['mensagemInvalida','string',''],['campoSalvar','string',''],['transicaoAutomatica','bool','false']],
-  _handlerRequisicao: [['url','string',''],['metodo','string','GET'],['campoResposta','string',''],['mensagemPedir','string',''],['mensagemSucesso','string',''],['mensagemNaoEncontrado','string',''],['mensagemErro','string',''],['transicaoAutomatica','bool','false']],
-  _handlerLista:      [['titulo','string',''],['botaoTexto','string','Selecione:'],['secaoTitulo','string','Opções'],['opcoes','json','[]'],['mensagemInvalida','string','']],
-  _handlerBotoes:     [['titulo','string',''],['botoes','json','[]']],
+  _handlerMensagem: [['mensagens', 'array', '["Olá! Como posso ajudar?"]'], ['transicaoAutomatica', 'bool', 'false']],
+  _handlerCapturar: [['mensagemPedir', 'string', ''], ['mensagemInvalida', 'string', ''], ['campoSalvar', 'string', ''], ['transicaoAutomatica', 'bool', 'false']],
+  _handlerRequisicao: [['url', 'string', ''], ['metodo', 'string', 'GET'], ['campoResposta', 'string', ''], ['mensagemPedir', 'string', ''], ['mensagemSucesso', 'string', ''], ['mensagemNaoEncontrado', 'string', ''], ['mensagemErro', 'string', ''], ['transicaoAutomatica', 'bool', 'false']],
+  _handlerLista: [['titulo', 'string', ''], ['botaoTexto', 'string', 'Selecione:'], ['secaoTitulo', 'string', 'Opções'], ['opcoes', 'json', '[]'], ['mensagemInvalida', 'string', '']],
+  _handlerBotoes: [['titulo', 'string', ''], ['botoes', 'json', '[]']],
 };
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ async function carregarEstados() {
       <td><span class="badge badge-blue">${e.handler}</span></td>
       <td style="color:var(--muted)">${e.descricao || '—'}</td>
       <td><span class="badge ${e.ativo ? 'badge-green' : 'badge-gray'}">${e.ativo ? 'Ativo' : 'Inativo'}</span></td>
-      <td><code style="font-size:11px;color:var(--muted)">${JSON.stringify(e.config).substring(0,50)}…</code></td>
+      <td><code style="font-size:11px;color:var(--muted)">${JSON.stringify(e.config).substring(0, 50)}…</code></td>
       <td>
         <button class="btn btn-ghost btn-sm" onclick='editarEstado(${JSON.stringify(e)})'>✏️ Editar</button>
         <button class="btn btn-danger btn-sm" onclick="excluirEstado('${e.estado}')">🗑</button>
@@ -92,12 +92,12 @@ function fecharModal() {
 }
 
 async function salvarEstado() {
-  const key       = document.getElementById('edit-key').value;
-  const estado    = document.getElementById('f-estado').value.trim().toUpperCase();
-  const handler   = document.getElementById('f-handler').value;
+  const key = document.getElementById('edit-key').value;
+  const estado = document.getElementById('f-estado').value.trim().toUpperCase();
+  const handler = document.getElementById('f-handler').value;
   const descricao = document.getElementById('f-descricao').value.trim();
-  const ativo     = document.getElementById('f-ativo').checked;
-  const config    = coletarConfig();
+  const ativo = document.getElementById('f-ativo').checked;
+  const config = coletarConfig();
 
   if (!estado) return toast('O nome do estado é obrigatório.', true);
 
@@ -124,8 +124,8 @@ async function excluirEstado(estado) {
 // ══════════════════════════════ CONFIG BUILDER ════════════════════════════════
 
 function renderConfigBuilder(configAtual) {
-  const handler   = document.getElementById('f-handler').value;
-  const defaults  = HANDLER_DEFAULTS[handler] || [];
+  const handler = document.getElementById('f-handler').value;
+  const defaults = HANDLER_DEFAULTS[handler] || [];
   const container = document.getElementById('config-fields');
   container.innerHTML = '';
 
@@ -157,11 +157,11 @@ function adicionarCampoConfig(chave = '', tipo = 'string', valor = '') {
   div.innerHTML = `
     <input class="key" placeholder="chave" value="${chave}" oninput="atualizarPreview()">
     <select class="type-sel" onchange="atualizarPreview()">
-      <option value="string"  ${tipo==='string'?'selected':''}>string</option>
-      <option value="bool"    ${tipo==='bool'?'selected':''}>bool</option>
-      <option value="number"  ${tipo==='number'?'selected':''}>number</option>
-      <option value="array"   ${tipo==='array'?'selected':''}>array</option>
-      <option value="json"    ${tipo==='json'?'selected':''}>json</option>
+      <option value="string"  ${tipo === 'string' ? 'selected' : ''}>string</option>
+      <option value="bool"    ${tipo === 'bool' ? 'selected' : ''}>bool</option>
+      <option value="number"  ${tipo === 'number' ? 'selected' : ''}>number</option>
+      <option value="array"   ${tipo === 'array' ? 'selected' : ''}>array</option>
+      <option value="json"    ${tipo === 'json' ? 'selected' : ''}>json</option>
     </select>
     <input placeholder="valor" value="${escapeHtml(String(valor))}" oninput="atualizarPreview()" style="flex:1">
     <button class="btn btn-ghost btn-sm" onclick="this.parentElement.remove();atualizarPreview()" title="Remover">✕</button>`;
@@ -177,10 +177,10 @@ function coletarConfig() {
     const t = tEl.value;
     const v = vEl.value;
     try {
-      if      (t === 'bool')                obj[k] = v === 'true';
-      else if (t === 'number')              obj[k] = Number(v);
+      if (t === 'bool') obj[k] = v === 'true';
+      else if (t === 'number') obj[k] = Number(v);
       else if (t === 'array' || t === 'json') obj[k] = JSON.parse(v);
-      else                                  obj[k] = v;
+      else obj[k] = v;
     } catch { obj[k] = v; }
   });
   return obj;
@@ -191,7 +191,7 @@ function atualizarPreview() {
 }
 
 function escapeHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ══════════════════════════════ TRANSIÇÕES ════════════════════════════════════
@@ -242,7 +242,7 @@ function adicionarLinhaTransicao() {
 }
 
 async function salvarNovaTransicao() {
-  const origem  = document.getElementById('nt-origem')?.value.trim().toUpperCase();
+  const origem = document.getElementById('nt-origem')?.value.trim().toUpperCase();
   const entrada = document.getElementById('nt-entrada')?.value.trim().toLowerCase();
   const destino = document.getElementById('nt-destino')?.value.trim().toUpperCase();
   if (!origem || !entrada || !destino) return toast('Preencha todos os campos.', true);
@@ -267,9 +267,9 @@ function editarTransicao(t) {
 
 async function salvarEdicaoTransicao(id, ativo) {
   const r = await api('PUT', '/transicoes/' + id, {
-    estado_origem:  document.getElementById('et-origem-'+id).value.trim().toUpperCase(),
-    entrada:        document.getElementById('et-entrada-'+id).value.trim().toLowerCase(),
-    estado_destino: document.getElementById('et-destino-'+id).value.trim().toUpperCase(),
+    estado_origem: document.getElementById('et-origem-' + id).value.trim().toUpperCase(),
+    entrada: document.getElementById('et-entrada-' + id).value.trim().toLowerCase(),
+    estado_destino: document.getElementById('et-destino-' + id).value.trim().toUpperCase(),
     ativo,
   });
   if (r.erro) return toast(r.erro, true);
