@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Bot Admin - Estados</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+    <h1>Bot Admin</h1>
+    <span id="status-label">Carregando...</span>
+  </header>
+
+  <div class="tabs">
+    <a href="/telas/estados/index.html" class="tab active" style="text-decoration:none">📁 Estados</a>
+    <a href="/telas/transicoes/tabela/index.html" class="tab" style="text-decoration:none">🔀 Transições</a>
+  </div>
+
+  <div class="page active">
+    <!-- ═══════════════════════ ABA ESTADOS ═══════════════════════ -->
+    <div class="section-header">
+      <h2>Configurações de Estados</h2>
+      <button class="btn btn-success" onclick="abrirNovoEstado()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Novo Estado
+      </button>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Estado (Key)</th><th>Handler</th><th>Descrição</th><th>Status</th><th>Config</th><th style="width:140px">Ações</th>
+      </tr></thead>
+      <tbody id="body-estados">
+        <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">Carregando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════════════ MODAL ESTADO ═══════════════════════ -->
+  <div class="overlay" id="modal-estado">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-titulo">Novo Estado</h3>
+        <button class="btn btn-ghost" onclick="fecharModal()" style="padding:4px">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-key">
+        <div class="form-grid">
+          <div class="form-row">
+            <label>Nome do Estado (KEY)</label>
+            <input id="f-estado" placeholder="Ex: INICIO_LGPD">
+          </div>
+          <div class="form-row">
+            <label>Tipo de Ação (Handler)</label>
+            <select id="f-handler" onchange="renderConfigBuilder()">
+              <option value="_handlerMensagem">_handlerMensagem (Apenas envia texto)</option>
+              <option value="_handlerCapturar">_handlerCapturar (Aguarda digitação livre)</option>
+              <option value="_handlerRequisicao">_handlerRequisicao (Faz API / POST / GET)</option>
+              <option value="_handlerLista">_handlerLista (Envia lista interativa)</option>
+              <option value="_handlerBotoes">_handlerBotoes (Envia até 3 botões)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>Descrição Opcional</label>
+          <input id="f-descricao" placeholder="O que esse estado faz?">
+        </div>
+        <div class="form-row" style="display:flex; gap:8px; align-items:center;">
+          <input type="checkbox" id="f-ativo" checked style="width:auto">
+          <label style="margin:0">Estado Ativo no WhatsApp</label>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:24px 0">
+        <div class="form-row">
+          <label>Configurações (JSON Payload)</label>
+          <div class="config-builder">
+            <div id="config-fields"></div>
+            <button class="btn add-field-btn" onclick="adicionarCampoConfig()">+ Adicionar Campo Manual</button>
+            <div class="json-preview" id="json-preview">{}</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="salvarEstado()">Salvar Estado</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast">Sucesso!</div>
+  <script src="script.js"></script>
+</body>
+</html>
