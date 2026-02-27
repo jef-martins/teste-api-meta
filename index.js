@@ -15,21 +15,21 @@ bot.iniciar().catch((err) => {
     process.exit(1);
 });
 
-/*
-let client;
+// ─── Desligamento Seguro (Graceful Shutdown) ─────────────────────────────────
+async function encerrarBot() {
+    console.log('\n[App] Sinal de encerramento recebido. Desligando o bot com segurança...');
+    try {
+        if (bot && bot.client) {
+            await bot.client.close();
+            console.log('[App] Navegador do WPPConnect fechado.');
+        }
+        process.exit(0);
+    } catch (err) {
+        console.error('[App] Erro ao desligar o WPPConnect:', err);
+        process.exit(1);
+    }
+}
 
-process.on('SIGINT', async () => {
-  console.log('Encerrando bot...');
-  if (client) {
-    await client.close();
-  }
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  if (client) {
-    await client.close();
-  }
-  process.exit(0);
-});
-*/
+// Escuta os sinais de Ctrl+C e paradas do sistema
+process.on('SIGINT', encerrarBot);
+process.on('SIGTERM', encerrarBot);
