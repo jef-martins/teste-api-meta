@@ -1,5 +1,26 @@
 const API = 'http://localhost:3000/admin';
 let estadosCache = [];
+let transicoesCache = [];
+
+// Inicialização opcional do Mermaid (Visualizador de Fluxos)
+if (window.mermaid) {
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#161b22',
+      primaryTextColor: '#e6edf3',
+      primaryBorderColor: '#30363d',
+      lineColor: '#58a6ff',
+      secondaryColor: '#21262d',
+      tertiaryColor: '#0d1117'
+    },
+    flowchart: {
+      htmlLabels: true,
+      curve: 'bezier'
+    }
+  });
+}
 
 // ── Handlers predefinidos com campos padrão ──────────────────────────────────
 const HANDLER_DEFAULTS = {
@@ -61,6 +82,8 @@ async function carregarEstados() {
         <button class="btn btn-danger btn-sm" onclick="excluirEstado('${e.estado}')">🗑</button>
       </td>
     </tr>`).join('');
+  
+  if (typeof renderizarVisual === 'function') renderizarVisual();
 }
 
 function abrirNovoEstado() {
@@ -198,10 +221,12 @@ function escapeHtml(s) {
 
 async function carregarTransicoes() {
   const dados = await api('GET', '/transicoes');
+  transicoesCache = dados;
   const tb = document.getElementById('body-transicoes');
 
   if (!dados.length) {
     tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">Nenhuma transição cadastrada.</td></tr>';
+    if (typeof renderizarVisual === 'function') renderizarVisual();
     return;
   }
 
@@ -216,6 +241,8 @@ async function carregarTransicoes() {
         <button class="btn btn-danger btn-sm" onclick="excluirTransicao(${t.id})">🗑</button>
       </td>
     </tr>`).join('');
+  
+  if (typeof renderizarVisual === 'function') renderizarVisual();
 }
 
 function adicionarLinhaTransicao() {
@@ -283,6 +310,71 @@ async function excluirTransicao(id) {
   if (r.erro) return toast(r.erro, true);
   toast('Transição excluída.');
   carregarTransicoes();
+}
+
+// ══════════════════════════════ VISUAL DE FLUXO (MERMAID) ═════════════════════
+
+function setView(type) {
+  if (type === 'table') {
+    document.getElementById('view-table').style.display = 'block';
+    document.getElementById('view-visual').style.display = 'none';
+    document.getElementById('btn-view-table').className = 'btn btn-primary btn-sm';
+    document.getElementById('btn-view-visual').className = 'btn btn-ghost btn-sm';
+    document.getElementById('btn-nova-transicao').style.display = 'inline-flex';
+  } else {
+    document.getElementById('view-table').style.display = 'none';
+    document.getElementById('view-visual').style.display = 'block';
+    document.getElementById('btn-view-table').className = 'btn btn-ghost btn-sm';
+    document.getElementById('btn-view-visual').className = 'btn btn-primary btn-sm';
+    document.getElementById('btn-nova-transicao').style.display = 'none';
+    renderizarVisual();
+  }
+}
+
+async function renderizarVisual() {
+  const visualDiv = document.getElementById('view-visual');
+  if (!visualDiv || visualDiv.style.display === 'none') return;
+  
+  if (!window.mermaid) {
+    document.getElementById('mermaid-container').innerHTML = 'Carregando motor visual...';
+    return;
+  }
+
+  if (estadosCache.length === 0) {
+    document.getElementById('mermaid-container').innerHTML = 'Nenhum estado configurado.';
+    return;
+  }
+
+  let graph = "graph LR;\n";
+  
+  // Nodos (Blocos estilo Typebot)
+  estadosCache.forEach(e => {
+    let handlerFormat = e.handler ? `<br/><span style='font-size:11px;color:#8b949e'>${e.handler}</span>` : '';
+    graph += `  ${e.estado}["<div style='padding:10px;font-weight:bold;text-align:center;'>${e.estado}${handlerFormat}</div>"]:::estadoNode\n`;
+  });
+
+  // Conexões
+  transicoesCache.forEach(t => {
+    if (!t.ativo) return;
+    let texto = t.entrada === '*' ? 'Qualquer' : (t.entrada || 'vazio');
+    graph += `  ${t.estado_origem} -->|"${texto}"| ${t.estado_destino}\n`;
+  });
+
+  if (transicoesCache.length === 0) {
+     graph += "  VAZIO[Nenhuma transição]\\n";
+  }
+
+  // Estilo
+  graph += `  classDef estadoNode fill:#161b22,stroke:#30363d,stroke-width:2px,color:#e6edf3,rx:8px,ry:8px;\n`;
+
+  const container = document.getElementById('mermaid-container');
+  try {
+    const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), graph);
+    container.innerHTML = svg;
+  } catch (err) {
+    console.error(err);
+    container.innerHTML = "<div style='color:var(--danger)'>Erro ao renderizar fluxo.</div>";
+  }
 }
 
 // ── Inicialização ─────────────────────────────────────────────────────────────

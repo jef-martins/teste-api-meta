@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bot Admin — Painel de Estados</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="admin.css">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
 </head>
 <body>
 
@@ -46,19 +46,32 @@
 <div id="tab-transicoes" class="page">
   <div class="section-header">
     <h2>Transições de Estado</h2>
-    <button class="btn btn-success" onclick="adicionarLinhaTransicao()">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Nova Transição
-    </button>
+    <div style="display:flex; gap:10px;">
+      <div style="display:flex; background:var(--surface2); padding:4px; border-radius:8px; border:1px solid var(--border);">
+         <button id="btn-view-table" class="btn btn-primary btn-sm" style="border:none" onclick="setView('table')">📋 Tabela</button>
+         <button id="btn-view-visual" class="btn btn-ghost btn-sm" style="border:none" onclick="setView('visual')">🗺️ Visual (Flow)</button>
+      </div>
+      <button class="btn btn-success" id="btn-nova-transicao" onclick="adicionarLinhaTransicao()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nova
+      </button>
+    </div>
   </div>
-  <table id="tbl-transicoes" class="trans-table">
-    <thead><tr>
-      <th>Origem</th><th>Entrada</th><th>Destino</th><th>Status</th><th style="width:110px"></th>
-    </tr></thead>
-    <tbody id="body-transicoes">
-      <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">Carregando...</td></tr>
-    </tbody>
-  </table>
+
+  <div id="view-table">
+    <table id="tbl-transicoes" class="trans-table">
+      <thead><tr>
+        <th>Origem</th><th>Entrada</th><th>Destino</th><th>Status</th><th style="width:110px"></th>
+      </tr></thead>
+      <tbody id="body-transicoes">
+        <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">Carregando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div id="view-visual" style="display:none; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; overflow:auto; min-height:500px;">
+    <div id="mermaid-container" style="text-align:center; color:var(--muted)">Carregando painel visual...</div>
+  </div>
 </div>
 
 <!-- ═══════════════════════ MODAL ESTADO ═══════════════════════ -->
