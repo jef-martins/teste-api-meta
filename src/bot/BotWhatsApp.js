@@ -20,6 +20,7 @@ class BotWhatsApp {
             this.client = await wppconnect.create({
                 session: this.sessao,
                 logQR: true,
+                autoClose: 0, // 0 = Nunca fechar automaticamente aguardando o QR
                 catchQR: (base64Qr, asciiQR) => {
                     console.log('\n[Bot] ✨ Escaneie o QR Code para conectar ✨\n');
                 },
