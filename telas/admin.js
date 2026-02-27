@@ -392,11 +392,10 @@ async function renderizarVisual() {
     const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), graph);
     container.innerHTML = svg;
     
-    // Força o SVG a não encolher em telas pequenas, gerando barra de rolagem horizontal nativa na view
+    // Deixa o tamanho natural e permite overflow caso ultrapasse 100% da caixa
     const svgEl = container.querySelector('svg');
     if (svgEl) {
-      svgEl.style.maxWidth = 'none';
-      svgEl.style.minWidth = '1400px'; 
+      svgEl.style.maxWidth = '100%';
       svgEl.style.height = 'auto';
     }
   } catch (err) {
