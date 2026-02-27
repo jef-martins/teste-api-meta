@@ -346,12 +346,16 @@ async function renderizarVisual() {
   }
 
   // Mais espaçamento para os blocos
-  let graph = "%%{init: {'flowchart': {'nodeSpacing': 50, 'rankSpacing': 100}}}%%\ngraph LR;\n";
+  // Mais espaçamento e tamanho
+  let graph = "%%{init: {'flowchart': {'nodeSpacing': 80, 'rankSpacing': 250}}}%%\ngraph LR;\n";
   
   // Nodos (Blocos estilo Typebot)
   estadosCache.forEach(e => {
-    let handlerFormat = e.handler ? `<br/><span style='font-size:11px;color:#8b949e'>${e.handler}</span>` : '';
-    graph += `  ${e.estado}["<div style='padding:10px;font-weight:bold;text-align:center;min-width:120px'>${e.estado}${handlerFormat}</div>"]:::estadoNode\n`;
+    // Oculta completamente os blocos NOVO e ENCERRADO do painel visual pra não poluir
+    if (e.estado === 'NOVO' || e.estado === 'ENCERRADO') return;
+
+    let handlerFormat = e.handler ? `<br/><span style='font-size:13px;color:#8b949e;margin-top:6px;display:inline-block'>${e.handler}</span>` : '';
+    graph += `  ${e.estado}["<div style='padding:20px;font-size:16px;font-weight:bold;text-align:center;min-width:180px'>${e.estado}${handlerFormat}</div>"]:::estadoNode\n`;
   });
 
   // Conexões agrupadas
@@ -359,9 +363,9 @@ async function renderizarVisual() {
   transicoesCache.forEach(t => {
     if (!t.ativo) return;
     
-    // Oculta as conexões que recomeçam ou finalizam o fluxo direto com destino ENCERRADO ou NOVO,
-    // pois podem poluir visualmente o quadro
+    // Oculta as conexões que recomeçam ou finalizam o fluxo direto com destino ENCERRADO ou NOVO
     if (t.estado_destino === 'ENCERRADO' || t.estado_destino === 'NOVO') return;
+    if (t.estado_origem === 'ENCERRADO' || t.estado_origem === 'NOVO') return;
 
     const key = `${t.estado_origem}:::${t.estado_destino}`;
     if (!connections[key]) connections[key] = [];
@@ -372,7 +376,8 @@ async function renderizarVisual() {
   Object.entries(connections).forEach(([key, entradas]) => {
     const [origem, destino] = key.split(':::');
     const label = entradas.join(', ');
-    graph += `  ${origem} -->|"${label}"| ${destino}\n`;
+    // Aumenta a grossura da linha principal e tamanho do texto
+    graph += `  ${origem} -->|"<span style='font-size:14px;font-weight:bold'>${label}</span>"| ${destino}\n`;
   });
 
   if (transicoesCache.length === 0) {
@@ -380,12 +385,20 @@ async function renderizarVisual() {
   }
 
   // Estilo
-  graph += `  classDef estadoNode fill:#161b22,stroke:#30363d,stroke-width:2px,color:#e6edf3,rx:8px,ry:8px;\n`;
+  graph += `  classDef estadoNode fill:#161b22,stroke:#30363d,stroke-width:2px,color:#e6edf3,rx:10px,ry:10px;\n`;
 
   const container = document.getElementById('mermaid-container');
   try {
     const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), graph);
     container.innerHTML = svg;
+    
+    // Força o SVG a não encolher em telas pequenas, gerando barra de rolagem horizontal nativa na view
+    const svgEl = container.querySelector('svg');
+    if (svgEl) {
+      svgEl.style.maxWidth = 'none';
+      svgEl.style.minWidth = '1400px'; 
+      svgEl.style.height = 'auto';
+    }
   } catch (err) {
     console.error(err);
     container.innerHTML = "<div style='color:var(--danger)'>Erro ao renderizar fluxo.</div>";
