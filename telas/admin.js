@@ -345,18 +345,24 @@ async function renderizarVisual() {
     return;
   }
 
-  let graph = "graph LR;\n";
+  // Mais espaçamento para os blocos
+  let graph = "%%{init: {'flowchart': {'nodeSpacing': 50, 'rankSpacing': 100}}}%%\ngraph LR;\n";
   
   // Nodos (Blocos estilo Typebot)
   estadosCache.forEach(e => {
     let handlerFormat = e.handler ? `<br/><span style='font-size:11px;color:#8b949e'>${e.handler}</span>` : '';
-    graph += `  ${e.estado}["<div style='padding:10px;font-weight:bold;text-align:center;'>${e.estado}${handlerFormat}</div>"]:::estadoNode\n`;
+    graph += `  ${e.estado}["<div style='padding:10px;font-weight:bold;text-align:center;min-width:120px'>${e.estado}${handlerFormat}</div>"]:::estadoNode\n`;
   });
 
   // Conexões agrupadas
   const connections = {};
   transicoesCache.forEach(t => {
     if (!t.ativo) return;
+    
+    // Oculta as conexões que recomeçam ou finalizam o fluxo direto com destino ENCERRADO ou NOVO,
+    // pois podem poluir visualmente o quadro
+    if (t.estado_destino === 'ENCERRADO' || t.estado_destino === 'NOVO') return;
+
     const key = `${t.estado_origem}:::${t.estado_destino}`;
     if (!connections[key]) connections[key] = [];
     let texto = t.entrada === '*' ? 'Qualquer' : (t.entrada || 'vazio');
