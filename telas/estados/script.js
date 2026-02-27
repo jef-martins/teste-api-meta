@@ -196,6 +196,20 @@ function toggleJsonBtn(sel) {
   }
 }
 
+function adicionarCampoJson(chave = '', valor = '') {
+  const container = document.getElementById('json-form-fields');
+  const div = document.createElement('div');
+  div.className = 'json-attr-row';
+  div.style.display = 'flex';
+  div.style.gap = '8px';
+  div.innerHTML = `
+    <input class="j-key" placeholder="Atributo" value="${escapeHtml(String(chave))}" style="flex: 0 0 150px; font-family:'JetBrains Mono', monospace; font-size:12px; color:#79c0ff">
+    <input class="j-val" placeholder="Valor" value="${escapeHtml(String(valor))}" style="flex:1">
+    <button class="btn btn-ghost btn-sm" onclick="this.parentElement.remove()" title="Remover">✕</button>
+  `;
+  container.appendChild(div);
+}
+
 function abrirModalJson(btn) {
   const row = btn.closest('.config-field');
   const keyEl = row.querySelector('.key');
@@ -203,13 +217,25 @@ function abrirModalJson(btn) {
   
   currentJsonInput = valEl;
   let val = valEl.value.trim();
+  document.getElementById('json-form-fields').innerHTML = ''; // Limpa campos antigos
   
-  try {
-     if (val) val = JSON.stringify(JSON.parse(val), null, 4);
-  } catch(e) {}
+  let obj = {};
+  if (val) {
+      try { obj = JSON.parse(val); } catch(e) {}
+  }
+
+  // Preenche os campos existentes do JSON ou cria um em branco se estiver vazio
+  const chaves = Object.keys(obj);
+  if (chaves.length > 0) {
+      for (const [k, v] of Object.entries(obj)) {
+          let strVal = typeof v === 'object' ? JSON.stringify(v) : String(v);
+          adicionarCampoJson(k, strVal);
+      }
+  } else {
+      adicionarCampoJson(); // Inicia com um vazio
+  }
   
   document.getElementById('modal-json-titulo').textContent = `Editar Payload: ${keyEl.value || 'Novo'}`;
-  document.getElementById('f-json-editor').value = val;
   document.getElementById('modal-json').classList.add('open');
 }
 
@@ -220,19 +246,29 @@ function fecharModalJson() {
 
 function salvarModalJson() {
   if (!currentJsonInput) return;
-  const val = document.getElementById('f-json-editor').value.trim();
+  const obj = {};
   
-  if (val) {
+  document.querySelectorAll('#json-form-fields .json-attr-row').forEach(row => {
+      let k = row.querySelector('.j-key').value.trim();
+      let v = row.querySelector('.j-val').value.trim();
+      if (!k) return;
+      
       try {
-         const parsed = JSON.parse(val);
-         currentJsonInput.value = JSON.stringify(parsed);
-      } catch (err) {
-         return toast('❌ JSON Inválido! O formato lido contém erros de sintaxe.', true);
+          // Tenta reconstruir arrays, booleanos e objs inferidos
+          if (v === 'true') obj[k] = true;
+          else if (v === 'false') obj[k] = false;
+          else if (!isNaN(v) && v !== '') obj[k] = Number(v);
+          else if ((v.startsWith('[') && v.endsWith(']')) || (v.startsWith('{') && v.endsWith('}'))) {
+              obj[k] = JSON.parse(v);
+          } else {
+              obj[k] = v;
+          }
+      } catch (e) {
+          obj[k] = v; // fallback a string literal
       }
-  } else {
-      currentJsonInput.value = '';
-  }
-  
+  });
+
+  currentJsonInput.value = Object.keys(obj).length ? JSON.stringify(obj) : '';
   atualizarPreview();
   fecharModalJson();
 }

@@ -97,10 +97,8 @@
         <button class="btn btn-ghost" onclick="fecharModalJson()" style="padding:4px">✕</button>
       </div>
       <div class="modal-body">
-        <div class="form-row">
-          <label>Conteúdo (O formato será checado ao salvar)</label>
-          <textarea id="f-json-editor" spellcheck="false" placeholder='{\n  "chave": "valor"\n}' style="min-height:280px; font-family:'JetBrains Mono',monospace; font-size:13px;"></textarea>
-        </div>
+        <div id="json-form-fields" style="display:flex; flex-direction:column; gap:10px;"></div>
+        <button class="btn add-field-btn" onclick="adicionarCampoJson()" style="margin-top:16px">+ Adicionar Atributo</button>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="fecharModalJson()">Cancelar</button>
