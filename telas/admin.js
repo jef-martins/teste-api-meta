@@ -345,27 +345,20 @@ async function renderizarVisual() {
     return;
   }
 
-  // Mais espaçamento para os blocos
   // Mais espaçamento e tamanho
-  let graph = "%%{init: {'flowchart': {'nodeSpacing': 80, 'rankSpacing': 250}}}%%\ngraph LR;\n";
+  let graph = "%%{init: {'flowchart': {'nodeSpacing': 100, 'rankSpacing': 300}}}%%\ngraph TD;\n";
   
   // Nodos (Blocos estilo Typebot)
   estadosCache.forEach(e => {
-    // Oculta completamente os blocos NOVO e ENCERRADO do painel visual pra não poluir
-    if (e.estado === 'NOVO' || e.estado === 'ENCERRADO') return;
 
-    let handlerFormat = e.handler ? `<br/><span style='font-size:13px;color:#8b949e;margin-top:6px;display:inline-block'>${e.handler}</span>` : '';
-    graph += `  ${e.estado}["<div style='padding:20px;font-size:16px;font-weight:bold;text-align:center;min-width:180px'>${e.estado}${handlerFormat}</div>"]:::estadoNode\n`;
+    let handlerFormat = e.handler ? `<br/><span style='font-size:14px;color:#8b949e;margin-top:8px;display:inline-block'>${e.handler}</span>` : '';
+    graph += `  ${e.estado}["<div style='padding:24px;font-size:18px;font-weight:bold;text-align:center;min-width:220px'>${e.estado}${handlerFormat}</div>"]:::estadoNode\n`;
   });
 
   // Conexões agrupadas
   const connections = {};
   transicoesCache.forEach(t => {
     if (!t.ativo) return;
-    
-    // Oculta as conexões que recomeçam ou finalizam o fluxo direto com destino ENCERRADO ou NOVO
-    if (t.estado_destino === 'ENCERRADO' || t.estado_destino === 'NOVO') return;
-    if (t.estado_origem === 'ENCERRADO' || t.estado_origem === 'NOVO') return;
 
     const key = `${t.estado_origem}:::${t.estado_destino}`;
     if (!connections[key]) connections[key] = [];
@@ -377,7 +370,7 @@ async function renderizarVisual() {
     const [origem, destino] = key.split(':::');
     const label = entradas.join(', ');
     // Aumenta a grossura da linha principal e tamanho do texto
-    graph += `  ${origem} -->|"<span style='font-size:14px;font-weight:bold'>${label}</span>"| ${destino}\n`;
+    graph += `  ${origem} -->|"<span style='font-size:16px;font-weight:bold'>${label}</span>"| ${destino}\n`;
   });
 
   if (transicoesCache.length === 0) {
