@@ -353,11 +353,20 @@ async function renderizarVisual() {
     graph += `  ${e.estado}["<div style='padding:10px;font-weight:bold;text-align:center;'>${e.estado}${handlerFormat}</div>"]:::estadoNode\n`;
   });
 
-  // Conexões
+  // Conexões agrupadas
+  const connections = {};
   transicoesCache.forEach(t => {
     if (!t.ativo) return;
+    const key = `${t.estado_origem}:::${t.estado_destino}`;
+    if (!connections[key]) connections[key] = [];
     let texto = t.entrada === '*' ? 'Qualquer' : (t.entrada || 'vazio');
-    graph += `  ${t.estado_origem} -->|"${texto}"| ${t.estado_destino}\n`;
+    connections[key].push(texto);
+  });
+
+  Object.entries(connections).forEach(([key, entradas]) => {
+    const [origem, destino] = key.split(':::');
+    const label = entradas.join(', ');
+    graph += `  ${origem} -->|"${label}"| ${destino}\n`;
   });
 
   if (transicoesCache.length === 0) {
