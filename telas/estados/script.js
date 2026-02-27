@@ -136,17 +136,21 @@ function renderConfigBuilder(configAtual) {
 function adicionarCampoConfig(chave = '', tipo = 'string', valor = '') {
   const div = document.createElement('div');
   div.className = 'config-field';
+  const showBtn = (tipo === 'json' || tipo === 'array') ? 'block' : 'none';
   div.innerHTML = `
     <input class="key" placeholder="chave" value="${chave}" oninput="atualizarPreview()">
-    <select class="type-sel" onchange="atualizarPreview()">
+    <select class="type-sel" onchange="toggleJsonBtn(this); atualizarPreview()">
       <option value="string"  ${tipo === 'string' ? 'selected' : ''}>string</option>
       <option value="bool"    ${tipo === 'bool' ? 'selected' : ''}>bool</option>
       <option value="number"  ${tipo === 'number' ? 'selected' : ''}>number</option>
       <option value="array"   ${tipo === 'array' ? 'selected' : ''}>array</option>
       <option value="json"    ${tipo === 'json' ? 'selected' : ''}>json</option>
     </select>
-    <input placeholder="valor" value="${escapeHtml(String(valor))}" oninput="atualizarPreview()" style="flex:1">
-    <button class="btn btn-ghost btn-sm" onclick="this.parentElement.remove();atualizarPreview()" title="Remover">✕</button>`;
+    <div style="flex:1; display:flex;">
+      <input class="val-input" placeholder="valor" value="${escapeHtml(String(valor))}" oninput="atualizarPreview()" style="flex:1; border-top-right-radius:0; border-bottom-right-radius:0;">
+      <button tabindex="-1" class="btn btn-primary btn-sm btn-json-edit" onclick="abrirModalJson(this)" style="display:${showBtn}; border-top-left-radius:0; border-bottom-left-radius:0; margin-left:-1px" title="Expandir JSON">{  }</button>
+    </div>
+    <button tabindex="-1" class="btn btn-ghost btn-sm" onclick="this.parentElement.remove();atualizarPreview()" title="Remover">✕</button>`;
   document.getElementById('config-fields').appendChild(div);
 }
 
@@ -179,6 +183,59 @@ function escapeHtml(s) {
 document.getElementById('modal-estado').addEventListener('click', e => {
   if (e.target === e.currentTarget) fecharModal();
 });
+
+let currentJsonInput = null;
+
+function toggleJsonBtn(sel) {
+  const row = sel.closest('.config-field');
+  const btn = row.querySelector('.btn-json-edit');
+  if (sel.value === 'json' || sel.value === 'array') {
+    btn.style.display = 'block';
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+function abrirModalJson(btn) {
+  const row = btn.closest('.config-field');
+  const keyEl = row.querySelector('.key');
+  const valEl = row.querySelector('.val-input');
+  
+  currentJsonInput = valEl;
+  let val = valEl.value.trim();
+  
+  try {
+     if (val) val = JSON.stringify(JSON.parse(val), null, 4);
+  } catch(e) {}
+  
+  document.getElementById('modal-json-titulo').textContent = `Editar Payload: ${keyEl.value || 'Novo'}`;
+  document.getElementById('f-json-editor').value = val;
+  document.getElementById('modal-json').classList.add('open');
+}
+
+function fecharModalJson() {
+  document.getElementById('modal-json').classList.remove('open');
+  currentJsonInput = null;
+}
+
+function salvarModalJson() {
+  if (!currentJsonInput) return;
+  const val = document.getElementById('f-json-editor').value.trim();
+  
+  if (val) {
+      try {
+         const parsed = JSON.parse(val);
+         currentJsonInput.value = JSON.stringify(parsed);
+      } catch (err) {
+         return toast('❌ JSON Inválido! O formato lido contém erros de sintaxe.', true);
+      }
+  } else {
+      currentJsonInput.value = '';
+  }
+  
+  atualizarPreview();
+  fecharModalJson();
+}
 
 document.getElementById('f-estado').addEventListener('input', e => {
   e.target.value = e.target.value.toUpperCase();

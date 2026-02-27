@@ -89,6 +89,26 @@
     </div>
   </div>
 
+  <!-- ═══════════════════════ MODAL EDITOR DE JSON ═══════════════════════ -->
+  <div class="overlay" id="modal-json" style="z-index: 300;">
+    <div class="modal" style="width: 600px;">
+      <div class="modal-header">
+        <h3 id="modal-json-titulo">Editor Completo JSON</h3>
+        <button class="btn btn-ghost" onclick="fecharModalJson()" style="padding:4px">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <label>Conteúdo (O formato será checado ao salvar)</label>
+          <textarea id="f-json-editor" spellcheck="false" placeholder='{\n  "chave": "valor"\n}' style="min-height:280px; font-family:'JetBrains Mono',monospace; font-size:13px;"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="fecharModalJson()">Cancelar</button>
+        <button class="btn btn-primary" onclick="salvarModalJson()">Confirmar e Salvar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast">Sucesso!</div>
   <script src="script.js"></script>
 </body>
