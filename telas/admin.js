@@ -360,6 +360,13 @@ async function renderizarVisual() {
   transicoesCache.forEach(t => {
     if (!t.ativo) return;
 
+    // Garante layout de árvore top-down absoluto:
+    // 1) Nenhuma seta sai do ENCERRADO (ele é obrigatoriamente um nó folha/final):
+    if (t.estado_origem === 'ENCERRADO') return;
+    
+    // 2) Nenhuma seta volta para o NOVO (ele é obrigatoriamente a raiz):
+    if (t.estado_destino === 'NOVO') return;
+
     const key = `${t.estado_origem}:::${t.estado_destino}`;
     if (!connections[key]) connections[key] = [];
     let texto = t.entrada === '*' ? 'Qualquer' : (t.entrada || 'vazio');
