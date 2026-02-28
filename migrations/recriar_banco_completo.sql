@@ -102,7 +102,7 @@ INSERT INTO bot_estado_config (estado, handler, descricao, config) VALUES
     "metodo": "GET",
     "headers": {
         "Access-Env": "HOMOLOGATION",
-        "Access-Application-Key": "555078a0ec066392a7e50c44a4342a97902e6430"
+        "Access-Application-Key": "64b37f479af4007c883406f0b535c432e22c888e"
     },
     "campoResposta": "data.0.atributes",
     "mensagemSucesso": "✅ *Protocolo Encontrado!*\n\n*Situação:* {situacao}\n*Abertura:* {data_abertura}\n*Observações:* {ultima_obs_sac}\n\nPesquise novamente ou digite sair para voltar ao menu",
@@ -117,7 +117,7 @@ INSERT INTO bot_estado_config (estado, handler, descricao, config) VALUES
     "headers": {
         "access-env": "HOMOLOGATION",
         "Content-Type": "application/json",
-        "Access-Application-Key": "d3071de7aa6fdd328f73a9f83071b92e6ea4a46c"
+        "Access-Application-Key": "64b37f479af4007c883406f0b535c432e22c888e"
     },
     "mensagemSucesso": "🏢 *{nome}*\n📍 {contato_endereco}, {contato_numero} - {contato_complemento}\n🏘 {contato_bairro} - {contato_cidade}\n📞 {fone}\n📧 {contato_email}\n📌 Cód: {codigo_posto} | 📏 {distance} km\n\nSe desejar consultar outro CEP, informe novamente ou digite *sair* para voltar.",
     "separador": "➖➖➖➖➖➖➖➖➖",
@@ -132,7 +132,7 @@ INSERT INTO bot_estado_config (estado, handler, descricao, config) VALUES
     "headers": {
         "Access-Env": "PRODUCTION",
         "Content-Type": "application/json",
-        "Access-Application-Key": "8ff3db770492e0055af6c2b2bf04dc48f46efbb6"
+        "Access-Application-Key": "64b37f479af4007c883406f0b535c432e22c888e"
     },
     "campoResposta": "os.0",
     "mensagemSucesso": "✅ *Ordem de Serviço encontrada!*\n\n📌 *Nº da OS:* {os}\n🏭 *Fabricante:* {nome_fabrica}\n📅 *Abertura:* {data_abertura}\n� *Tipo:* {descricao_tipo_atendimento}\n\n👤 *Consumidor:* {consumidor_nome}\n📍 *Endereço:* {consumidor_endereco}, {consumidor_numero} {consumidor_complemento}\n🏘 *Bairro:* {consumidor_bairro} - {consumidor_cidade}/{consumidor_estado}\n📞 *Telefone:* {consumidor_fone}\n\n📦 *Produto:* {descricao}\n� *Referência:* {referencia}\n🆔 *Série:* {serie}\n\n⚠️ *Defeito Reclamado:* {defeito_reclamado}\n🔍 *Defeito Constatado:* {defeito_constatado}\n🛠 *Solução:* {solucao}\n📊 *Status:* {status_os}\n📅 *Conserto:* {data_conserto}\n⏱ *Dias em aberto:* {dias_aberto}\n\nSe desejar consultar outro CPF, informe novamente ou digite *sair* para voltar.",
@@ -206,6 +206,67 @@ INSERT INTO bot_estado_config (estado, handler, descricao, config) VALUES
     "mensagens": ["Essa conversa foi encerrada. Em caso de dúvidas, envie uma nova mensagem."],
     "aguardarEntrada": true,
     "transicaoAutomatica": false
+}'),
+
+('INSERE_FILA_CHAT', '_handlerRequisicao', 'Coloca o usuário na fila de atendimento humano', '{
+    "url": "https://backend2-00174.telecontrol.com.br/api-chatboot-proxy-telezap/chatboot/insereFilaChat",
+    "metodo": "POST",
+    "headers": {
+        "Access-Env": "HOMOLOGATION",
+        "Content-Type": "application/json",
+        "Access-Application-Key": "64b37f479af4007c883406f0b535c432e22c888e"
+    },
+    "body": {
+      "session": "{session}",
+      "celular": "{visitor_cel}",
+      "nome": "{visitor_name}",
+      "acao": "insere",
+      "tipo_hd": "{tipo_hd}",
+      "hd_chamado": "{id_ultimo_chamado}",
+      "id_fabrica": "{id_fabrica}"
+    },
+    "mensagemSucesso": "✅ Você foi inserido na fila de atendimento humano. Aguarde um instante!",
+    "mensagemErro": "❌ Ocorreu um erro ao te colocar na fila de atendimento. Tente novamente mais tarde."
+}'),
+
+('CONSULTA_STATUS_CHAT', '_handlerRequisicao', 'Consulta status do chat atual (Proxy POST p/ GET)', '{
+    "url": "https://backend2-00174.telecontrol.com.br/api-chatboot-proxy-telezap/chatboot/consultaStatusChat?fone={visitor_cel}",
+    "metodo": "GET",
+    "headers": {
+        "Access-Env": "HOMOLOGATION",
+        "Content-Type": "application/json",
+        "Access-Application-Key": "64b37f479af4007c883406f0b535c432e22c888e"
+    },
+    "mensagemSucesso": "Status consultado com sucesso.",
+    "mensagemErro": "❌ Não foi possível consultar o status da fila."
+}'),
+
+('CRIA_CONVERSA', '_handlerRequisicao', 'Recebe os dados integrados e gera o ticket base a partir do front.', '{
+    "url": "https://backend2-00174.telecontrol.com.br/api-chatboot-proxy-telezap/chatboot/recebe",
+    "metodo": "POST",
+    "headers": {
+        "Access-Env": "HOMOLOGATION",
+        "Content-Type": "application/json",
+        "Access-Application-Key": "64b37f479af4007c883406f0b535c432e22c888e"
+    },
+    "body": {
+      "rota": "http://backend2.telecontrol.com.br/api-callcenter/callcenterChatBoot",
+      "metodo": "post",
+      "fluxo": "whatsapp",
+      "sessao": "{sessionId}",
+      "parametros": {
+        "titulo_chamado": "Produto com problema",
+        "descricao_chamado": "Produto: {respostaProduto} - {respostaProblemaProduto}",
+        "produto": "",
+        "acao": "abre",
+        "classificacao": "01",
+        "origem": "WhatsappBoot",
+        "celular": "{visitor_cel}",
+        "nome": "{visitor_name}",
+        "session": "{session}"
+      }
+    },
+    "mensagemSucesso": "Conversa criada e chamada inicializada no sistema."
 }');
 
 
@@ -250,8 +311,11 @@ INSERT INTO bot_estado_transicao (estado_origem, entrada, estado_destino) VALUES
 -- Fluxo de Abertura de Protocolo (Novo)
 ('CAPTURA_DADOS_PROTOCOLO', '*',    'CRIAR_PROTOCOLO'),
 ('CAPTURA_DADOS_PROTOCOLO', 'sair', 'MENU'),
-('CRIAR_PROTOCOLO',         '*',    'MENU'),
+('CRIAR_PROTOCOLO',         '*',    'INSERE_FILA_CHAT'),
 ('CRIAR_PROTOCOLO',         'sair', 'MENU'),
+
+-- Continuidade na fila de espera
+('INSERE_FILA_CHAT',        '*',    'CONSULTA_STATUS_CHAT'),
 
 -- Estado Final
 ('ENCERRADO',               '*',    'NOVO');

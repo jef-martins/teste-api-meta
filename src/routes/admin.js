@@ -71,9 +71,15 @@ router.post('/testar-req', async (req, res) => {
         const usandoBodyFixo = config.body && typeof config.body === 'object' && !Array.isArray(config.body);
 
         if (usandoBodyFixo) {
-            bodyObj = Object.fromEntries(
-                Object.entries(config.body).map(([k, v]) => [k, interpolar(v, tudo)])
-            );
+            const interpolarDeep = (obj) => {
+                if (typeof obj === 'string') return interpolar(obj, tudo);
+                if (Array.isArray(obj)) return obj.map(item => interpolarDeep(item));
+                if (typeof obj === 'object' && obj !== null) {
+                    return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, interpolarDeep(v)]));
+                }
+                return obj;
+            };
+            bodyObj = interpolarDeep(config.body);
         } else if (config.campoEnviar && typeof config.campoEnviar === 'string') {
             bodyObj = { [config.campoEnviar]: valor };
         } else {

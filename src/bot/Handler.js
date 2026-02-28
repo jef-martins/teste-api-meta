@@ -393,13 +393,16 @@ class Handler extends Bot {
             let bodyObj;
 
             if (usandoBodyFixo) {
-                // ── Modo 1: body fixo — interpola cada valor string com os dados da memória ──
-                bodyObj = Object.fromEntries(
-                    Object.entries(config.body).map(([k, v]) => [
-                        k,
-                        typeof v === 'string' ? engine.interpolar(v, tudo) : v
-                    ])
-                );
+                // ── Modo 1: body fixo profundo — interpola variáveis no JSON recursivamente ──
+                const interpolarDeep = (obj) => {
+                    if (typeof obj === 'string') return engine.interpolar(obj, tudo);
+                    if (Array.isArray(obj)) return obj.map(item => interpolarDeep(item));
+                    if (typeof obj === 'object' && obj !== null) {
+                        return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, interpolarDeep(v)]));
+                    }
+                    return obj;
+                };
+                bodyObj = interpolarDeep(config.body);
                 console.log(`[Bot] [${chatId}] _handlerRequisicao body fixo interpolado:`, JSON.stringify(bodyObj));
             } else if (usandoMulti) {
                 // ── Modo 2: multi-campo — usa apenas as chaves listadas em camposEnviar ──
