@@ -68,8 +68,10 @@ class BotWhatsApp {
 
     _ouvirMensagens() {
         this.client.onMessage(async (message) => {
-            if (!message || message.isGroupMsg) return; // Ignora grupos
-
+            // Ignora mensagens nulas, de grupos ou atualizações de status (stories)
+            if (!message || message.isGroupMsg || message.from === 'status@broadcast' || message.id?.remote === 'status@broadcast') {
+                return;
+            }
             // Ignora mensagens enviadas pelo próprio bot
             if (message.fromMe) return;
 
