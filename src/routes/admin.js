@@ -52,6 +52,68 @@ router.delete('/estados/:estado', async (req, res) => {
     }
 });
 
+// ── Teste de Requisição (Mock) ───────────────────────────────────────────────
+
+router.post('/testar-req', async (req, res) => {
+    const { config, valor } = req.body;
+    if (!config || !config.url) return res.status(400).json({ erro: 'URL não fornecida.' });
+
+    const interpolar = (texto, varData) => 
+        (typeof texto === 'string' ? texto.replace(/\{(\w+)\}/g, (_, k) => varData[k] ?? `{${k}}`) : texto);
+
+    try {
+        const metodo = (config.metodo || 'GET').toUpperCase();
+        const tudo = { valor: valor || '' };
+        const urlBase = interpolar(config.url, tudo);
+        const headers = { 'Content-Type': 'application/json', ...(config.headers || {}) };
+
+        let bodyObj;
+        const usandoBodyFixo = config.body && typeof config.body === 'object' && !Array.isArray(config.body);
+
+        if (usandoBodyFixo) {
+            bodyObj = Object.fromEntries(
+                Object.entries(config.body).map(([k, v]) => [k, interpolar(v, tudo)])
+            );
+        } else if (config.campoEnviar && typeof config.campoEnviar === 'string') {
+            bodyObj = { [config.campoEnviar]: valor };
+        } else {
+            bodyObj = { valor: valor };
+        }
+
+        let rsStr;
+        let rsStatus;
+        const modReq = await import('node-fetch');
+        const fetch = modReq.default;
+
+        if (metodo === 'GET') {
+            let urlFinal = urlBase;
+            if (!usandoBodyFixo) {
+                const queryParams = new URLSearchParams(Object.fromEntries(Object.entries(bodyObj).filter(([_,v]) => v !== undefined && v !== ''))).toString();
+                if (queryParams) {
+                    urlFinal += (urlFinal.includes('?') ? '&' : '?') + queryParams;
+                }
+            }
+            const fetchRes = await fetch(urlFinal, { headers, timeout: 15000 });
+            rsStatus = fetchRes.status;
+            rsStr = await fetchRes.text();
+        } else {
+            const fetchRes = await fetch(urlBase, {
+                method: metodo,
+                headers,
+                body: JSON.stringify(bodyObj),
+                timeout: 15000
+            });
+            rsStatus = fetchRes.status;
+            rsStr = await fetchRes.text();
+        }
+
+        res.json({ status: rsStatus, data: rsStr });
+
+    } catch (err) {
+        res.status(500).json({ erro: err.message, status: 500 });
+    }
+});
+
 // ── Transições ────────────────────────────────────────────────────────────────
 
 router.get('/transicoes', async (req, res) => {

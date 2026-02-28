@@ -112,6 +112,11 @@ function renderConfigBuilder(configAtual) {
   const defaults = HANDLER_DEFAULTS[handler] || [];
   const container = document.getElementById('config-fields');
   container.innerHTML = '';
+  
+  const btnTest = document.getElementById('btn-testar-req');
+  if (btnTest) {
+      btnTest.style.display = handler === '_handlerRequisicao' ? 'inline-block' : 'none';
+  }
 
   for (const [key, type, def] of defaults) {
     const val = configAtual?.[key] !== undefined
@@ -276,5 +281,46 @@ function salvarModalJson() {
 document.getElementById('f-estado').addEventListener('input', e => {
   e.target.value = e.target.value.toUpperCase();
 });
+
+async function testarRequisicao() {
+  const config = coletarConfig();
+  if (!config.url) return toast('A configuração precisa de uma URL para testar.', true);
+
+  const valor = prompt('Forneça um dado provisório de simulação caso sua URL/Body precise da variável {valor} (ex: um CPF, Número de Protocolo ou OS real para verificar):', '');
+  if (valor === null) return;
+
+  const btn = document.getElementById('btn-testar-req');
+  const txtOriginal = btn.innerHTML;
+  btn.innerHTML = '⏳ Executando...';
+  btn.disabled = true;
+
+  try {
+     const res = await fetch(API + '/testar-req', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ config, valor })
+     });
+     const r = await res.json();
+     
+     const elStatus = document.getElementById('test-req-status');
+     const code = r.status || 'Erro do Servidor';
+     elStatus.textContent = code;
+     
+     if (code === 200) elStatus.className = 'badge badge-green';
+     else elStatus.className = 'badge', elStatus.style.background = 'var(--danger)'; // simplificado
+     
+     let parsed = r.data;
+     try { if (typeof parsed === 'string') parsed = JSON.parse(parsed); } catch(e){}
+     
+     document.getElementById('test-req-json').value = typeof parsed === 'object' ? JSON.stringify(parsed, null, 4) : String(parsed || r.erro || 'Sem resposta');
+     document.getElementById('modal-test-req').classList.add('open');
+     
+  } catch(e) {
+     toast('Erro ao chamar o simulador de requisições no backend.', true);
+  }
+
+  btn.innerHTML = txtOriginal;
+  btn.disabled = false;
+}
 
 carregarEstados();

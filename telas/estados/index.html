@@ -82,9 +82,12 @@
           </div>
         </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
-        <button class="btn btn-primary" onclick="salvarEstado()">Salvar Estado</button>
+      <div class="modal-footer" style="display:flex; justify-content:space-between; width:100%;">
+        <button id="btn-testar-req" class="btn " style="display:none; background-color:#2ea043; color:white;" onclick="testarRequisicao()">⚡ Testar Requisição</button>
+        <div style="margin-left:auto; display:flex; gap:8px;">
+            <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
+            <button class="btn btn-primary" onclick="salvarEstado()">Salvar Estado</button>
+        </div>
       </div>
     </div>
   </div>
@@ -108,6 +111,29 @@
   </div>
 
   <div id="toast">Sucesso!</div>
+
+  <!-- ═══════════════════════ MODAL TESTE REQUISIÇÃO ═══════════════════════ -->
+  <div class="overlay" id="modal-test-req" style="z-index: 400;">
+    <div class="modal" style="width: 700px;">
+      <div class="modal-header">
+        <h3 id="modal-test-titulo">Resultado do Teste</h3>
+        <button class="btn btn-ghost" onclick="document.getElementById('modal-test-req').classList.remove('open')" style="padding:4px">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom: 12px;">
+          <strong style="color:var(--muted)">Status Code HTTP:</strong> 
+          <span id="test-req-status" class="badge">--</span>
+        </div>
+        <div class="form-row">
+          <label>Resposta Bruta (JSON)</label>
+          <textarea id="test-req-json" readonly style="min-height:300px; font-family:'JetBrains Mono',monospace; font-size:12px; background:var(--surface2); border:1px solid var(--border); color:#e6edf3; padding:12px; border-radius:6px; resize:vertical;"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="document.getElementById('modal-test-req').classList.remove('open')">Fechar</button>
+      </div>
+    </div>
+  </div>
   <script src="script.js"></script>
 </body>
 </html>
