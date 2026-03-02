@@ -93,8 +93,8 @@ INSERT INTO bot_estado_config (estado, handler, descricao, config) VALUES
 }'),
 
 ('MENU', '_handlerCapturar', 'Menu principal de atendimento', '{
-    "mensagemPedir": "🔧 *Como posso te ajudar hoje?*\n\n*1* - Consulta de Protocolo\n*2* - Posto Autorizado mais próximo\n*3* - Consulta de Ordem de Serviço\n*4* - Abrir Protocolo de Atendimento\n*5* - Encerrar Atendimento\n\n_Responda com o número da opção desejada._",
-    "mensagemInvalida": "⚠️ Opção inválida. Por favor, responda apenas com *1*, *2*, *3*, *4* ou *5*."
+    "mensagemPedir": "🔧 *Como posso te ajudar hoje?*\n\n*1* - Consulta de Protocolo\n*2* - Posto Autorizado mais próximo\n*3* - Consulta de Ordem de Serviço\n*4* - Abrir Protocolo de Atendimento\n*5* - Encerrar\n*6* - Falar com Atendente\n\n_Atendimento_Responda com o número da opção desejada._",
+    "mensagemInvalida": "⚠️ Opção inválida. Por favor, responda apenas com um número de 1 a 6."
 }'),
 
 ('CONSULTA_PROTOCOLO', '_handlerRequisicao', 'Consulta de protocolo', '{
@@ -287,6 +287,7 @@ INSERT INTO bot_estado_transicao (estado_origem, entrada, estado_destino) VALUES
 ('MENU',         '3',      'AGUARDA_OS'),
 ('MENU',         '4',      'CAPTURA_DADOS_PROTOCOLO'),
 ('MENU',         '5',      'ENCERRADO'),
+('MENU',         '6',      'INSERE_FILA_CHAT'),
 
 -- Estados transitórios: exibem mensagem e avançam automaticamente para consulta
 ('AGUARDA_PROTOCOLO',    '*',    'CONSULTA_PROTOCOLO'),
@@ -311,7 +312,6 @@ INSERT INTO bot_estado_transicao (estado_origem, entrada, estado_destino) VALUES
 -- Fluxo de Abertura de Protocolo (Novo)
 ('CAPTURA_DADOS_PROTOCOLO', '*',    'CRIAR_PROTOCOLO'),
 ('CAPTURA_DADOS_PROTOCOLO', 'sair', 'MENU'),
-('CRIAR_PROTOCOLO',         '*',    'INSERE_FILA_CHAT'),
 ('CRIAR_PROTOCOLO',         'sair', 'MENU'),
 
 -- Continuidade na fila de espera

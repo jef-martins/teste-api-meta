@@ -142,8 +142,13 @@ function adicionarCampoConfig(chave = '', tipo = 'string', valor = '') {
   const div = document.createElement('div');
   div.className = 'config-field';
   const showBtn = (tipo === 'json' || tipo === 'array') ? 'block' : 'none';
+  
+  let valEscape = String(valor);
+  if (tipo === 'string') valEscape = valEscape.replace(/\n/g, '\\n');
+  valEscape = escapeHtml(valEscape);
+
   div.innerHTML = `
-    <input class="key" placeholder="chave" value="${chave}" oninput="atualizarPreview()">
+    <input class="key" placeholder="chave" value="${escapeHtml(chave)}" oninput="atualizarPreview()">
     <select class="type-sel" onchange="toggleJsonBtn(this); atualizarPreview()">
       <option value="string"  ${tipo === 'string' ? 'selected' : ''}>string</option>
       <option value="bool"    ${tipo === 'bool' ? 'selected' : ''}>bool</option>
@@ -152,7 +157,7 @@ function adicionarCampoConfig(chave = '', tipo = 'string', valor = '') {
       <option value="json"    ${tipo === 'json' ? 'selected' : ''}>json</option>
     </select>
     <div style="flex:1; display:flex;">
-      <input class="val-input" placeholder="valor" value="${escapeHtml(String(valor))}" oninput="atualizarPreview()" style="flex:1; border-top-right-radius:0; border-bottom-right-radius:0;">
+      <input class="val-input" placeholder="valor" value="${valEscape}" oninput="atualizarPreview()" style="flex:1; border-top-right-radius:0; border-bottom-right-radius:0;">
       <button tabindex="-1" class="btn btn-primary btn-sm btn-json-edit" onclick="abrirModalJson(this)" style="display:${showBtn}; border-top-left-radius:0; border-bottom-left-radius:0; margin-left:-1px" title="Expandir JSON">{  }</button>
     </div>
     <button tabindex="-1" class="btn btn-ghost btn-sm" onclick="this.parentElement.remove();atualizarPreview()" title="Remover">✕</button>`;
@@ -171,8 +176,8 @@ function coletarConfig() {
       if (t === 'bool') obj[k] = v === 'true';
       else if (t === 'number') obj[k] = Number(v);
       else if (t === 'array' || t === 'json') obj[k] = JSON.parse(v);
-      else obj[k] = v;
-    } catch { obj[k] = v; }
+      else obj[k] = v.replace(/\\n/g, '\n');
+    } catch { obj[k] = v.replace(/\\n/g, '\n'); }
   });
   return obj;
 }
