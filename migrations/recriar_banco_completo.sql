@@ -286,8 +286,8 @@ INSERT INTO bot_estado_transicao (estado_origem, entrada, estado_destino) VALUES
 ('MENU',         '2',      'AGUARDA_POSTO_PROXIMO'),
 ('MENU',         '3',      'AGUARDA_OS'),
 ('MENU',         '4',      'CAPTURA_DADOS_PROTOCOLO'),
-('MENU',         '5',      'ENCERRADO'),
-('MENU',         '6',      'INSERE_FILA_CHAT'),
+('MENU',         '5',      'INSERE_FILA_CHAT'),
+('MENU',         '6',      'ENCERRADO'),
 
 -- Estados transitórios: exibem mensagem e avançam automaticamente para consulta
 ('AGUARDA_PROTOCOLO',    '*',    'CONSULTA_PROTOCOLO'),
