@@ -449,6 +449,8 @@ class Handler extends Bot {
                 resposta   = await res.json();
             }
 
+            let valorParaTransicao = '*';
+
             if (statusHttp !== 200) {
                 console.error(`[Bot] API Error HTTP ${statusHttp}`, JSON.stringify(resposta));
                 await this.enviarResposta(message, config.mensagemErro ?? '❌ Erro ao processar a solicitação.');
@@ -479,6 +481,10 @@ class Handler extends Bot {
 
                 } else {
                     // ── Resposta única (objeto ou valor primitivo) ──
+                    if (typeof valorExtraido !== 'object') {
+                        valorParaTransicao = String(valorExtraido);
+                    }
+
                     let variaveis = { resposta: valorExtraido, valor: corpo, ...dadosMemoria };
 
                     if (typeof valorExtraido === 'object' && valorExtraido !== null) {
@@ -513,7 +519,20 @@ class Handler extends Bot {
         }
 
         if (config.transicaoAutomatica || config.transicao_automatica) {
-            await engine.transitarPorEntrada(chatId, estadoAtual, '*', message, true);
+            let proximo = await estadoRepository.buscarProximoEstado(estadoAtual, valorParaTransicao);
+            
+            // Fallback para '*' caso não exista transição específica com o valor retornado
+            if (!proximo && valorParaTransicao !== '*') {
+                proximo = await estadoRepository.buscarProximoEstado(estadoAtual, '*');
+            }
+
+            if (proximo) {
+                await engine.avancarEstado(chatId, proximo, corpo);
+                const configProximo = await estadoRepository.obterConfigEstado(proximo);
+                if (configProximo && typeof this[configProximo.handler] === 'function') {
+                    await this[configProximo.handler](message, chatId, '', engine);
+                }
+            }
         }
     }
 }

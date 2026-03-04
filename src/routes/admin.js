@@ -55,7 +55,7 @@ router.delete('/estados/:estado', async (req, res) => {
 // ── Teste de Requisição (Mock) ───────────────────────────────────────────────
 
 router.post('/testar-req', async (req, res) => {
-    const { config, valor } = req.body;
+    const { config, valor, variaveis } = req.body;
     if (!config || !config.url) return res.status(400).json({ erro: 'URL não fornecida.' });
 
     const interpolar = (texto, varData) => 
@@ -63,7 +63,7 @@ router.post('/testar-req', async (req, res) => {
 
     try {
         const metodo = (config.metodo || 'GET').toUpperCase();
-        const tudo = { valor: valor || '' };
+        const tudo = { valor: valor || '', ...(variaveis || {}) };
         const urlBase = interpolar(config.url, tudo);
         const headers = { 'Content-Type': 'application/json', ...(config.headers || {}) };
 
@@ -81,9 +81,9 @@ router.post('/testar-req', async (req, res) => {
             };
             bodyObj = interpolarDeep(config.body);
         } else if (config.campoEnviar && typeof config.campoEnviar === 'string') {
-            bodyObj = { [config.campoEnviar]: valor };
+            bodyObj = { [config.campoEnviar]: valor || (variaveis && variaveis.valor) || '' };
         } else {
-            bodyObj = { valor: valor };
+            bodyObj = { ...tudo };
         }
 
         let rsStr;

@@ -82,7 +82,12 @@ CREATE INDEX idx_historico_criado  ON bot_estado_historico (criado_em DESC);
 -- ── 1. ESTADOS (bot_estado_config) ──────────────────────────────────────────
 
 INSERT INTO bot_estado_config (estado, handler, descricao, config) VALUES
-('NOVO', '_handlerMensagem', 'Primeiro contato — boas-vindas + aviso LGPD', '{
+('NOVO', '_handlerMensagem', 'Ponto de entrada do bot — redireciona para verificação de status', '{
+    "mensagens": [],
+    "transicaoAutomatica": true
+}'),
+
+('SAUDACAO', '_handlerMensagem', 'Boas-vindas iniciais após criar conversa', '{
     "mensagens": ["Olá! Obrigado por entrar em contato com a *Telecontrol*. 😊"],
     "transicaoAutomatica": true
 }'),
@@ -209,7 +214,7 @@ INSERT INTO bot_estado_config (estado, handler, descricao, config) VALUES
 }'),
 
 ('INSERE_FILA_CHAT', '_handlerRequisicao', 'Coloca o usuário na fila de atendimento humano', '{
-    "url": "https://backend2-00174.telecontrol.com.br/api-chatboot-proxy-telezap/chatboot/insereFilaChat",
+    "url": "https://backend2-00174.telecontrol.com.br/homologation-api-chatboot-proxy/chatboot/insereFilaChat",
     "metodo": "POST",
     "headers": {
         "Access-Env": "HOMOLOGATION",
@@ -225,24 +230,27 @@ INSERT INTO bot_estado_config (estado, handler, descricao, config) VALUES
       "hd_chamado": "{id_ultimo_chamado}",
       "id_fabrica": "{id_fabrica}"
     },
+    "transicaoAutomatica": true,
     "mensagemSucesso": "✅ Você foi inserido na fila de atendimento humano. Aguarde um instante!",
     "mensagemErro": "❌ Ocorreu um erro ao te colocar na fila de atendimento. Tente novamente mais tarde."
 }'),
 
 ('CONSULTA_STATUS_CHAT', '_handlerRequisicao', 'Consulta status do chat atual (Proxy POST p/ GET)', '{
-    "url": "https://backend2-00174.telecontrol.com.br/api-chatboot-proxy-telezap/chatboot/consultaStatusChat?fone={visitor_cel}",
+    "url": "https://backend2-00174.telecontrol.com.br/homologation-api-chatboot-proxy/chatboot/consultaStatusChat?fone={visitor_cel}",
     "metodo": "GET",
     "headers": {
         "Access-Env": "HOMOLOGATION",
         "Content-Type": "application/json",
         "Access-Application-Key": "64b37f479af4007c883406f0b535c432e22c888e"
     },
+    "campoResposta": "status",
+    "transicaoAutomatica": true,
     "mensagemSucesso": "Status consultado com sucesso.",
     "mensagemErro": "❌ Não foi possível consultar o status da fila."
 }'),
 
 ('CRIA_CONVERSA', '_handlerRequisicao', 'Recebe os dados integrados e gera o ticket base a partir do front.', '{
-    "url": "https://backend2-00174.telecontrol.com.br/api-chatboot-proxy-telezap/chatboot/recebe",
+    "url": "https://backend2-00174.telecontrol.com.br/homologation-api-chatboot-proxy/chatboot/recebe",
     "metodo": "POST",
     "headers": {
         "Access-Env": "HOMOLOGATION",
@@ -266,6 +274,7 @@ INSERT INTO bot_estado_config (estado, handler, descricao, config) VALUES
         "session": "{session}"
       }
     },
+    "transicaoAutomatica": true,
     "mensagemSucesso": "Conversa criada e chamada inicializada no sistema."
 }');
 
@@ -273,21 +282,25 @@ INSERT INTO bot_estado_config (estado, handler, descricao, config) VALUES
 -- ── 2. TRANSIÇÕES (bot_estado_transicao) ──────────────────────────────────
 
 INSERT INTO bot_estado_transicao (estado_origem, entrada, estado_destino) VALUES
--- Boas vindas
-('NOVO',         '*',      'AGUARDA_LGPD'),
+-- Verificação de Status Inicial
+('NOVO',         '*',          'CONSULTA_STATUS_CHAT'),
+('CONSULTA_STATUS_CHAT', 'in_progress', 'ENCERRADO'),
+('CONSULTA_STATUS_CHAT', 'not_found',   'CRIA_CONVERSA'),
+('CRIA_CONVERSA',       '*',          'SAUDACAO'),
+('SAUDACAO',            '*',          'AGUARDA_LGPD'),
 
 -- LGPD
 ('AGUARDA_LGPD', 'sim',    'MENU'),
 ('AGUARDA_LGPD', 'nao',    'ENCERRADO'),
 ('AGUARDA_LGPD', 'não',    'ENCERRADO'),
 
--- Opções do Menu (agora aponta para os estados AGUARDA_*)
+-- Opções do Menu
 ('MENU',         '1',      'AGUARDA_PROTOCOLO'),
 ('MENU',         '2',      'AGUARDA_POSTO_PROXIMO'),
 ('MENU',         '3',      'AGUARDA_OS'),
 ('MENU',         '4',      'CAPTURA_DADOS_PROTOCOLO'),
-('MENU',         '5',      'INSERE_FILA_CHAT'),
-('MENU',         '6',      'ENCERRADO'),
+('MENU',         '5',      'ENCERRADO'),
+('MENU',         '6',      'INSERE_FILA_CHAT'),
 
 -- Estados transitórios: exibem mensagem e avançam automaticamente para consulta
 ('AGUARDA_PROTOCOLO',    '*',    'CONSULTA_PROTOCOLO'),
@@ -314,8 +327,8 @@ INSERT INTO bot_estado_transicao (estado_origem, entrada, estado_destino) VALUES
 ('CAPTURA_DADOS_PROTOCOLO', 'sair', 'MENU'),
 ('CRIAR_PROTOCOLO',         'sair', 'MENU'),
 
--- Continuidade na fila de espera
-('INSERE_FILA_CHAT',        '*',    'CONSULTA_STATUS_CHAT'),
+-- Fluxo de Fila
+('INSERE_FILA_CHAT',        '*',    'ENCERRADO'),
 
 -- Estado Final
 ('ENCERRADO',               '*',    'NOVO');

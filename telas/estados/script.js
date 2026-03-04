@@ -112,10 +112,10 @@ function renderConfigBuilder(configAtual) {
   const defaults = HANDLER_DEFAULTS[handler] || [];
   const container = document.getElementById('config-fields');
   container.innerHTML = '';
-  
+
   const btnTest = document.getElementById('btn-testar-req');
   if (btnTest) {
-      btnTest.style.display = handler === '_handlerRequisicao' ? 'inline-block' : 'none';
+    btnTest.style.display = handler === '_handlerRequisicao' ? 'inline-block' : 'none';
   }
 
   for (const [key, type, def] of defaults) {
@@ -142,7 +142,7 @@ function adicionarCampoConfig(chave = '', tipo = 'string', valor = '') {
   const div = document.createElement('div');
   div.className = 'config-field';
   const showBtn = (tipo === 'json' || tipo === 'array') ? 'block' : 'none';
-  
+
   let valEscape = String(valor);
   if (tipo === 'string') valEscape = valEscape.replace(/\n/g, '\\n');
   valEscape = escapeHtml(valEscape);
@@ -224,27 +224,27 @@ function abrirModalJson(btn) {
   const row = btn.closest('.config-field');
   const keyEl = row.querySelector('.key');
   const valEl = row.querySelector('.val-input');
-  
+
   currentJsonInput = valEl;
   let val = valEl.value.trim();
   document.getElementById('json-form-fields').innerHTML = ''; // Limpa campos antigos
-  
+
   let obj = {};
   if (val) {
-      try { obj = JSON.parse(val); } catch(e) {}
+    try { obj = JSON.parse(val); } catch (e) { }
   }
 
   // Preenche os campos existentes do JSON ou cria um em branco se estiver vazio
   const chaves = Object.keys(obj);
   if (chaves.length > 0) {
-      for (const [k, v] of Object.entries(obj)) {
-          let strVal = typeof v === 'object' ? JSON.stringify(v) : String(v);
-          adicionarCampoJson(k, strVal);
-      }
+    for (const [k, v] of Object.entries(obj)) {
+      let strVal = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      adicionarCampoJson(k, strVal);
+    }
   } else {
-      adicionarCampoJson(); // Inicia com um vazio
+    adicionarCampoJson(); // Inicia com um vazio
   }
-  
+
   document.getElementById('modal-json-titulo').textContent = `Editar Payload: ${keyEl.value || 'Novo'}`;
   document.getElementById('modal-json').classList.add('open');
 }
@@ -257,25 +257,25 @@ function fecharModalJson() {
 function salvarModalJson() {
   if (!currentJsonInput) return;
   const obj = {};
-  
+
   document.querySelectorAll('#json-form-fields .json-attr-row').forEach(row => {
-      let k = row.querySelector('.j-key').value.trim();
-      let v = row.querySelector('.j-val').value.trim();
-      if (!k) return;
-      
-      try {
-          // Tenta reconstruir arrays, booleanos e objs inferidos
-          if (v === 'true') obj[k] = true;
-          else if (v === 'false') obj[k] = false;
-          else if (!isNaN(v) && v !== '') obj[k] = Number(v);
-          else if ((v.startsWith('[') && v.endsWith(']')) || (v.startsWith('{') && v.endsWith('}'))) {
-              obj[k] = JSON.parse(v);
-          } else {
-              obj[k] = v;
-          }
-      } catch (e) {
-          obj[k] = v; // fallback a string literal
+    let k = row.querySelector('.j-key').value.trim();
+    let v = row.querySelector('.j-val').value.trim();
+    if (!k) return;
+
+    try {
+      // Tenta reconstruir arrays, booleanos e objs inferidos
+      if (v === 'true') obj[k] = true;
+      else if (v === 'false') obj[k] = false;
+      else if (!isNaN(v) && v !== '') obj[k] = Number(v);
+      else if ((v.startsWith('[') && v.endsWith(']')) || (v.startsWith('{') && v.endsWith('}'))) {
+        obj[k] = JSON.parse(v);
+      } else {
+        obj[k] = v;
       }
+    } catch (e) {
+      obj[k] = v; // fallback a string literal
+    }
   });
 
   currentJsonInput.value = Object.keys(obj).length ? JSON.stringify(obj) : '';
@@ -291,8 +291,21 @@ async function testarRequisicao() {
   const config = coletarConfig();
   if (!config.url) return toast('A configuração precisa de uma URL para testar.', true);
 
-  const valor = prompt('Forneça um dado provisório de simulação caso sua URL/Body precise da variável {valor} (ex: um CPF, Número de Protocolo ou OS real para verificar):', '');
-  if (valor === null) return;
+  const strConfig = JSON.stringify(config);
+  const regex = /\{(\w+)\}/g;
+  let match;
+  const variaveisEncontradas = new Set();
+  
+  while ((match = regex.exec(strConfig)) !== null) {
+    variaveisEncontradas.add(match[1]);
+  }
+
+  const variaveis = {};
+  for (const v of variaveisEncontradas) {
+    const resp = prompt(`A variável {${v}} foi encontrada na configuração.\nForneça um valor de simulação para testar a requisição:`, '');
+    if (resp === null) return;
+    variaveis[v] = resp;
+  }
 
   const btn = document.getElementById('btn-testar-req');
   const txtOriginal = btn.innerHTML;
@@ -300,28 +313,28 @@ async function testarRequisicao() {
   btn.disabled = true;
 
   try {
-     const res = await fetch(API + '/testar-req', {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ config, valor })
-     });
-     const r = await res.json();
-     
-     const elStatus = document.getElementById('test-req-status');
-     const code = r.status || 'Erro do Servidor';
-     elStatus.textContent = code;
-     
-     if (code === 200) elStatus.className = 'badge badge-green';
-     else elStatus.className = 'badge', elStatus.style.background = 'var(--danger)'; // simplificado
-     
-     let parsed = r.data;
-     try { if (typeof parsed === 'string') parsed = JSON.parse(parsed); } catch(e){}
-     
-     document.getElementById('test-req-json').value = typeof parsed === 'object' ? JSON.stringify(parsed, null, 4) : String(parsed || r.erro || 'Sem resposta');
-     document.getElementById('modal-test-req').classList.add('open');
-     
-  } catch(e) {
-     toast('Erro ao chamar o simulador de requisições no backend.', true);
+    const res = await fetch(API + '/testar-req', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config, variaveis })
+    });
+    const r = await res.json();
+
+    const elStatus = document.getElementById('test-req-status');
+    const code = r.status || 'Erro do Servidor';
+    elStatus.textContent = code;
+
+    if (code === 200) elStatus.className = 'badge badge-green';
+    else elStatus.className = 'badge', elStatus.style.background = 'var(--danger)'; // simplificado
+
+    let parsed = r.data;
+    try { if (typeof parsed === 'string') parsed = JSON.parse(parsed); } catch (e) { }
+
+    document.getElementById('test-req-json').value = typeof parsed === 'object' ? JSON.stringify(parsed, null, 4) : String(parsed || r.erro || 'Sem resposta');
+    document.getElementById('modal-test-req').classList.add('open');
+
+  } catch (e) {
+    toast('Erro ao chamar o simulador de requisições no backend.', true);
   }
 
   btn.innerHTML = txtOriginal;
