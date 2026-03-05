@@ -97,11 +97,26 @@
     <div class="modal" style="width: 600px;">
       <div class="modal-header">
         <h3 id="modal-json-titulo">Editor Completo JSON</h3>
-        <button class="btn btn-ghost" onclick="fecharModalJson()" style="padding:4px">✕</button>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <div id="json-mode-toggle" style="display:flex; background:var(--surface2); border:1px solid var(--border); border-radius:6px; overflow:hidden;">
+            <button id="btn-modo-form" onclick="alternarModoJson('form')" style="padding:4px 10px; font-size:12px; font-weight:600; background:#388bfd; color:#fff; border:none; cursor:pointer; transition:background .2s;">📋 Formulário</button>
+            <button id="btn-modo-json" onclick="alternarModoJson('json')" style="padding:4px 10px; font-size:12px; font-weight:600; background:transparent; color:var(--muted); border:none; cursor:pointer; transition:background .2s;">{ } JSON</button>
+          </div>
+          <button class="btn btn-ghost" onclick="fecharModalJson()" style="padding:4px">✕</button>
+        </div>
       </div>
       <div class="modal-body">
-        <div id="json-form-fields" style="display:flex; flex-direction:column; gap:10px;"></div>
-        <button class="btn add-field-btn" onclick="adicionarCampoJson()" style="margin-top:16px">+ Adicionar Atributo</button>
+        <!-- Modo Formulário -->
+        <div id="json-modo-form">
+          <div id="json-form-fields" style="display:flex; flex-direction:column; gap:10px;"></div>
+          <button class="btn add-field-btn" onclick="adicionarCampoJson()" style="margin-top:16px">+ Adicionar Atributo</button>
+        </div>
+        <!-- Modo JSON Bruto -->
+        <div id="json-modo-raw" style="display:none;">
+          <label style="font-size:12px; color:var(--muted); margin-bottom:6px; display:block;">Cole o JSON abaixo — os campos serão reconhecidos automaticamente:</label>
+          <textarea id="json-raw-input" placeholder='{ "chave": "valor", "numero": 123 }' style="width:100%; min-height:220px; font-family:'JetBrains Mono',monospace; font-size:13px; background:var(--surface2); border:1px solid var(--border); color:#e6edf3; padding:12px; border-radius:6px; resize:vertical; box-sizing:border-box;"></textarea>
+          <div id="json-raw-erro" style="color:#f85149; font-size:12px; margin-top:6px; display:none;">⚠ JSON inválido</div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="fecharModalJson()">Cancelar</button>

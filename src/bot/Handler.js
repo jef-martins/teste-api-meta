@@ -359,6 +359,9 @@ class Handler extends Bot {
         const usandoBodyFixo = config.body && typeof config.body === 'object' && !Array.isArray(config.body);
         const usandoMulti    = Array.isArray(config.camposEnviar) && config.camposEnviar.length > 0;
 
+        // ── Gera um UUID v4 fresco para substituir {id} em qualquer parte da requisição ──
+        const gerarUUID = () => require('crypto').randomUUID();
+
         // ── Intercepta a palavra de saída ANTES de fazer a requisição ──
         // Se o usuário digitou "sair" (ou a palavra configurada), busca a transição diretamente
         // e NÃO envia nada para a API externa.
@@ -376,17 +379,27 @@ class Handler extends Bot {
             }
         }
 
-        // ── Sem valor, sem body fixo e sem dados na memória: pede a informação primeiro ──
+        // ── Sem valor, sem body fixo e sem dados na memória ────────────────────────
+        // Só volta atrás (pede info ao usuário) se o estado tiver "mensagemPedir".
+        // Sem mensagemPedir = o estado é auto-executável (transitou automaticamente).
         if (!corpo && !usandoBodyFixo && !usandoMulti && Object.keys(dadosMemoria).length === 0) {
             if (config.mensagemPedir) {
                 await this.enviarResposta(message, config.mensagemPedir);
+                return; // ← aguarda o usuário enviar o valor
             }
-            return;
+            // Sem mensagemPedir: continua e executa a requisição com corpo vazio.
         }
 
+        let valorParaTransicao = '*';
+
         try {
-            const metodo  = (config.metodo ?? 'GET').toUpperCase();
-            const tudo    = { valor: corpo, ...dadosMemoria };
+            const metodo = (config.metodo ?? 'GET').toUpperCase();
+
+            // chatId e from ficam disponíveis para interpolação na URL/body
+            // Ex: "url": "https://api.exemplo.com/status/{chatId}"
+            const from   = message.from ?? chatId;
+            const numero = from.split('@')[0];
+            const tudo   = { id: gerarUUID(), valor: corpo, chatId, from, numero, ...dadosMemoria };
             const urlBase = engine.interpolar(config.url ?? '', tudo);
             const headers = { 'Content-Type': 'application/json', ...(config.headers ?? {}) };
 
@@ -449,8 +462,6 @@ class Handler extends Bot {
                 resposta   = await res.json();
             }
 
-            let valorParaTransicao = '*';
-
             if (statusHttp !== 200) {
                 console.error(`[Bot] API Error HTTP ${statusHttp}`, JSON.stringify(resposta));
                 await this.enviarResposta(message, config.mensagemErro ?? '❌ Erro ao processar a solicitação.');
@@ -482,7 +493,7 @@ class Handler extends Bot {
                 } else {
                     // ── Resposta única (objeto ou valor primitivo) ──
                     if (typeof valorExtraido !== 'object') {
-                        valorParaTransicao = String(valorExtraido);
+                        valorParaTransicao = String(valorExtraido).toLowerCase();
                     }
 
                     let variaveis = { resposta: valorExtraido, valor: corpo, ...dadosMemoria };

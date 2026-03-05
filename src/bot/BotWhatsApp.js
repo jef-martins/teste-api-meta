@@ -78,9 +78,25 @@ class BotWhatsApp {
             // Ignora mensagens antigas (anteriores ao momento de inicialização do bot)
             const timestampMsg = message.timestamp ?? message.t ?? 0;
             if (timestampMsg > 0 && timestampMsg < this._iniciadoEm) {
-                console.log(`[Bot] ⏩ Mensagem antiga ignorada de ${message.from} (ts=${timestampMsg} < inicio=${this._iniciadoEm})`);
+                //console.log(`[Bot] ⏩ Mensagem antiga ignorada de ${message.from} (ts=${timestampMsg} < inicio=${this._iniciadoEm})`);
                 return;
             }
+
+            // ─── Modo de Teste: responde apenas ao número do admin ───────────────
+            if (process.env.BOT_MODO_TESTE === 'true') {
+                const numeroAdmin    = (process.env.BOT_NUMERO_ADMIN || '').replace(/\D/g, '');
+                const lidAdmin       = (process.env.BOT_LID_ADMIN    || '').replace(/\D/g, '');
+                const numeroRemetente = (message.from || '').split('@')[0].replace(/\D/g, '');
+
+                const isAdmin = numeroRemetente === numeroAdmin ||
+                                (lidAdmin && numeroRemetente === lidAdmin);
+
+                if (!isAdmin) {
+                    //console.log(`[Bot] 🔒 Modo teste ativo — mensagem de ${message.from} ignorada.`);
+                    return;
+                }
+            }
+            // ─────────────────────────────────────────────────────────────────────
 
             console.log(`[Bot] Mensagem recebida de ${message.from} [${message.type}]: ${message.body ?? ''}`);
 

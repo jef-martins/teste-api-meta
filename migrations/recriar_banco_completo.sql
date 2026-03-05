@@ -284,8 +284,9 @@ INSERT INTO bot_estado_config (estado, handler, descricao, config) VALUES
 INSERT INTO bot_estado_transicao (estado_origem, entrada, estado_destino) VALUES
 -- Verificação de Status Inicial
 ('NOVO',         '*',          'CONSULTA_STATUS_CHAT'),
-('CONSULTA_STATUS_CHAT', 'in_progress', 'ENCERRADO'),
-('CONSULTA_STATUS_CHAT', 'not_found',   'CRIA_CONVERSA'),
+('CONSULTA_STATUS_CHAT', 'IN_PROGRESS', 'ENCERRADO'),
+('CONSULTA_STATUS_CHAT', 'CLOSED',      'ENCERRADO'),
+('CONSULTA_STATUS_CHAT', 'NOT_FOUND',   'CRIA_CONVERSA'),
 ('CRIA_CONVERSA',       '*',          'SAUDACAO'),
 ('SAUDACAO',            '*',          'AGUARDA_LGPD'),
 

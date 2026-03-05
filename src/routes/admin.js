@@ -63,7 +63,7 @@ router.post('/testar-req', async (req, res) => {
 
     try {
         const metodo = (config.metodo || 'GET').toUpperCase();
-        const tudo = { valor: valor || '', ...(variaveis || {}) };
+        const tudo = { id: require('crypto').randomUUID(), valor: valor || '', ...(variaveis || {}) };
         const urlBase = interpolar(config.url, tudo);
         const headers = { 'Content-Type': 'application/json', ...(config.headers || {}) };
 

@@ -195,6 +195,7 @@ document.getElementById('modal-estado').addEventListener('click', e => {
 });
 
 let currentJsonInput = null;
+let currentJsonMode = 'form'; // 'form' | 'json'
 
 function toggleJsonBtn(sel) {
   const row = sel.closest('.config-field');
@@ -252,10 +253,98 @@ function abrirModalJson(btn) {
 function fecharModalJson() {
   document.getElementById('modal-json').classList.remove('open');
   currentJsonInput = null;
+  // Volta sempre para modo formulário ao fechar
+  alternarModoJson('form', true);
+}
+
+function alternarModoJson(modo, silencioso = false) {
+  currentJsonMode = modo;
+  const formDiv = document.getElementById('json-modo-form');
+  const rawDiv  = document.getElementById('json-modo-raw');
+  const btnForm = document.getElementById('btn-modo-form');
+  const btnJson = document.getElementById('btn-modo-json');
+
+  if (modo === 'json') {
+    // Ao ir para JSON, serializa os campos do formulário no textarea
+    if (!silencioso) {
+      const obj = {};
+      document.querySelectorAll('#json-form-fields .json-attr-row').forEach(row => {
+        const k = row.querySelector('.j-key').value.trim();
+        const v = row.querySelector('.j-val').value.trim();
+        if (!k) return;
+        try {
+          if (v === 'true') obj[k] = true;
+          else if (v === 'false') obj[k] = false;
+          else if (!isNaN(v) && v !== '') obj[k] = Number(v);
+          else if ((v.startsWith('[') && v.endsWith(']')) || (v.startsWith('{') && v.endsWith('}'))) obj[k] = JSON.parse(v);
+          else obj[k] = v;
+        } catch { obj[k] = v; }
+      });
+      document.getElementById('json-raw-input').value = Object.keys(obj).length
+        ? JSON.stringify(obj, null, 2) : '';
+    }
+    document.getElementById('json-raw-erro').style.display = 'none';
+    formDiv.style.display = 'none';
+    rawDiv.style.display  = 'block';
+    btnForm.style.background = 'transparent';
+    btnForm.style.color      = 'var(--muted)';
+    btnJson.style.background = '#388bfd';
+    btnJson.style.color      = '#fff';
+    setTimeout(() => document.getElementById('json-raw-input').focus(), 50);
+  } else {
+    // Ao voltar para formulário, tenta parsear o JSON bruto e popular os campos
+    if (!silencioso) {
+      const raw = document.getElementById('json-raw-input').value.trim();
+      if (raw) {
+        try {
+          const obj = JSON.parse(raw);
+          document.getElementById('json-form-fields').innerHTML = '';
+          for (const [k, v] of Object.entries(obj)) {
+            adicionarCampoJson(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
+          }
+        } catch {
+          document.getElementById('json-raw-erro').style.display = 'block';
+          return; // Mantém no modo JSON para o user corrigir
+        }
+      }
+    }
+    formDiv.style.display = 'block';
+    rawDiv.style.display  = 'none';
+    btnForm.style.background = '#388bfd';
+    btnForm.style.color      = '#fff';
+    btnJson.style.background = 'transparent';
+    btnJson.style.color      = 'var(--muted)';
+  }
 }
 
 function salvarModalJson() {
   if (!currentJsonInput) return;
+
+  // Se estiver no modo JSON bruto, tenta parsear primeiro
+  if (currentJsonMode === 'json') {
+    const raw = document.getElementById('json-raw-input').value.trim();
+    const erroEl = document.getElementById('json-raw-erro');
+    if (raw) {
+      try {
+        const obj = JSON.parse(raw);
+        currentJsonInput.value = JSON.stringify(obj);
+        atualizarPreview();
+        fecharModalJson();
+        return;
+      } catch {
+        erroEl.style.display = 'block';
+        document.getElementById('json-raw-input').focus();
+        return;
+      }
+    } else {
+      currentJsonInput.value = '';
+      atualizarPreview();
+      fecharModalJson();
+      return;
+    }
+  }
+
+  // Modo formulário (comportamento original)
   const obj = {};
 
   document.querySelectorAll('#json-form-fields .json-attr-row').forEach(row => {
