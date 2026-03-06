@@ -168,15 +168,18 @@ function nodeToHandlerConfig(node) {
             };
         }
 
-        case 'end':
+        case 'end': {
+            // mensagemFim: campo dedicado no frontend. Vazio = não envia nada.
+            const msgFim = props.mensagemFim && props.mensagemFim.trim();
             return {
                 handler: '_handlerMensagem',
                 config: {
-                    mensagens: [props.label || 'Conversa encerrada.'],
+                    mensagens: msgFim ? [msgFim] : [],
                     aguardarEntrada: true,
                     transicaoAutomatica: false
                 }
             };
+        }
 
         default:
             return {
@@ -444,7 +447,10 @@ function handlerConfigToProperties(nodeType, handler, config, estadoName) {
             return { label: estadoName || 'Start' };
 
         case 'end':
-            return { label: estadoName || 'End' };
+            return {
+                label: estadoName || 'End',
+                mensagemFim: config.mensagens?.[0] || ''
+            };
 
         case 'message': {
             if (handler === '_handlerCapturar') {
