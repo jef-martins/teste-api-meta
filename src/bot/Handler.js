@@ -546,6 +546,48 @@ class Handler extends Bot {
             }
         }
     }
+    // ─────────────────────────────────────────────────────────────────────────
+    // STEP: _handlerDelay
+    //
+    // Aguarda um tempo configurado antes de avançar automaticamente.
+    // Usado para pausas no fluxo de conversação.
+    //
+    // config esperado:
+    // {
+    //   "duracao": 5,                    ← tempo em segundos (padrão: 1)
+    //   "unidade": "seconds",            ← seconds|minutes (padrão: seconds)
+    //   "mensagem": "Aguarde..."         ← mensagem opcional durante espera
+    // }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    async _handlerDelay(message, chatId, corpo, engine) {
+        const estadoAtual = engine.estadosUsuarios.get(chatId);
+        const config      = (await estadoRepository.obterConfigEstado(estadoAtual))?.config ?? {};
+
+        const duracao = config.duracao || 1;
+        const unidade = config.unidade || 'seconds';
+        const multiplicador = unidade === 'minutes' ? 60000 : 1000;
+        const ms = duracao * multiplicador;
+
+        // Mensagem opcional durante a espera
+        if (config.mensagem) {
+            await this.enviarResposta(message, config.mensagem);
+        }
+
+        // Aguarda o tempo configurado (máximo 5 minutos para segurança)
+        const tempoReal = Math.min(ms, 300000);
+        await new Promise(resolve => setTimeout(resolve, tempoReal));
+
+        // Avança automaticamente via transição '*'
+        const proximo = await estadoRepository.buscarProximoEstado(estadoAtual, '*');
+        if (proximo) {
+            await engine.avancarEstado(chatId, proximo, '[delay]');
+            const configProximo = await estadoRepository.obterConfigEstado(proximo);
+            if (configProximo && typeof this[configProximo.handler] === 'function') {
+                await this[configProximo.handler](message, chatId, '', engine);
+            }
+        }
+    }
 }
 
 module.exports = Handler;

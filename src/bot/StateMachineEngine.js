@@ -1,6 +1,7 @@
 const estadoRepository = require('../database/estadoRepository');
+const pool = require('../database/db');
 
-const ESTADO_PADRAO = 'NOVO';
+const ESTADO_PADRAO_FALLBACK = 'NOVO';
 
 class StateMachineEngine {
     constructor(actionDelegate) {
@@ -44,11 +45,30 @@ class StateMachineEngine {
     // Motor de Execução
     // ─────────────────────────────────────────────────────────────────────────
 
+    /**
+     * Obtém o estado inicial do fluxo ativo (nó do tipo 'start').
+     * Faz fallback para ESTADO_PADRAO_FALLBACK se não encontrar.
+     */
+    async _obterEstadoInicial() {
+        try {
+            const res = await pool.query(
+                `SELECT e.estado FROM bot_estado_config e
+                 INNER JOIN bot_fluxo f ON e.flow_id = f.id
+                 WHERE f.ativo = true AND e.node_type = 'start' AND e.ativo = true
+                 LIMIT 1`
+            );
+            return res.rows[0]?.estado || ESTADO_PADRAO_FALLBACK;
+        } catch {
+            return ESTADO_PADRAO_FALLBACK;
+        }
+    }
+
     async process(message, chatId, entrada, nome) {
         // ── Carrega/Atualiza sempre o estado do banco (permite alteração manual no DB) ──
         const estadoSalvo = await estadoRepository.obterEstadoUsuario(chatId);
-        this.estadosUsuarios.set(chatId, estadoSalvo ?? ESTADO_PADRAO);
-        
+        const estadoPadrao = await this._obterEstadoInicial();
+        this.estadosUsuarios.set(chatId, estadoSalvo ?? estadoPadrao);
+
         if (estadoSalvo && !this._estadosAvisados?.has(chatId)) {
             console.log(`[Engine] [${chatId}] estado restaurado do banco: ${estadoSalvo}`);
             this._estadosAvisados = this._estadosAvisados || new Set();
@@ -61,8 +81,8 @@ class StateMachineEngine {
         const config = await estadoRepository.obterConfigEstado(estadoAtual);
 
         if (!config) {
-            console.warn(`[Engine] Estado "${estadoAtual}" não encontrado no banco. Reiniciando para ${ESTADO_PADRAO}.`);
-            await this.avancarEstado(chatId, ESTADO_PADRAO, entrada, nome);
+            console.warn(`[Engine] Estado "${estadoAtual}" não encontrado/ativo no banco. Reiniciando para ${estadoPadrao}.`);
+            await this.avancarEstado(chatId, estadoPadrao, entrada, nome);
             return;
         }
 
@@ -95,7 +115,7 @@ class StateMachineEngine {
     // ─────────────────────────────────────────────────────────────────────────
 
     async avancarEstado(chatId, proximo, gatilho = null, nome = null) {
-        const anterior = this.estadosUsuarios.get(chatId) ?? ESTADO_PADRAO;
+        const anterior = this.estadosUsuarios.get(chatId) ?? ESTADO_PADRAO_FALLBACK;
 
         // Atualiza memória
         this.estadosUsuarios.set(chatId, proximo);
