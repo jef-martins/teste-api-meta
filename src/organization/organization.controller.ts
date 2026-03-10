@@ -1,5 +1,13 @@
 import {
-  Controller, Get, Post, Put, Delete, Body, Param, Req, UseGuards,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { OrganizationService } from './organization.service';
@@ -60,7 +68,12 @@ export class OrganizationController {
     @Req() req: any,
     @Body() body: { email: string; papel?: string },
   ) {
-    return this.orgService.adicionarMembro(orgId, req.user.id, body.email, body.papel);
+    return this.orgService.adicionarMembro(
+      orgId,
+      req.user.id,
+      body.email,
+      body.papel,
+    );
   }
 
   @Delete('organizacoes/:orgId/membros/:membroId')
@@ -113,7 +126,11 @@ export class OrganizationController {
     @Req() req: any,
     @Body() body: { novaOrgId: string },
   ) {
-    return this.orgService.transferirSubOrg(subOrgId, body.novaOrgId, req.user.id);
+    return this.orgService.transferirSubOrg(
+      subOrgId,
+      body.novaOrgId,
+      req.user.id,
+    );
   }
 
   // ─── Membros da sub-organização ───────────────────────────────────────────
@@ -125,7 +142,13 @@ export class OrganizationController {
     @Req() req: any,
     @Body() body: { email: string; papel?: string },
   ) {
-    return this.orgService.adicionarMembroSubOrg(orgId, subOrgId, req.user.id, body.email, body.papel);
+    return this.orgService.adicionarMembroSubOrg(
+      orgId,
+      subOrgId,
+      req.user.id,
+      body.email,
+      body.papel,
+    );
   }
 
   @Delete('organizacoes/:orgId/sub-orgs/:subOrgId/membros/:membroId')
@@ -135,6 +158,11 @@ export class OrganizationController {
     @Param('membroId') membroId: string,
     @Req() req: any,
   ) {
-    return this.orgService.removerMembroSubOrg(orgId, subOrgId, req.user.id, membroId);
+    return this.orgService.removerMembroSubOrg(
+      orgId,
+      subOrgId,
+      req.user.id,
+      membroId,
+    );
   }
 }

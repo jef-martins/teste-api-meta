@@ -40,11 +40,18 @@ export class FlowController {
   }
 
   @Post()
-  async criar(@Body() body: any, @Headers() headers: Record<string, string>, @Req() req: any) {
+  async criar(
+    @Body() body: any,
+    @Headers() headers: Record<string, string>,
+    @Req() req: any,
+  ) {
     const subOrgId = this.getSubOrgId(headers);
     // Se subOrgId informado, verificar acesso
     if (subOrgId) {
-      const temAcesso = await this.orgService.verificarAcessoSubOrg(req.user.id, subOrgId);
+      const temAcesso = await this.orgService.verificarAcessoSubOrg(
+        req.user.id,
+        subOrgId,
+      );
       if (!temAcesso) {
         throw new ForbiddenException('Sem acesso a esta sub-organização');
       }

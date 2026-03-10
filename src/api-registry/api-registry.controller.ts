@@ -1,5 +1,14 @@
 import {
-  Controller, Get, Post, Put, Delete, Body, Param, Req, UseGuards, Headers,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Req,
+  UseGuards,
+  Headers,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ApiRegistryService } from './api-registry.service';
@@ -34,7 +43,8 @@ export class ApiRegistryController {
     @Body() body: { nome: string; urlBase: string; headers?: object },
   ) {
     const orgId = this.getOrgId(headers);
-    if (!orgId) throw new Error('Header X-Org-Id é obrigatório para criar uma API');
+    if (!orgId)
+      throw new Error('Header X-Org-Id é obrigatório para criar uma API');
     return this.service.criarApi(req.user.id, orgId, body);
   }
 
@@ -88,7 +98,14 @@ export class ApiRegistryController {
   criarRota(
     @Param('apiId') apiId: string,
     @Req() req: any,
-    @Body() body: { path: string; metodo?: string; descricao?: string; parametros?: object[]; bodyTemplate?: object },
+    @Body()
+    body: {
+      path: string;
+      metodo?: string;
+      descricao?: string;
+      parametros?: object[];
+      bodyTemplate?: object;
+    },
   ) {
     return this.service.criarRota(apiId, req.user.id, body);
   }
@@ -98,7 +115,14 @@ export class ApiRegistryController {
     @Param('apiId') apiId: string,
     @Param('rotaId') rotaId: string,
     @Req() req: any,
-    @Body() body: { path?: string; metodo?: string; descricao?: string; parametros?: object[]; bodyTemplate?: object },
+    @Body()
+    body: {
+      path?: string;
+      metodo?: string;
+      descricao?: string;
+      parametros?: object[];
+      bodyTemplate?: object;
+    },
   ) {
     return this.service.atualizarRota(rotaId, apiId, req.user.id, body);
   }
