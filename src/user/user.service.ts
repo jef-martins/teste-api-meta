@@ -48,7 +48,6 @@ export class UserService {
   }
 
   async atualizar(id: string, data: UpdateUserData) {
-
     const updateData: UpdateUserData = {
       nome: data.nome,
       email: data.email,
