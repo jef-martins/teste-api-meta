@@ -1,7 +1,9 @@
-const express = require('express');
-const conversaController = require('../controllers/conversaController');
+import express from 'express';
+import conversaController from '../controllers/conversaController';
 
 class ConversaRoutes {
+    public router: express.Router;
+
     constructor() {
         this.router = express.Router();
         this._inicializarRotas();
@@ -17,4 +19,4 @@ class ConversaRoutes {
     }
 }
 
-module.exports = new ConversaRoutes().getRouter();
+export default new ConversaRoutes().getRouter();

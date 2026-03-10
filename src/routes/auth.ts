@@ -1,7 +1,7 @@
-const express = require('express');
-const bcrypt = require('bcrypt');
-const pool = require('../database/db');
-const { autenticar, apenasAdmin, gerarToken } = require('../middleware/auth');
+import express from 'express';
+import bcrypt from 'bcrypt';
+import pool from '../database/db';
+import { autenticar, apenasAdmin, gerarToken } from '../middleware/auth';
 
 const router = express.Router();
 
@@ -198,4 +198,4 @@ router.delete('/usuarios/:id', autenticar, apenasAdmin, async (req, res) => {
     }
 });
 
-module.exports = router;
+export default router;

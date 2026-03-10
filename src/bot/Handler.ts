@@ -1,5 +1,5 @@
-const Bot        = require('./Bot');
-const estadoRepository = require('../database/estadoRepository');
+import Bot from './Bot';
+import estadoRepository from '../database/estadoRepository';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //
@@ -244,7 +244,7 @@ class Handler extends Bot {
 
         try {
             await Promise.race([
-                this.client.sendListMessage(destino, {
+                (this as any).client.sendListMessage(destino, {
                     buttonText:  config.botaoTexto  || 'Selecione:',
                     description: titulo,
                     sections: [{
@@ -306,7 +306,7 @@ class Handler extends Bot {
 
         // ── Envia botões interativos ──
         try {
-            await this.client.sendText(message.from, config.titulo ?? 'Escolha uma opção:', {
+            await (this as any).client.sendText(message.from, config.titulo ?? 'Escolha uma opção:', {
                 useTemplateButtons: true,
                 title:   config.cabecalho ?? undefined,
                 footer:  config.rodape    ?? undefined,
@@ -590,4 +590,4 @@ class Handler extends Bot {
     }
 }
 
-module.exports = Handler;
+export default Handler;

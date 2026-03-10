@@ -13,7 +13,7 @@
  * Converte texto para UPPER_SNAKE_CASE sem acentos.
  * Ex: "Menu Principal" → "MENU_PRINCIPAL"
  */
-function toEstadoName(label) {
+function toEstadoNameOg(label) {
     return label
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
         .replace(/[^a-zA-Z0-9\s_]/g, '')                  // remove caracteres especiais
@@ -40,7 +40,7 @@ function uniqueName(baseName, existingNames) {
 /**
  * Converte variáveis do formato frontend {{var}} para backend {var}.
  */
-function convertVariablesFtoB(text) {
+function convertVariablesFtoBOg(text) {
     if (typeof text !== 'string') return text;
     return text.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, '{$1}');
 }
@@ -48,7 +48,7 @@ function convertVariablesFtoB(text) {
 /**
  * Converte variáveis do formato backend {var} para frontend {{var}}.
  */
-function convertVariablesBtoF(text) {
+function convertVariablesBtoFOg(text) {
     if (typeof text !== 'string') return text;
     return text.replace(/\{(\w+(?:\.\w+)*)\}/g, '{{$1}}');
 }
@@ -77,7 +77,7 @@ function convertVariablesDeep(obj, converter) {
  * @param {object} flowJson - JSON exportado pelo frontend (nodes, connections, variables)
  * @returns {{ estados: Array, transicoes: Array, variaveis: Array }}
  */
-function flowToStateMachine(flowJson) {
+function flowToStateMachineOg(flowJson) {
     const { nodes = [], connections = [], variables = [] } = flowJson;
 
     const existingNames = new Set();
@@ -86,7 +86,7 @@ function flowToStateMachine(flowJson) {
     // ── Passo 1: Converter nodes → estados ──
     const estados = nodes.map(node => {
         const label = node.properties?.label || node.type;
-        const baseName = toEstadoName(label);
+        const baseName = toEstadoNameOg(label);
         const estadoName = uniqueName(baseName, existingNames);
 
         nodeIdToEstado.set(node.id, estadoName);
@@ -98,7 +98,7 @@ function flowToStateMachine(flowJson) {
             handler,
             descricao: label,
             ativo:     true,
-            config:    convertVariablesDeep(config, convertVariablesFtoB),
+            config:    convertVariablesDeep(config, convertVariablesFtoBOg),
             node_id:   node.id,
             node_type: node.type,
             position:  node.position || { x: 0, y: 0 }
@@ -354,7 +354,7 @@ function connectionToEntrada(conn, nodes) {
  * @param {Array} variaveis  - Registros de bot_fluxo_variaveis
  * @returns {{ nodes: Array, connections: Array, variables: Array }}
  */
-function stateMachineToFlow(estados, transicoes, variaveis = []) {
+function stateMachineToFlowOg(estados: any[], transicoes: any[], variaveis: any[] = []) {
     const estadoToNodeId = new Map();
 
     // ── Passo 1: Converter estados → nodes ──
@@ -370,7 +370,7 @@ function stateMachineToFlow(estados, transicoes, variaveis = []) {
             id: nodeId,
             type: nodeType,
             position,
-            properties: convertVariablesDeep(properties, convertVariablesBtoF)
+            properties: convertVariablesDeep(properties, convertVariablesBtoFOg)
         };
     });
 
@@ -455,7 +455,7 @@ function handlerConfigToProperties(nodeType, handler, config, estadoName) {
         case 'message': {
             if (handler === '_handlerCapturar') {
                 // Message com waitForResponse
-                const subComponents = [];
+                const subComponents: any[] = [];
                 if (config.mensagemPedir) {
                     subComponents.push({
                         id: `sub-${Date.now()}-sm`,
@@ -575,10 +575,8 @@ function transicaoToSourcePort(transicao, sourceNode, todasTransicoes) {
 }
 
 
-module.exports = {
-    flowToStateMachine,
-    stateMachineToFlow,
-    toEstadoName,
-    convertVariablesFtoB,
-    convertVariablesBtoF
-};
+export const flowToStateMachine = flowToStateMachineOg;
+export const stateMachineToFlow = stateMachineToFlowOg;
+export const toEstadoName = toEstadoNameOg;
+export const convertVariablesFtoB = convertVariablesFtoBOg;
+export const convertVariablesBtoF = convertVariablesBtoFOg;

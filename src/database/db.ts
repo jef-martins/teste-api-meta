@@ -1,8 +1,8 @@
-const { Pool } = require('pg');
+import { Pool } from 'pg';
 
 const pool = new Pool({
     host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 5432,
+    port: Number(process.env.DB_PORT) || 5432,
     database: process.env.DB_NAME || 'seu_banco',
     user: process.env.DB_USER || 'seu_usuario',
     password: process.env.DB_PASSWORD || 'sua_senha',
@@ -16,4 +16,4 @@ pool.on('error', (err) => {
     console.error('[DB] Erro inesperado no pool de conexão:', err);
 });
 
-module.exports = pool;
+export default pool;

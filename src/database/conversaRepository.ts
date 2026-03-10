@@ -1,4 +1,4 @@
-const pool = require('./db');
+import pool from './db';
 
 class ConversaRepository {
     /**
@@ -40,4 +40,4 @@ class ConversaRepository {
 }
 
 // Exportamos uma instância (padrão Singleton)
-module.exports = new ConversaRepository();
+export default new ConversaRepository();

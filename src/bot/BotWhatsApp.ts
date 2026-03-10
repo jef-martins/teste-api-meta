@@ -1,7 +1,11 @@
-const wppconnect = require('@wppconnect-team/wppconnect');
-const conversaRepository = require('../database/conversaRepository');
+import wppconnect from '@wppconnect-team/wppconnect';
+import conversaRepository from '../database/conversaRepository';
 
 class BotWhatsApp {
+    public sessao: string;
+    public client: any;
+    public _iniciadoEm: number;
+
     constructor(sessao = 'sessao-bot-wpp') {
         this.sessao = sessao;
         this.client = null;
@@ -191,4 +195,4 @@ class BotWhatsApp {
     }
 }
 
-module.exports = BotWhatsApp;
+export default BotWhatsApp;

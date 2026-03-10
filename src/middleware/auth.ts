@@ -1,8 +1,8 @@
-const jwt = require('jsonwebtoken');
+import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'telebots-dev-secret-change-in-production';
 
-function autenticar(req, res, next) {
+export function autenticar(req, res, next) {
     const header = req.headers.authorization;
     if (!header || !header.startsWith('Bearer ')) {
         return res.status(401).json({ erro: 'Token não fornecido' });
@@ -18,7 +18,7 @@ function autenticar(req, res, next) {
     }
 }
 
-function gerarToken(usuario) {
+export function gerarToken(usuario) {
     return jwt.sign(
         { id: usuario.id, email: usuario.email, papel: usuario.papel },
         JWT_SECRET,
@@ -26,11 +26,11 @@ function gerarToken(usuario) {
     );
 }
 
-function apenasAdmin(req, res, next) {
+export function apenasAdmin(req, res, next) {
     if (req.usuario?.papel !== 'admin') {
         return res.status(403).json({ erro: 'Acesso restrito a administradores' });
     }
     next();
 }
 
-module.exports = { autenticar, apenasAdmin, gerarToken, JWT_SECRET };
+export const jwtSecret = JWT_SECRET;

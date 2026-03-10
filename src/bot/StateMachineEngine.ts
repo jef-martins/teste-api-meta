@@ -1,15 +1,18 @@
-const estadoRepository = require('../database/estadoRepository');
-const pool = require('../database/db');
+import estadoRepository from '../database/estadoRepository';
+import pool from '../database/db';
 
 const ESTADO_PADRAO_FALLBACK = 'NOVO';
 
 class StateMachineEngine {
-    constructor(actionDelegate) {
-        /** @type {Map<string, string>} chatId → estado atual (cache local) */
-        this.estadosUsuarios = new Map();
+    public estadosUsuarios = new Map<string, string>();
+    public dadosCapturados = new Map<string, object>();
+    public actionDelegate: any;
+    public mensagemAtual?: string;
+    public nomeAtual?: string | null;
+    public _estadosAvisados?: Set<string>;
 
-        /** @type {Map<string, object>} chatId → dados capturados em memória { campo: valor } */
-        this.dadosCapturados = new Map();
+    constructor(actionDelegate) {
+
 
         // Referência à classe que possui de fato as implementações (ex: _handlerMensagem)
         this.actionDelegate = actionDelegate;
@@ -63,7 +66,7 @@ class StateMachineEngine {
         }
     }
 
-    async process(message, chatId, entrada, nome) {
+    async process(message: any, chatId: string, entrada: string | undefined, nome: string | null = null) {
         // ── Carrega/Atualiza sempre o estado do banco (permite alteração manual no DB) ──
         const estadoSalvo = await estadoRepository.obterEstadoUsuario(chatId);
         const estadoPadrao = await this._obterEstadoInicial();
@@ -82,7 +85,7 @@ class StateMachineEngine {
 
         if (!config) {
             console.warn(`[Engine] Estado "${estadoAtual}" não encontrado/ativo no banco. Reiniciando para ${estadoPadrao}.`);
-            await this.avancarEstado(chatId, estadoPadrao, entrada, nome);
+            await this.avancarEstado(chatId, estadoPadrao, entrada ?? null, nome);
             return;
         }
 
@@ -98,7 +101,7 @@ class StateMachineEngine {
         // diretamente e avança de estado. Ideal para estados terminais como ENCERRADO.
         if (config.config?.aguardarEntrada && entrada) {
             console.log(`[Engine] [${chatId}] estado aguarda entrada → buscando transição para "${entrada}"`);
-            await this.transitarPorEntrada(chatId, estadoAtual, entrada, message, true, nome);
+            await this.transitarPorEntrada(chatId, estadoAtual ?? '', entrada ?? '', message, true, nome);
             return;
         }
 
@@ -114,7 +117,7 @@ class StateMachineEngine {
     // Transições Restritas da Engine
     // ─────────────────────────────────────────────────────────────────────────
 
-    async avancarEstado(chatId, proximo, gatilho = null, nome = null) {
+    async avancarEstado(chatId: string, proximo: string, gatilho: string | null = null, nome: string | null = null) {
         const anterior = this.estadosUsuarios.get(chatId) ?? ESTADO_PADRAO_FALLBACK;
 
         // Atualiza memória
@@ -123,16 +126,16 @@ class StateMachineEngine {
         console.log(`[Engine] [${chatId}] transição: ${anterior} → ${proximo}`);
 
         // Persiste no banco (fire-and-forget, sem bloquear o fluxo)
-        estadoRepository.salvarEstadoUsuario(chatId, proximo, nome ?? this.nomeAtual).catch(() => {});
-        estadoRepository.registrarTransicao(chatId, anterior, proximo, gatilho ?? this.mensagemAtual).catch(() => {});
+        estadoRepository.salvarEstadoUsuario(chatId, proximo, nome ?? this.nomeAtual ?? '').catch(() => {});
+        estadoRepository.registrarTransicao(chatId, anterior, proximo, gatilho ?? this.mensagemAtual ?? '').catch(() => {});
     }
 
-    async transitarPorEntrada(chatId, estadoAtual, entrada, message, executarHandler = true, nome = null) {
+    async transitarPorEntrada(chatId: string, estadoAtual: string, entrada: string, message: any, executarHandler: boolean = true, nome: string | null = null) {
         const proximo = await estadoRepository.buscarProximoEstado(estadoAtual, entrada);
 
         if (!proximo) return null;
 
-        await this.avancarEstado(chatId, proximo, this.mensagemAtual, nome);
+        await this.avancarEstado(chatId, proximo, this.mensagemAtual ?? '', nome);
 
         // Executa o handler do novo estado com corpo vazio (exibe a mensagem de entrada)
         if (executarHandler) {
@@ -146,4 +149,4 @@ class StateMachineEngine {
     }
 }
 
-module.exports = StateMachineEngine;
+export default StateMachineEngine;

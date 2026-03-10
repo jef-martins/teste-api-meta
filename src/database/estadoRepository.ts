@@ -1,4 +1,4 @@
-const pool = require('./db');
+import pool from './db';
 
 class EstadoRepository {
 
@@ -145,7 +145,7 @@ class EstadoRepository {
      * @param {string} estado
      * @param {string|null} nome
      */
-    async salvarEstadoUsuario(chatId, estado, nome = null) {
+    async salvarEstadoUsuario(chatId: string, estado: string, nome: string | null = null) {
         const query = `
             INSERT INTO bot_estado_usuario (chat_id, nome, estado_atual, atualizado_em)
             VALUES ($1, $2, $3, NOW())
@@ -173,7 +173,7 @@ class EstadoRepository {
      * @param {string}      estadoNovo
      * @param {string|null} mensagemGatilho
      */
-    async registrarTransicao(chatId, estadoAnterior, estadoNovo, mensagemGatilho = null) {
+    async registrarTransicao(chatId: string, estadoAnterior: string, estadoNovo: string, mensagemGatilho: string | null = null) {
         const query = `
             INSERT INTO bot_estado_historico
                 (chat_id, estado_anterior, estado_novo, mensagem_gatilho, criado_em)
@@ -207,4 +207,4 @@ class EstadoRepository {
     }
 }
 
-module.exports = new EstadoRepository();
+export default new EstadoRepository();
