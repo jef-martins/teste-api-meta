@@ -8,7 +8,6 @@ import {
   Param,
   Req,
   UseGuards,
-  ParseIntPipe,
   BadRequestException,
 } from '@nestjs/common';
 import { UserService } from './user.service';
@@ -34,12 +33,12 @@ export class UserController {
   }
 
   @Put(':id')
-  atualizar(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
+  atualizar(@Param('id') id: string, @Body() body: any) {
     return this.userService.atualizar(id, body);
   }
 
   @Delete(':id')
-  excluir(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  excluir(@Param('id') id: string, @Req() req: any) {
     return this.userService.excluir(id, req.user.id);
   }
 }

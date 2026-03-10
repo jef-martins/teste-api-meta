@@ -3,7 +3,7 @@ export declare class ConversationService {
     private prisma;
     constructor(prisma: PrismaService);
     listar(): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         nome: string | null;
         dados: import("@prisma/client/runtime/library").JsonValue | null;
@@ -12,7 +12,7 @@ export declare class ConversationService {
         mensagem: string | null;
     }[]>;
     salvarMensagem(nome: string | null, dados: any, quemEnviou: string | null, paraQuem: string | null, mensagem: string | null): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         nome: string | null;
         dados: import("@prisma/client/runtime/library").JsonValue | null;

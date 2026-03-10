@@ -37,7 +37,7 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
   server!: Server;
 
   private readonly logger = new Logger(CollaborationGateway.name);
-  private clientRooms = new Map<string, number>(); // clientId → flowId
+  private clientRooms = new Map<string, string>(); // clientId → flowId
 
   constructor(private collaborationService: CollaborationService) {}
 
@@ -63,7 +63,7 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
   @SubscribeMessage(WsEvent.JoinFlow)
   async handleJoinFlow(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { flowId: number },
+    @MessageBody() data: { flowId: string },
   ) {
     const { flowId } = data;
 

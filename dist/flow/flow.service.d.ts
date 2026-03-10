@@ -1,22 +1,25 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { FlowConverterService } from './flow-converter.service';
+import { OrganizationService } from '../organization/organization.service';
 export declare class FlowService {
     private prisma;
     private converter;
-    constructor(prisma: PrismaService, converter: FlowConverterService);
+    private orgService;
+    constructor(prisma: PrismaService, converter: FlowConverterService, orgService: OrganizationService);
     private aplicarPrefixo;
-    listar(subOrganizacaoId?: number | null): Promise<{
-        id: number;
+    private verificarAcessoFluxo;
+    listar(subOrganizacaoId: string | null, usuarioId: string): Promise<{
+        id: string;
         criadoEm: Date;
         nome: string;
         atualizadoEm: Date;
-        subOrganizacaoId: number | null;
+        subOrganizacaoId: string | null;
         ativo: boolean;
         descricao: string | null;
         versao: number;
     }[]>;
-    obter(id: number): Promise<{
-        id: number;
+    obter(id: string, usuarioId: string): Promise<{
+        id: string;
         name: string;
         description: string | null;
         version: number;
@@ -42,7 +45,7 @@ export declare class FlowService {
             key: any;
             value: any;
         }[];
-        id: number;
+        id: string;
         name: string;
         description: string | null;
         version: number;
@@ -54,36 +57,36 @@ export declare class FlowService {
         nodes?: any[];
         connections?: any[];
         variables?: any[];
-        subOrganizacaoId?: number | null;
+        subOrganizacaoId?: string | null;
     }): Promise<{
         ok: boolean;
-        id: number;
+        id: string;
         fluxo: {
-            id: number;
+            id: string;
             criadoEm: Date;
             nome: string;
             atualizadoEm: Date;
-            subOrganizacaoId: number | null;
+            subOrganizacaoId: string | null;
             ativo: boolean;
             descricao: string | null;
             versao: number;
             flowJson: import("@prisma/client/runtime/library").JsonValue | null;
         };
     }>;
-    atualizar(id: number, data: {
+    atualizar(id: string, data: {
         name?: string;
         description?: string;
         nodes?: any[];
         connections?: any[];
         variables?: any[];
         version?: number;
-    }): Promise<{
+    }, usuarioId: string): Promise<{
         ok: boolean;
     }>;
-    excluir(id: number): Promise<{
+    excluir(id: string, usuarioId: string): Promise<{
         ok: boolean;
     }>;
-    ativar(id: number): Promise<{
+    ativar(id: string, usuarioId: string): Promise<{
         ok: boolean;
         mensagem: string;
     }>;

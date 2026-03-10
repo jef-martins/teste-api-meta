@@ -10,7 +10,7 @@ export declare class CollaborationGateway implements OnGatewayConnection, OnGate
     handleConnection(client: Socket): void;
     handleDisconnect(client: Socket): Promise<void>;
     handleJoinFlow(client: Socket, data: {
-        flowId: number;
+        flowId: string;
     }): Promise<void>;
     handleSyncStep1(client: Socket, data: {
         stateVector: number[];

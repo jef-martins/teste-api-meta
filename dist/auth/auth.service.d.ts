@@ -9,7 +9,7 @@ export declare class AuthService {
     login(email: string, senha: string): Promise<{
         token: string;
         usuario: {
-            id: number;
+            id: string;
             email: string;
             nome: string | null;
             papel: string;
@@ -19,7 +19,7 @@ export declare class AuthService {
     setup(email: string, senha: string, nome?: string): Promise<{
         token: string;
         usuario: {
-            id: number;
+            id: string;
             papel: string;
             nome: string | null;
             email: string;
@@ -28,21 +28,21 @@ export declare class AuthService {
     register(email: string, senha: string, nome?: string): Promise<{
         token: string;
         usuario: {
-            id: number;
+            id: string;
             papel: string;
             nome: string | null;
             email: string;
         };
         subOrgsAcessiveis: any[];
     }>;
-    getMe(userId: number): Promise<{
-        id: number;
+    getMe(userId: string): Promise<{
+        id: string;
         papel: string;
         nome: string | null;
         email: string;
     }>;
     gerarToken(usuario: {
-        id: number;
+        id: string;
         email: string;
         papel: string;
     }): string;

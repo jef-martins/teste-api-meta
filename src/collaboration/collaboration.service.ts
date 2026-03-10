@@ -16,7 +16,7 @@ interface Room {
 @Injectable()
 export class CollaborationService implements OnModuleDestroy {
   private readonly logger = new Logger(CollaborationService.name);
-  private rooms = new Map<number, Room>();
+  private rooms = new Map<string, Room>();
 
   constructor(private prisma: PrismaService) {}
 
@@ -30,7 +30,7 @@ export class CollaborationService implements OnModuleDestroy {
     this.rooms.clear();
   }
 
-  async getOrCreateRoom(flowId: number): Promise<Room> {
+  async getOrCreateRoom(flowId: string): Promise<Room> {
     let room = this.rooms.get(flowId);
     if (room) {
       if (room.cleanupTimer) {
@@ -56,7 +56,7 @@ export class CollaborationService implements OnModuleDestroy {
     return room;
   }
 
-  addConnection(flowId: number, clientId: string) {
+  addConnection(flowId: string, clientId: string) {
     const room = this.rooms.get(flowId);
     if (room) {
       room.connections.add(clientId);
@@ -64,7 +64,7 @@ export class CollaborationService implements OnModuleDestroy {
     }
   }
 
-  removeConnection(flowId: number, clientId: string) {
+  removeConnection(flowId: string, clientId: string) {
     const room = this.rooms.get(flowId);
     if (!room) return;
 
@@ -78,17 +78,17 @@ export class CollaborationService implements OnModuleDestroy {
     }
   }
 
-  getDoc(flowId: number): Y.Doc | null {
+  getDoc(flowId: string): Y.Doc | null {
     return this.rooms.get(flowId)?.doc ?? null;
   }
 
-  getStateDiff(flowId: number, remoteStateVector: Uint8Array): Uint8Array | null {
+  getStateDiff(flowId: string, remoteStateVector: Uint8Array): Uint8Array | null {
     const doc = this.getDoc(flowId);
     if (!doc) return null;
     return Y.encodeStateAsUpdate(doc, remoteStateVector);
   }
 
-  applyUpdate(flowId: number, update: Uint8Array) {
+  applyUpdate(flowId: string, update: Uint8Array) {
     const room = this.rooms.get(flowId);
     if (!room) return;
 
@@ -97,7 +97,7 @@ export class CollaborationService implements OnModuleDestroy {
     this.schedulePersist(flowId, room);
   }
 
-  private schedulePersist(flowId: number, room: Room) {
+  private schedulePersist(flowId: string, room: Room) {
     if (room.persistTimer) return;
 
     room.persistTimer = setTimeout(async () => {
@@ -106,7 +106,7 @@ export class CollaborationService implements OnModuleDestroy {
     }, PERSIST_DEBOUNCE_MS);
   }
 
-  private async persistUpdates(flowId: number, room: Room) {
+  private async persistUpdates(flowId: string, room: Room) {
     if (room.pendingUpdates.length === 0) return;
 
     const mergedUpdate = Y.mergeUpdates(room.pendingUpdates);
@@ -128,7 +128,7 @@ export class CollaborationService implements OnModuleDestroy {
     }
   }
 
-  private async syncFlowJsonFromDoc(flowId: number, doc: Y.Doc) {
+  private async syncFlowJsonFromDoc(flowId: string, doc: Y.Doc) {
     const nodesMap = doc.getMap('nodes');
     const connectionsMap = doc.getMap('connections');
     const variablesMap = doc.getMap('variables');
@@ -145,7 +145,7 @@ export class CollaborationService implements OnModuleDestroy {
     }
   }
 
-  private async compactUpdatesIfNeeded(flowId: number) {
+  private async compactUpdatesIfNeeded(flowId: string) {
     const count = await this.prisma.yjsUpdate.count({ where: { flowId } });
     if (count < 50) return;
 
@@ -165,7 +165,7 @@ export class CollaborationService implements OnModuleDestroy {
     this.logger.log(`Compactados ${allUpdates.length} updates em 1 para fluxo ${flowId}`);
   }
 
-  private async loadFlowState(flowId: number, doc: Y.Doc) {
+  private async loadFlowState(flowId: string, doc: Y.Doc) {
     // Load from Yjs updates first
     const updates = await this.prisma.yjsUpdate.findMany({
       where: { flowId },
@@ -208,7 +208,7 @@ export class CollaborationService implements OnModuleDestroy {
     }
   }
 
-  private async cleanupRoom(flowId: number) {
+  private async cleanupRoom(flowId: string) {
     const room = this.rooms.get(flowId);
     if (!room || room.connections.size > 0) return;
 

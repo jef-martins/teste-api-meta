@@ -9,11 +9,11 @@ export declare class OrganizationController {
             membros: number;
         };
         subOrganizacoes: {
-            id: number;
+            id: string;
             nome: string;
             slug: string;
         }[];
-        id: number;
+        id: string;
         criadoEm: Date;
         nome: string;
         slug: string;
@@ -24,30 +24,30 @@ export declare class OrganizationController {
         nome: string;
         slug?: string;
     }): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     }>;
-    obter(orgId: number, req: any): Promise<({
+    obter(orgId: string, req: any): Promise<({
         membros: ({
             usuario: {
-                id: number;
+                id: string;
                 nome: string | null;
                 email: string;
             };
         } & {
-            id: number;
-            organizacaoId: number;
-            usuarioId: number;
+            id: string;
+            organizacaoId: string;
+            usuarioId: string;
             papel: string;
             criadoEm: Date;
         })[];
         subOrganizacoes: {
-            id: number;
-            organizacaoId: number;
+            id: string;
+            organizacaoId: string;
             criadoEm: Date;
             nome: string;
             slug: string;
@@ -55,114 +55,114 @@ export declare class OrganizationController {
             atualizadoEm: Date;
         }[];
     } & {
-        id: number;
+        id: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     }) | null>;
-    atualizar(orgId: number, req: any, body: {
+    atualizar(orgId: string, req: any, body: {
         nome?: string;
     }): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     }>;
-    excluir(orgId: number, req: any): Promise<{
+    excluir(orgId: string, req: any): Promise<{
         ok: boolean;
     }>;
-    listarMembros(orgId: number, req: any): Promise<({
+    listarMembros(orgId: string, req: any): Promise<({
         usuario: {
-            id: number;
+            id: string;
             nome: string | null;
             email: string;
         };
     } & {
-        id: number;
-        organizacaoId: number;
-        usuarioId: number;
+        id: string;
+        organizacaoId: string;
+        usuarioId: string;
         papel: string;
         criadoEm: Date;
     })[]>;
-    adicionarMembro(orgId: number, req: any, body: {
+    adicionarMembro(orgId: string, req: any, body: {
         email: string;
         papel?: string;
     }): Promise<{
-        id: number;
-        organizacaoId: number;
-        usuarioId: number;
+        id: string;
+        organizacaoId: string;
+        usuarioId: string;
         papel: string;
         criadoEm: Date;
     }>;
-    removerMembro(orgId: number, membroId: number, req: any): Promise<{
+    removerMembro(orgId: string, membroId: string, req: any): Promise<{
         ok: boolean;
     }>;
-    listarSubOrgs(orgId: number, req: any): Promise<({
+    listarSubOrgs(orgId: string, req: any): Promise<({
         _count: {
             membros: number;
             fluxos: number;
         };
     } & {
-        id: number;
-        organizacaoId: number;
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     })[]>;
-    criarSubOrg(orgId: number, req: any, body: {
+    criarSubOrg(orgId: string, req: any, body: {
         nome: string;
         slug?: string;
     }): Promise<{
-        id: number;
-        organizacaoId: number;
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     }>;
-    atualizarSubOrg(orgId: number, subOrgId: number, req: any, body: {
+    atualizarSubOrg(orgId: string, subOrgId: string, req: any, body: {
         nome?: string;
     }): Promise<{
-        id: number;
-        organizacaoId: number;
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     }>;
-    excluirSubOrg(orgId: number, subOrgId: number, req: any): Promise<{
+    excluirSubOrg(orgId: string, subOrgId: string, req: any): Promise<{
         ok: boolean;
     }>;
-    transferirSubOrg(subOrgId: number, req: any, body: {
-        novaOrgId: number;
+    transferirSubOrg(subOrgId: string, req: any, body: {
+        novaOrgId: string;
     }): Promise<{
-        id: number;
-        organizacaoId: number;
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     }>;
-    adicionarMembroSubOrg(orgId: number, subOrgId: number, req: any, body: {
+    adicionarMembroSubOrg(orgId: string, subOrgId: string, req: any, body: {
         email: string;
         papel?: string;
     }): Promise<{
-        id: number;
-        usuarioId: number;
+        id: string;
+        usuarioId: string;
         papel: string;
         criadoEm: Date;
-        subOrganizacaoId: number;
+        subOrganizacaoId: string;
     }>;
-    removerMembroSubOrg(orgId: number, subOrgId: number, membroId: number, req: any): Promise<{
+    removerMembroSubOrg(orgId: string, subOrgId: string, membroId: string, req: any): Promise<{
         ok: boolean;
     }>;
 }

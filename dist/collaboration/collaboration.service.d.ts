@@ -14,12 +14,12 @@ export declare class CollaborationService implements OnModuleDestroy {
     private rooms;
     constructor(prisma: PrismaService);
     onModuleDestroy(): Promise<void>;
-    getOrCreateRoom(flowId: number): Promise<Room>;
-    addConnection(flowId: number, clientId: string): void;
-    removeConnection(flowId: number, clientId: string): void;
-    getDoc(flowId: number): Y.Doc | null;
-    getStateDiff(flowId: number, remoteStateVector: Uint8Array): Uint8Array | null;
-    applyUpdate(flowId: number, update: Uint8Array): void;
+    getOrCreateRoom(flowId: string): Promise<Room>;
+    addConnection(flowId: string, clientId: string): void;
+    removeConnection(flowId: string, clientId: string): void;
+    getDoc(flowId: string): Y.Doc | null;
+    getStateDiff(flowId: string, remoteStateVector: Uint8Array): Uint8Array | null;
+    applyUpdate(flowId: string, update: Uint8Array): void;
     private schedulePersist;
     private persistUpdates;
     private syncFlowJsonFromDoc;

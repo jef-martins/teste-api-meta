@@ -24,7 +24,7 @@ export declare class AdminService {
         nodeId: string | null;
         nodeType: string | null;
         position: import("@prisma/client/runtime/library").JsonValue | null;
-        flowId: number | null;
+        flowId: string | null;
     }>;
     atualizarEstado(estado: string, data: {
         handler: string;
@@ -41,13 +41,13 @@ export declare class AdminService {
         nodeId: string | null;
         nodeType: string | null;
         position: import("@prisma/client/runtime/library").JsonValue | null;
-        flowId: number | null;
+        flowId: string | null;
     }>;
     excluirEstado(estado: string): Promise<{
         ok: boolean;
     }>;
     listarTransicoes(): Promise<{
-        id: number;
+        id: string;
         ativo: boolean;
         estadoOrigem: string;
         entrada: string;
@@ -58,27 +58,27 @@ export declare class AdminService {
         entrada: string;
         estado_destino: string;
     }): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         ativo: boolean;
         estadoOrigem: string;
         entrada: string;
         estadoDestino: string;
     }>;
-    atualizarTransicao(id: number, data: {
+    atualizarTransicao(id: string, data: {
         estado_origem: string;
         entrada: string;
         estado_destino: string;
         ativo?: boolean;
     }): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         ativo: boolean;
         estadoOrigem: string;
         entrada: string;
         estadoDestino: string;
     }>;
-    excluirTransicao(id: number): Promise<{
+    excluirTransicao(id: string): Promise<{
         ok: boolean;
     }>;
     testarRequisicao(data: {

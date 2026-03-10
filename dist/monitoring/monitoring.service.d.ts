@@ -13,7 +13,7 @@ export declare class MonitoringService {
             estadoAtual: string;
         };
         historico: {
-            id: number;
+            id: string;
             criadoEm: Date;
             config: import("@prisma/client/runtime/library").JsonValue;
             chatId: string;
@@ -22,7 +22,7 @@ export declare class MonitoringService {
             mensagemGatilho: string | null;
         }[];
         mensagens: {
-            id: number;
+            id: string;
             criadoEm: Date;
             nome: string | null;
             dados: import("@prisma/client/runtime/library").JsonValue | null;
@@ -32,7 +32,7 @@ export declare class MonitoringService {
         }[];
     }>;
     historico(chatId: string): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         config: import("@prisma/client/runtime/library").JsonValue;
         chatId: string;
@@ -48,7 +48,7 @@ export declare class MonitoringService {
         transicoesHoje: number;
         totalFluxos: number;
         fluxoAtivo: {
-            id: number;
+            id: string;
             nome: string;
         } | null;
         estadosMaisUsados: unknown;

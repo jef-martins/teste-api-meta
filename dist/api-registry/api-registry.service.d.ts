@@ -7,144 +7,144 @@ export declare class ApiRegistryService {
     private getOrgIdFromSubOrg;
     private verificarMembroOrg;
     private verificarAcessoApi;
-    listarApis(usuarioId: number, subOrgId: number | null): Promise<{
+    listarApis(usuarioId: string, subOrgId: string | null): Promise<{
         tokenSubOrg: {
-            id: number;
+            id: string;
             criadoEm: Date;
             atualizadoEm: Date;
-            subOrganizacaoId: number;
+            subOrganizacaoId: string;
             headers: import("@prisma/client/runtime/library").JsonValue;
-            apiId: number;
+            apiId: string;
             token: string;
         } | null;
         subOrgTokens: undefined;
         rotas: {
-            id: number;
+            id: string;
             criadoEm: Date;
             descricao: string | null;
-            apiId: number;
+            apiId: string;
             path: string;
             metodo: string;
             parametros: import("@prisma/client/runtime/library").JsonValue;
             bodyTemplate: import("@prisma/client/runtime/library").JsonValue | null;
         }[];
-        id: number;
-        organizacaoId: number;
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         atualizadoEm: Date;
         headers: import("@prisma/client/runtime/library").JsonValue;
         urlBase: string;
     }[]>;
-    criarApi(usuarioId: number, orgId: number, data: {
+    criarApi(usuarioId: string, orgId: string, data: {
         nome: string;
         urlBase: string;
         headers?: object;
     }): Promise<{
         rotas: {
-            id: number;
+            id: string;
             criadoEm: Date;
             descricao: string | null;
-            apiId: number;
+            apiId: string;
             path: string;
             metodo: string;
             parametros: import("@prisma/client/runtime/library").JsonValue;
             bodyTemplate: import("@prisma/client/runtime/library").JsonValue | null;
         }[];
     } & {
-        id: number;
-        organizacaoId: number;
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         atualizadoEm: Date;
         headers: import("@prisma/client/runtime/library").JsonValue;
         urlBase: string;
     }>;
-    atualizarApi(id: number, usuarioId: number, data: {
+    atualizarApi(id: string, usuarioId: string, data: {
         nome?: string;
         urlBase?: string;
         headers?: object;
     }): Promise<{
         rotas: {
-            id: number;
+            id: string;
             criadoEm: Date;
             descricao: string | null;
-            apiId: number;
+            apiId: string;
             path: string;
             metodo: string;
             parametros: import("@prisma/client/runtime/library").JsonValue;
             bodyTemplate: import("@prisma/client/runtime/library").JsonValue | null;
         }[];
     } & {
-        id: number;
-        organizacaoId: number;
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         atualizadoEm: Date;
         headers: import("@prisma/client/runtime/library").JsonValue;
         urlBase: string;
     }>;
-    excluirApi(id: number, usuarioId: number): Promise<{
+    excluirApi(id: string, usuarioId: string): Promise<{
         ok: boolean;
     }>;
-    salvarTokenSubOrg(apiId: number, subOrgId: number, usuarioId: number, data: {
+    salvarTokenSubOrg(apiId: string, subOrgId: string, usuarioId: string, data: {
         token: string;
         headers?: object;
     }): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         atualizadoEm: Date;
-        subOrganizacaoId: number;
+        subOrganizacaoId: string;
         headers: import("@prisma/client/runtime/library").JsonValue;
-        apiId: number;
+        apiId: string;
         token: string;
     }>;
-    removerTokenSubOrg(apiId: number, subOrgId: number, usuarioId: number): Promise<{
+    removerTokenSubOrg(apiId: string, subOrgId: string, usuarioId: string): Promise<{
         ok: boolean;
     }>;
-    listarRotas(apiId: number, usuarioId: number): Promise<{
-        id: number;
+    listarRotas(apiId: string, usuarioId: string): Promise<{
+        id: string;
         criadoEm: Date;
         descricao: string | null;
-        apiId: number;
+        apiId: string;
         path: string;
         metodo: string;
         parametros: import("@prisma/client/runtime/library").JsonValue;
         bodyTemplate: import("@prisma/client/runtime/library").JsonValue | null;
     }[]>;
-    criarRota(apiId: number, usuarioId: number, data: {
+    criarRota(apiId: string, usuarioId: string, data: {
         path: string;
         metodo?: string;
         descricao?: string;
         parametros?: object[];
         bodyTemplate?: object;
     }): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         descricao: string | null;
-        apiId: number;
+        apiId: string;
         path: string;
         metodo: string;
         parametros: import("@prisma/client/runtime/library").JsonValue;
         bodyTemplate: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
-    atualizarRota(rotaId: number, apiId: number, usuarioId: number, data: {
+    atualizarRota(rotaId: string, apiId: string, usuarioId: string, data: {
         path?: string;
         metodo?: string;
         descricao?: string;
         parametros?: object[];
         bodyTemplate?: object;
     }): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         descricao: string | null;
-        apiId: number;
+        apiId: string;
         path: string;
         metodo: string;
         parametros: import("@prisma/client/runtime/library").JsonValue;
         bodyTemplate: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
-    excluirRota(rotaId: number, apiId: number, usuarioId: number): Promise<{
+    excluirRota(rotaId: string, apiId: string, usuarioId: string): Promise<{
         ok: boolean;
     }>;
 }

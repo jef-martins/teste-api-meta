@@ -7,9 +7,9 @@ import {
   Body,
   Param,
   UseGuards,
-  ParseIntPipe,
   Req,
   Headers,
+  ForbiddenException,
 } from '@nestjs/common';
 import { FlowService } from './flow.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -23,21 +23,20 @@ export class FlowController {
     private orgService: OrganizationService,
   ) {}
 
-  private getSubOrgId(headers: Record<string, string>): number | null {
+  private getSubOrgId(headers: Record<string, string>): string | null {
     const raw = headers['x-suborg-id'];
-    const parsed = raw ? parseInt(raw) : NaN;
-    return isNaN(parsed) ? null : parsed;
+    return raw || null;
   }
 
   @Get()
-  listar(@Headers() headers: Record<string, string>) {
+  listar(@Headers() headers: Record<string, string>, @Req() req: any) {
     const subOrgId = this.getSubOrgId(headers);
-    return this.flowService.listar(subOrgId);
+    return this.flowService.listar(subOrgId, req.user.id);
   }
 
   @Get(':id')
-  obter(@Param('id', ParseIntPipe) id: number) {
-    return this.flowService.obter(id);
+  obter(@Param('id') id: string, @Req() req: any) {
+    return this.flowService.obter(id, req.user.id);
   }
 
   @Post()
@@ -47,24 +46,24 @@ export class FlowController {
     if (subOrgId) {
       const temAcesso = await this.orgService.verificarAcessoSubOrg(req.user.id, subOrgId);
       if (!temAcesso) {
-        throw new Error('Sem acesso a esta sub-organização');
+        throw new ForbiddenException('Sem acesso a esta sub-organização');
       }
     }
     return this.flowService.criar({ ...body, subOrganizacaoId: subOrgId });
   }
 
   @Put(':id')
-  atualizar(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
-    return this.flowService.atualizar(id, body);
+  atualizar(@Param('id') id: string, @Body() body: any, @Req() req: any) {
+    return this.flowService.atualizar(id, body, req.user.id);
   }
 
   @Delete(':id')
-  excluir(@Param('id', ParseIntPipe) id: number) {
-    return this.flowService.excluir(id);
+  excluir(@Param('id') id: string, @Req() req: any) {
+    return this.flowService.excluir(id, req.user.id);
   }
 
   @Post(':id/ativar')
-  ativar(@Param('id', ParseIntPipe) id: number) {
-    return this.flowService.ativar(id);
+  ativar(@Param('id') id: string, @Req() req: any) {
+    return this.flowService.ativar(id, req.user.id);
   }
 }
