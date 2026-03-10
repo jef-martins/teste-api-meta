@@ -74,7 +74,16 @@ let OrganizationService = class OrganizationService {
     async criarOrganizacao(usuarioId, data) {
         if (!data.nome)
             throw new common_1.BadRequestException('Nome é obrigatório');
-        const slug = data.slug || this.gerarSlug(data.nome);
+        let slug = data.slug || this.gerarSlug(data.nome);
+        const slugBase = slug;
+        let tentativa = 0;
+        while (true) {
+            const existe = await this.prisma.organizacao.findUnique({ where: { slug } });
+            if (!existe)
+                break;
+            tentativa++;
+            slug = `${slugBase}-${tentativa}`;
+        }
         const org = await this.prisma.organizacao.create({
             data: { nome: data.nome, slug },
         });
@@ -145,7 +154,18 @@ let OrganizationService = class OrganizationService {
         await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin']);
         if (!data.nome)
             throw new common_1.BadRequestException('Nome é obrigatório');
-        const slug = data.slug || this.gerarSlug(data.nome);
+        let slug = data.slug || this.gerarSlug(data.nome);
+        const slugBase = slug;
+        let tentativa = 0;
+        while (true) {
+            const existe = await this.prisma.subOrganizacao.findUnique({
+                where: { organizacaoId_slug: { organizacaoId: orgId, slug } },
+            });
+            if (!existe)
+                break;
+            tentativa++;
+            slug = `${slugBase}-${tentativa}`;
+        }
         return this.prisma.subOrganizacao.create({
             data: { organizacaoId: orgId, nome: data.nome, slug },
         });

@@ -3,7 +3,7 @@ export declare class UserController {
     private userService;
     constructor(userService: UserService);
     listar(): Promise<{
-        id: number;
+        id: string;
         papel: string;
         criadoEm: Date;
         nome: string | null;
@@ -17,15 +17,15 @@ export declare class UserController {
         nome?: string;
         papel?: string;
     }): Promise<{
-        id: number;
+        id: string;
         papel: string;
         criadoEm: Date;
         nome: string | null;
         email: string;
         ativo: boolean;
     }>;
-    atualizar(id: number, body: any): Promise<{
-        id: number;
+    atualizar(id: string, body: any): Promise<{
+        id: string;
         papel: string;
         criadoEm: Date;
         nome: string | null;
@@ -33,7 +33,7 @@ export declare class UserController {
         email: string;
         ativo: boolean;
     }>;
-    excluir(id: number, req: any): Promise<{
+    excluir(id: string, req: any): Promise<{
         ok: boolean;
     }>;
 }

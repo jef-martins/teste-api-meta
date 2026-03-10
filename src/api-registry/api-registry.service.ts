@@ -12,7 +12,7 @@ export class ApiRegistryService {
   // ─── Helpers de acesso ───────────────────────────────────────────────────
 
   /** Retorna o orgId a partir do subOrgId do usuário */
-  private async getOrgIdFromSubOrg(subOrgId: number): Promise<number> {
+  private async getOrgIdFromSubOrg(subOrgId: string): Promise<string> {
     const subOrg = await this.prisma.subOrganizacao.findUnique({
       where: { id: subOrgId },
       select: { organizacaoId: true },
@@ -21,14 +21,14 @@ export class ApiRegistryService {
     return subOrg.organizacaoId;
   }
 
-  private async verificarMembroOrg(orgId: number, usuarioId: number) {
+  private async verificarMembroOrg(orgId: string, usuarioId: string) {
     const membro = await this.prisma.orgMembro.findUnique({
       where: { organizacaoId_usuarioId: { organizacaoId: orgId, usuarioId } },
     });
     if (!membro) throw new ForbiddenException('Sem acesso a esta organização');
   }
 
-  private async verificarAcessoApi(apiId: number, usuarioId: number): Promise<number> {
+  private async verificarAcessoApi(apiId: string, usuarioId: string): Promise<string> {
     const api = await this.prisma.apiRegistrada.findUnique({ where: { id: apiId } });
     if (!api) throw new NotFoundException('API não encontrada');
     await this.verificarMembroOrg(api.organizacaoId, usuarioId);
@@ -41,8 +41,8 @@ export class ApiRegistryService {
    * Lista APIs da organização à qual a sub-org pertence.
    * Inclui o token específico da sub-org se existir.
    */
-  async listarApis(usuarioId: number, subOrgId: number | null) {
-    let orgId: number | null = null;
+  async listarApis(usuarioId: string, subOrgId: string | null) {
+    let orgId: string | null = null;
 
     if (subOrgId) {
       orgId = await this.getOrgIdFromSubOrg(subOrgId);
@@ -79,7 +79,7 @@ export class ApiRegistryService {
     }));
   }
 
-  async criarApi(usuarioId: number, orgId: number, data: { nome: string; urlBase: string; headers?: object }) {
+  async criarApi(usuarioId: string, orgId: string, data: { nome: string; urlBase: string; headers?: object }) {
     if (!data.nome) throw new BadRequestException('Nome é obrigatório');
     if (!data.urlBase) throw new BadRequestException('URL base é obrigatória');
     await this.verificarMembroOrg(orgId, usuarioId);
@@ -95,7 +95,7 @@ export class ApiRegistryService {
     });
   }
 
-  async atualizarApi(id: number, usuarioId: number, data: { nome?: string; urlBase?: string; headers?: object }) {
+  async atualizarApi(id: string, usuarioId: string, data: { nome?: string; urlBase?: string; headers?: object }) {
     await this.verificarAcessoApi(id, usuarioId);
     return this.prisma.apiRegistrada.update({
       where: { id },
@@ -104,7 +104,7 @@ export class ApiRegistryService {
     });
   }
 
-  async excluirApi(id: number, usuarioId: number) {
+  async excluirApi(id: string, usuarioId: string) {
     await this.verificarAcessoApi(id, usuarioId);
     await this.prisma.apiRegistrada.delete({ where: { id } });
     return { ok: true };
@@ -112,7 +112,7 @@ export class ApiRegistryService {
 
   // ─── Token por Sub-organização ────────────────────────────────────────────
 
-  async salvarTokenSubOrg(apiId: number, subOrgId: number, usuarioId: number, data: { token: string; headers?: object }) {
+  async salvarTokenSubOrg(apiId: string, subOrgId: string, usuarioId: string, data: { token: string; headers?: object }) {
     const temAcesso = await this.orgService.verificarAcessoSubOrg(usuarioId, subOrgId);
     if (!temAcesso) throw new ForbiddenException('Sem acesso a esta sub-organização');
     await this.verificarAcessoApi(apiId, usuarioId);
@@ -132,7 +132,7 @@ export class ApiRegistryService {
     });
   }
 
-  async removerTokenSubOrg(apiId: number, subOrgId: number, usuarioId: number) {
+  async removerTokenSubOrg(apiId: string, subOrgId: string, usuarioId: string) {
     const temAcesso = await this.orgService.verificarAcessoSubOrg(usuarioId, subOrgId);
     if (!temAcesso) throw new ForbiddenException('Sem acesso a esta sub-organização');
 
@@ -144,7 +144,7 @@ export class ApiRegistryService {
 
   // ─── Rotas ────────────────────────────────────────────────────────────────
 
-  async listarRotas(apiId: number, usuarioId: number) {
+  async listarRotas(apiId: string, usuarioId: string) {
     await this.verificarAcessoApi(apiId, usuarioId);
     return this.prisma.apiRota.findMany({
       where: { apiId },
@@ -153,8 +153,8 @@ export class ApiRegistryService {
   }
 
   async criarRota(
-    apiId: number,
-    usuarioId: number,
+    apiId: string,
+    usuarioId: string,
     data: { path: string; metodo?: string; descricao?: string; parametros?: object[]; bodyTemplate?: object },
   ) {
     await this.verificarAcessoApi(apiId, usuarioId);
@@ -172,7 +172,7 @@ export class ApiRegistryService {
     });
   }
 
-  async atualizarRota(rotaId: number, apiId: number, usuarioId: number, data: {
+  async atualizarRota(rotaId: string, apiId: string, usuarioId: string, data: {
     path?: string; metodo?: string; descricao?: string; parametros?: object[]; bodyTemplate?: object;
   }) {
     await this.verificarAcessoApi(apiId, usuarioId);
@@ -182,7 +182,7 @@ export class ApiRegistryService {
     return this.prisma.apiRota.update({ where: { id: rotaId }, data });
   }
 
-  async excluirRota(rotaId: number, apiId: number, usuarioId: number) {
+  async excluirRota(rotaId: string, apiId: string, usuarioId: string) {
     await this.verificarAcessoApi(apiId, usuarioId);
     const rota = await this.prisma.apiRota.findUnique({ where: { id: rotaId } });
     if (!rota || rota.apiId !== apiId) throw new NotFoundException('Rota não encontrada');

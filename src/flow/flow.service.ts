@@ -1,15 +1,17 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FlowConverterService } from './flow-converter.service';
+import { OrganizationService } from '../organization/organization.service';
 
 @Injectable()
 export class FlowService {
   constructor(
     private prisma: PrismaService,
     private converter: FlowConverterService,
+    private orgService: OrganizationService,
   ) {}
 
-  private aplicarPrefixo(flowId: number, estados: any[], transicoes: any[]) {
+  private aplicarPrefixo(flowId: string, estados: any[], transicoes: any[]) {
     const prefix = `F${flowId}_`;
     const estadosPrefixados = estados.map((e: any) => ({ ...e, estado: prefix + e.estado }));
     const transicoesAtualizadas = transicoes.map((t: any) => ({
@@ -20,17 +22,35 @@ export class FlowService {
     return { estadosPrefixados, transicoesAtualizadas };
   }
 
-  async listar(subOrganizacaoId?: number | null) {
+  private async verificarAcessoFluxo(fluxo: any, usuarioId: string) {
+    if (fluxo.subOrganizacaoId) {
+      const temAcesso = await this.orgService.verificarAcessoSubOrg(usuarioId, fluxo.subOrganizacaoId);
+      if (!temAcesso) {
+        throw new ForbiddenException('Sem acesso a este fluxo');
+      }
+    }
+  }
+
+  async listar(subOrganizacaoId: string | null, usuarioId: string) {
+    const subOrgsAcessiveis = await this.orgService.getSubOrgsAcessiveis(usuarioId);
+    const idsAcessiveis = subOrgsAcessiveis.map((s) => s.id);
+
+    const where = subOrganizacaoId
+      ? idsAcessiveis.includes(subOrganizacaoId) ? { subOrganizacaoId } : { id: '' } // sem acesso à sub-org solicitada
+      : idsAcessiveis.length > 0 ? { subOrganizacaoId: { in: idsAcessiveis } } : { id: '' };
+
     return this.prisma.botFluxo.findMany({
-      where: subOrganizacaoId ? { subOrganizacaoId } : {},
+      where,
       select: { id: true, nome: true, descricao: true, versao: true, ativo: true, subOrganizacaoId: true, criadoEm: true, atualizadoEm: true },
       orderBy: { atualizadoEm: 'desc' },
     });
   }
 
-  async obter(id: number) {
+  async obter(id: string, usuarioId: string) {
     const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
     if (!fluxo) throw new NotFoundException('Fluxo não encontrado');
+
+    await this.verificarAcessoFluxo(fluxo, usuarioId);
 
     if (fluxo.flowJson) {
       return {
@@ -68,7 +88,7 @@ export class FlowService {
     };
   }
 
-  async criar(data: { name: string; description?: string; nodes?: any[]; connections?: any[]; variables?: any[]; subOrganizacaoId?: number | null }) {
+  async criar(data: { name: string; description?: string; nodes?: any[]; connections?: any[]; variables?: any[]; subOrganizacaoId?: string | null }) {
     if (!data.name) throw new BadRequestException('Nome é obrigatório');
 
     const flowJson = { nodes: data.nodes, connections: data.connections, variables: data.variables };
@@ -95,9 +115,11 @@ export class FlowService {
     return { ok: true, id: fluxo.id, fluxo };
   }
 
-  async atualizar(id: number, data: { name?: string; description?: string; nodes?: any[]; connections?: any[]; variables?: any[]; version?: number }) {
+  async atualizar(id: string, data: { name?: string; description?: string; nodes?: any[]; connections?: any[]; variables?: any[]; version?: number }, usuarioId: string) {
     const fluxoExistente = await this.prisma.botFluxo.findUnique({ where: { id } });
     if (!fluxoExistente) throw new NotFoundException('Fluxo não encontrado');
+
+    await this.verificarAcessoFluxo(fluxoExistente, usuarioId);
 
     const flowJson = { nodes: data.nodes, connections: data.connections, variables: data.variables };
 
@@ -126,7 +148,12 @@ export class FlowService {
     return { ok: true };
   }
 
-  async excluir(id: number) {
+  async excluir(id: string, usuarioId: string) {
+    const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
+    if (!fluxo) throw new NotFoundException('Fluxo não encontrado');
+
+    await this.verificarAcessoFluxo(fluxo, usuarioId);
+
     // Remove user sessions pointing to this flow's states
     await this.prisma.botEstadoUsuario.deleteMany({
       where: { estado: { flowId: id } },
@@ -135,9 +162,11 @@ export class FlowService {
     return { ok: true };
   }
 
-  async ativar(id: number) {
+  async ativar(id: string, usuarioId: string) {
     const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
     if (!fluxo) throw new NotFoundException('Fluxo não encontrado');
+
+    await this.verificarAcessoFluxo(fluxo, usuarioId);
 
     await this.prisma.$transaction(async (tx) => {
       // Deactivate all states belonging to flows
@@ -176,14 +205,14 @@ export class FlowService {
 
   // ─── Helpers privados ────────────────────────────────────────────────────
 
-  private async limparEstados(flowId: number) {
+  private async limparEstados(flowId: string) {
     await this.prisma.botEstadoUsuario.deleteMany({
       where: { estado: { flowId } },
     });
     await this.prisma.botEstadoConfig.deleteMany({ where: { flowId } });
   }
 
-  private async salvarEstados(flowId: number, estados: any[]) {
+  private async salvarEstados(flowId: string, estados: any[]) {
     for (const e of estados) {
       await this.prisma.botEstadoConfig.create({
         data: {
@@ -214,7 +243,7 @@ export class FlowService {
     }
   }
 
-  private async salvarVariaveis(flowId: number, variaveis: any[]) {
+  private async salvarVariaveis(flowId: string, variaveis: any[]) {
     await this.prisma.botFluxoVariavel.deleteMany({ where: { flowId } });
     for (const v of variaveis) {
       await this.prisma.botFluxoVariavel.create({

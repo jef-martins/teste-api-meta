@@ -119,15 +119,58 @@ Inclui:
 - Coluna `sub_organizacao_id` em `bot_fluxo`
 - Relações em `bot_usuario`
 
+Migração: `uuid-migration`
+
+Todos os modelos migraram de IDs inteiros (`Int @id @default(autoincrement())`) para UUIDs (`String @id @default(uuid())`). Modelos afetados:
+
+- `BotUsuario`, `BotFluxo`, `BotFluxoVariavel`, `BotEstadoTransicao`, `BotEstadoHistorico`
+- `Conversa`, `YjsUpdate`
+- `Organizacao`, `SubOrganizacao`, `OrgMembro`, `SubOrgMembro`
+- `ApiRegistrada`, `ApiRota`, `ApiSubOrgToken`
+
+Todas as FKs (ex: `flowId`, `subOrganizacaoId`, `organizacaoId`, `usuarioId`, `apiId`) também foram alteradas de `Int` para `String`.
+
+---
+
+### 4. Migração para UUIDs
+
+Todos os IDs do sistema foram migrados de inteiros sequenciais para UUIDs (string). Isso afeta:
+
+- `prisma/schema.prisma`: todos os `@id @default(autoincrement())` → `@id @default(uuid())`, todos os campos de FK de `Int` → `String`
+- `src/auth/jwt.strategy.ts`: payload do JWT usa `id: string`
+- `src/auth/auth.service.ts`: `getMe(userId: string)`, `gerarToken({ id: string, ... })`
+- `src/organization/organization.service.ts`: todos os parâmetros de ID agora são `string`; `Map<number, any>` → `Map<string, any>`
+- `src/organization/organization.controller.ts`: removidos todos os `ParseIntPipe`; parâmetros de rota agora `string`
+- `src/flow/flow.service.ts`: todos os parâmetros de ID agora são `string`
+- `src/flow/flow.controller.ts`: removidos todos os `ParseIntPipe`; parâmetros de rota agora `string`
+- `src/api-registry/api-registry.service.ts`: todos os parâmetros de ID agora são `string`
+- `src/api-registry/api-registry.controller.ts`: removidos todos os `ParseIntPipe`; parâmetros de rota agora `string`
+- `src/collaboration/collaboration.gateway.ts`: `clientRooms: Map<string, string>`, `data.flowId: string`
+- `src/collaboration/collaboration.service.ts`: `rooms: Map<string, Room>`, todos os `flowId: number` → `flowId: string`
+
+Os helpers `getSubOrgId()` e `getOrgId()` nos controllers foram simplificados: removido `parseInt`, retornam diretamente o valor string do header.
+
+---
+
+### 5. Controle de Acesso em Fluxos (Security Fix)
+
+Adicionado controle de acesso completo nos endpoints de fluxo (`obter`, `atualizar`, `excluir`, `ativar`):
+
+**`src/flow/flow.service.ts`**:
+- Novo método privado `verificarAcessoFluxo(fluxo, usuarioId)`: se o fluxo tiver `subOrganizacaoId`, verifica via `OrganizationService.verificarAcessoSubOrg()`. Lança `ForbiddenException('Sem acesso a este fluxo')` se não tiver acesso.
+- `OrganizationService` adicionado ao construtor como dependência.
+- `obter(id, usuarioId)`, `atualizar(id, data, usuarioId)`, `excluir(id, usuarioId)`, `ativar(id, usuarioId)` — todos recebem `usuarioId` e chamam `verificarAcessoFluxo`.
+- `excluir` agora também busca o fluxo antes de deletar (para verificação de acesso).
+
+**`src/flow/flow.controller.ts`**:
+- `obter`, `atualizar`, `excluir`, `ativar` agora recebem `@Req() req: any` e passam `req.user.id` como `usuarioId`.
+
 ---
 
 ## O que Ainda Pode Ser Implementado
 
 ### Retrocompatibilidade de usuários sem sub-org
 Os usuários existentes não têm sub-org. Considere criar automaticamente uma org+sub-org pessoal no registro de novos usuários (`auth.service.ts > register()`).
-
-### Guard de Sub-org para operações de fluxo
-Atualmente `FlowController` verifica acesso ao criar (`POST /fluxos`), mas não nas operações de atualizar/excluir fluxos. Adicionar verificação de acesso completa.
 
 ### Sub-org no contexto WebSocket (Colaboração)
 O `CollaborationGateway` autentica via JWT mas não verifica se o usuário tem acesso à sub-org do fluxo que está abrindo. Adicionar validação no `handleJoinFlow`.

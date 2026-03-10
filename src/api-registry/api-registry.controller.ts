@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Req, UseGuards, Headers,
+  Controller, Get, Post, Put, Delete, Body, Param, Req, UseGuards, Headers,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ApiRegistryService } from './api-registry.service';
@@ -9,16 +9,14 @@ import { ApiRegistryService } from './api-registry.service';
 export class ApiRegistryController {
   constructor(private service: ApiRegistryService) {}
 
-  private getSubOrgId(headers: Record<string, string>): number | null {
+  private getSubOrgId(headers: Record<string, string>): string | null {
     const raw = headers['x-suborg-id'];
-    const parsed = raw ? parseInt(raw) : NaN;
-    return isNaN(parsed) ? null : parsed;
+    return raw || null;
   }
 
-  private getOrgId(headers: Record<string, string>): number | null {
+  private getOrgId(headers: Record<string, string>): string | null {
     const raw = headers['x-org-id'];
-    const parsed = raw ? parseInt(raw) : NaN;
-    return isNaN(parsed) ? null : parsed;
+    return raw || null;
   }
 
   // ─── APIs ─────────────────────────────────────────────────────────────────
@@ -42,7 +40,7 @@ export class ApiRegistryController {
 
   @Put(':id')
   atualizar(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id') id: string,
     @Req() req: any,
     @Body() body: { nome?: string; urlBase?: string; headers?: object },
   ) {
@@ -50,7 +48,7 @@ export class ApiRegistryController {
   }
 
   @Delete(':id')
-  excluir(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  excluir(@Param('id') id: string, @Req() req: any) {
     return this.service.excluirApi(id, req.user.id);
   }
 
@@ -58,7 +56,7 @@ export class ApiRegistryController {
 
   @Post(':apiId/token')
   salvarToken(
-    @Param('apiId', ParseIntPipe) apiId: number,
+    @Param('apiId') apiId: string,
     @Headers() headers: Record<string, string>,
     @Req() req: any,
     @Body() body: { token: string; headers?: object },
@@ -70,7 +68,7 @@ export class ApiRegistryController {
 
   @Delete(':apiId/token')
   removerToken(
-    @Param('apiId', ParseIntPipe) apiId: number,
+    @Param('apiId') apiId: string,
     @Headers() headers: Record<string, string>,
     @Req() req: any,
   ) {
@@ -82,13 +80,13 @@ export class ApiRegistryController {
   // ─── Rotas ────────────────────────────────────────────────────────────────
 
   @Get(':apiId/rotas')
-  listarRotas(@Param('apiId', ParseIntPipe) apiId: number, @Req() req: any) {
+  listarRotas(@Param('apiId') apiId: string, @Req() req: any) {
     return this.service.listarRotas(apiId, req.user.id);
   }
 
   @Post(':apiId/rotas')
   criarRota(
-    @Param('apiId', ParseIntPipe) apiId: number,
+    @Param('apiId') apiId: string,
     @Req() req: any,
     @Body() body: { path: string; metodo?: string; descricao?: string; parametros?: object[]; bodyTemplate?: object },
   ) {
@@ -97,8 +95,8 @@ export class ApiRegistryController {
 
   @Put(':apiId/rotas/:rotaId')
   atualizarRota(
-    @Param('apiId', ParseIntPipe) apiId: number,
-    @Param('rotaId', ParseIntPipe) rotaId: number,
+    @Param('apiId') apiId: string,
+    @Param('rotaId') rotaId: string,
     @Req() req: any,
     @Body() body: { path?: string; metodo?: string; descricao?: string; parametros?: object[]; bodyTemplate?: object },
   ) {
@@ -107,8 +105,8 @@ export class ApiRegistryController {
 
   @Delete(':apiId/rotas/:rotaId')
   excluirRota(
-    @Param('apiId', ParseIntPipe) apiId: number,
-    @Param('rotaId', ParseIntPipe) rotaId: number,
+    @Param('apiId') apiId: string,
+    @Param('rotaId') rotaId: string,
     @Req() req: any,
   ) {
     return this.service.excluirRota(rotaId, apiId, req.user.id);

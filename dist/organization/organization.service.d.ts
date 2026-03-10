@@ -2,53 +2,53 @@ import { PrismaService } from '../prisma/prisma.service';
 export declare class OrganizationService {
     private prisma;
     constructor(prisma: PrismaService);
-    getSubOrgsAcessiveis(usuarioId: number): Promise<any[]>;
-    verificarAcessoSubOrg(usuarioId: number, subOrgId: number): Promise<boolean>;
-    listarOrganizacoes(usuarioId: number): Promise<{
+    getSubOrgsAcessiveis(usuarioId: string): Promise<any[]>;
+    verificarAcessoSubOrg(usuarioId: string, subOrgId: string): Promise<boolean>;
+    listarOrganizacoes(usuarioId: string): Promise<{
         papel: string;
         _count: {
             membros: number;
         };
         subOrganizacoes: {
-            id: number;
+            id: string;
             nome: string;
             slug: string;
         }[];
-        id: number;
+        id: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     }[]>;
-    criarOrganizacao(usuarioId: number, data: {
+    criarOrganizacao(usuarioId: string, data: {
         nome: string;
         slug?: string;
     }): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     }>;
-    obterOrganizacao(orgId: number, usuarioId: number): Promise<({
+    obterOrganizacao(orgId: string, usuarioId: string): Promise<({
         membros: ({
             usuario: {
-                id: number;
+                id: string;
                 nome: string | null;
                 email: string;
             };
         } & {
-            id: number;
-            organizacaoId: number;
-            usuarioId: number;
+            id: string;
+            organizacaoId: string;
+            usuarioId: string;
             papel: string;
             criadoEm: Date;
         })[];
         subOrganizacoes: {
-            id: number;
-            organizacaoId: number;
+            id: string;
+            organizacaoId: string;
             criadoEm: Date;
             nome: string;
             slug: string;
@@ -56,106 +56,106 @@ export declare class OrganizationService {
             atualizadoEm: Date;
         }[];
     } & {
-        id: number;
+        id: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     }) | null>;
-    atualizarOrganizacao(orgId: number, usuarioId: number, data: {
+    atualizarOrganizacao(orgId: string, usuarioId: string, data: {
         nome?: string;
     }): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     }>;
-    excluirOrganizacao(orgId: number, usuarioId: number): Promise<{
+    excluirOrganizacao(orgId: string, usuarioId: string): Promise<{
         ok: boolean;
     }>;
-    listarMembros(orgId: number, usuarioId: number): Promise<({
+    listarMembros(orgId: string, usuarioId: string): Promise<({
         usuario: {
-            id: number;
+            id: string;
             nome: string | null;
             email: string;
         };
     } & {
-        id: number;
-        organizacaoId: number;
-        usuarioId: number;
+        id: string;
+        organizacaoId: string;
+        usuarioId: string;
         papel: string;
         criadoEm: Date;
     })[]>;
-    adicionarMembro(orgId: number, solicitanteId: number, emailConvidado: string, papel?: string): Promise<{
-        id: number;
-        organizacaoId: number;
-        usuarioId: number;
+    adicionarMembro(orgId: string, solicitanteId: string, emailConvidado: string, papel?: string): Promise<{
+        id: string;
+        organizacaoId: string;
+        usuarioId: string;
         papel: string;
         criadoEm: Date;
     }>;
-    removerMembro(orgId: number, solicitanteId: number, membroId: number): Promise<{
+    removerMembro(orgId: string, solicitanteId: string, membroId: string): Promise<{
         ok: boolean;
     }>;
-    listarSubOrgs(orgId: number, usuarioId: number): Promise<({
+    listarSubOrgs(orgId: string, usuarioId: string): Promise<({
         _count: {
             membros: number;
             fluxos: number;
         };
     } & {
-        id: number;
-        organizacaoId: number;
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     })[]>;
-    criarSubOrg(orgId: number, usuarioId: number, data: {
+    criarSubOrg(orgId: string, usuarioId: string, data: {
         nome: string;
         slug?: string;
     }): Promise<{
-        id: number;
-        organizacaoId: number;
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     }>;
-    atualizarSubOrg(orgId: number, subOrgId: number, usuarioId: number, data: {
+    atualizarSubOrg(orgId: string, subOrgId: string, usuarioId: string, data: {
         nome?: string;
     }): Promise<{
-        id: number;
-        organizacaoId: number;
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     }>;
-    excluirSubOrg(orgId: number, subOrgId: number, usuarioId: number): Promise<{
+    excluirSubOrg(orgId: string, subOrgId: string, usuarioId: string): Promise<{
         ok: boolean;
     }>;
-    transferirSubOrg(subOrgId: number, novaOrgId: number, usuarioId: number): Promise<{
-        id: number;
-        organizacaoId: number;
+    transferirSubOrg(subOrgId: string, novaOrgId: string, usuarioId: string): Promise<{
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         slug: string;
         ativa: boolean;
         atualizadoEm: Date;
     }>;
-    adicionarMembroSubOrg(orgId: number, subOrgId: number, solicitanteId: number, emailConvidado: string, papel?: string): Promise<{
-        id: number;
-        usuarioId: number;
+    adicionarMembroSubOrg(orgId: string, subOrgId: string, solicitanteId: string, emailConvidado: string, papel?: string): Promise<{
+        id: string;
+        usuarioId: string;
         papel: string;
         criadoEm: Date;
-        subOrganizacaoId: number;
+        subOrganizacaoId: string;
     }>;
-    removerMembroSubOrg(orgId: number, subOrgId: number, solicitanteId: number, membroId: number): Promise<{
+    removerMembroSubOrg(orgId: string, subOrgId: string, solicitanteId: string, membroId: string): Promise<{
         ok: boolean;
     }>;
     private verificarMembroOrg;

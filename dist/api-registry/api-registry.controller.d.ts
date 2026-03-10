@@ -6,27 +6,27 @@ export declare class ApiRegistryController {
     private getOrgId;
     listar(req: any, headers: Record<string, string>): Promise<{
         tokenSubOrg: {
-            id: number;
+            id: string;
             criadoEm: Date;
             atualizadoEm: Date;
-            subOrganizacaoId: number;
+            subOrganizacaoId: string;
             headers: import("@prisma/client/runtime/library").JsonValue;
-            apiId: number;
+            apiId: string;
             token: string;
         } | null;
         subOrgTokens: undefined;
         rotas: {
-            id: number;
+            id: string;
             criadoEm: Date;
             descricao: string | null;
-            apiId: number;
+            apiId: string;
             path: string;
             metodo: string;
             parametros: import("@prisma/client/runtime/library").JsonValue;
             bodyTemplate: import("@prisma/client/runtime/library").JsonValue | null;
         }[];
-        id: number;
-        organizacaoId: number;
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         atualizadoEm: Date;
@@ -39,109 +39,109 @@ export declare class ApiRegistryController {
         headers?: object;
     }): Promise<{
         rotas: {
-            id: number;
+            id: string;
             criadoEm: Date;
             descricao: string | null;
-            apiId: number;
+            apiId: string;
             path: string;
             metodo: string;
             parametros: import("@prisma/client/runtime/library").JsonValue;
             bodyTemplate: import("@prisma/client/runtime/library").JsonValue | null;
         }[];
     } & {
-        id: number;
-        organizacaoId: number;
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         atualizadoEm: Date;
         headers: import("@prisma/client/runtime/library").JsonValue;
         urlBase: string;
     }>;
-    atualizar(id: number, req: any, body: {
+    atualizar(id: string, req: any, body: {
         nome?: string;
         urlBase?: string;
         headers?: object;
     }): Promise<{
         rotas: {
-            id: number;
+            id: string;
             criadoEm: Date;
             descricao: string | null;
-            apiId: number;
+            apiId: string;
             path: string;
             metodo: string;
             parametros: import("@prisma/client/runtime/library").JsonValue;
             bodyTemplate: import("@prisma/client/runtime/library").JsonValue | null;
         }[];
     } & {
-        id: number;
-        organizacaoId: number;
+        id: string;
+        organizacaoId: string;
         criadoEm: Date;
         nome: string;
         atualizadoEm: Date;
         headers: import("@prisma/client/runtime/library").JsonValue;
         urlBase: string;
     }>;
-    excluir(id: number, req: any): Promise<{
+    excluir(id: string, req: any): Promise<{
         ok: boolean;
     }>;
-    salvarToken(apiId: number, headers: Record<string, string>, req: any, body: {
+    salvarToken(apiId: string, headers: Record<string, string>, req: any, body: {
         token: string;
         headers?: object;
     }): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         atualizadoEm: Date;
-        subOrganizacaoId: number;
+        subOrganizacaoId: string;
         headers: import("@prisma/client/runtime/library").JsonValue;
-        apiId: number;
+        apiId: string;
         token: string;
     }>;
-    removerToken(apiId: number, headers: Record<string, string>, req: any): Promise<{
+    removerToken(apiId: string, headers: Record<string, string>, req: any): Promise<{
         ok: boolean;
     }>;
-    listarRotas(apiId: number, req: any): Promise<{
-        id: number;
+    listarRotas(apiId: string, req: any): Promise<{
+        id: string;
         criadoEm: Date;
         descricao: string | null;
-        apiId: number;
+        apiId: string;
         path: string;
         metodo: string;
         parametros: import("@prisma/client/runtime/library").JsonValue;
         bodyTemplate: import("@prisma/client/runtime/library").JsonValue | null;
     }[]>;
-    criarRota(apiId: number, req: any, body: {
+    criarRota(apiId: string, req: any, body: {
         path: string;
         metodo?: string;
         descricao?: string;
         parametros?: object[];
         bodyTemplate?: object;
     }): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         descricao: string | null;
-        apiId: number;
+        apiId: string;
         path: string;
         metodo: string;
         parametros: import("@prisma/client/runtime/library").JsonValue;
         bodyTemplate: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
-    atualizarRota(apiId: number, rotaId: number, req: any, body: {
+    atualizarRota(apiId: string, rotaId: string, req: any, body: {
         path?: string;
         metodo?: string;
         descricao?: string;
         parametros?: object[];
         bodyTemplate?: object;
     }): Promise<{
-        id: number;
+        id: string;
         criadoEm: Date;
         descricao: string | null;
-        apiId: number;
+        apiId: string;
         path: string;
         metodo: string;
         parametros: import("@prisma/client/runtime/library").JsonValue;
         bodyTemplate: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
-    excluirRota(apiId: number, rotaId: number, req: any): Promise<{
+    excluirRota(apiId: string, rotaId: string, req: any): Promise<{
         ok: boolean;
     }>;
 }

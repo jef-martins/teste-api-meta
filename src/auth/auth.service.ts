@@ -63,7 +63,7 @@ export class AuthService {
     return { token, usuario, subOrgsAcessiveis };
   }
 
-  async getMe(userId: number) {
+  async getMe(userId: string) {
     const usuario = await this.prisma.botUsuario.findUnique({
       where: { id: userId },
       select: { id: true, email: true, nome: true, papel: true },
@@ -72,7 +72,7 @@ export class AuthService {
     return usuario;
   }
 
-  gerarToken(usuario: { id: number; email: string; papel: string }) {
+  gerarToken(usuario: { id: string; email: string; papel: string }) {
     return this.jwtService.sign({
       id: usuario.id,
       email: usuario.email,

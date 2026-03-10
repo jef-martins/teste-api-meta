@@ -13,7 +13,7 @@ export declare class AuthController {
     }): Promise<{
         token: string;
         usuario: {
-            id: number;
+            id: string;
             email: string;
             nome: string | null;
             papel: string;
@@ -27,7 +27,7 @@ export declare class AuthController {
     }): Promise<{
         token: string;
         usuario: {
-            id: number;
+            id: string;
             papel: string;
             nome: string | null;
             email: string;
@@ -40,7 +40,7 @@ export declare class AuthController {
     }): Promise<{
         token: string;
         usuario: {
-            id: number;
+            id: string;
             papel: string;
             nome: string | null;
             email: string;
@@ -48,7 +48,7 @@ export declare class AuthController {
         subOrgsAcessiveis: any[];
     }>;
     me(req: any): Promise<{
-        id: number;
+        id: string;
         papel: string;
         nome: string | null;
         email: string;

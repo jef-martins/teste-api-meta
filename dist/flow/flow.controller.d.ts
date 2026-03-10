@@ -5,18 +5,18 @@ export declare class FlowController {
     private orgService;
     constructor(flowService: FlowService, orgService: OrganizationService);
     private getSubOrgId;
-    listar(headers: Record<string, string>): Promise<{
-        id: number;
-        criadoEm: Date;
+    listar(headers: Record<string, string>, req: any): Promise<{
+        id: string;
         nome: string;
-        atualizadoEm: Date;
-        subOrganizacaoId: number | null;
-        ativo: boolean;
         descricao: string | null;
         versao: number;
+        ativo: boolean;
+        subOrganizacaoId: string | null;
+        criadoEm: Date;
+        atualizadoEm: Date;
     }[]>;
-    obter(id: number): Promise<{
-        id: number;
+    obter(id: string, req: any): Promise<{
+        id: string;
         name: string;
         description: string | null;
         version: number;
@@ -42,7 +42,7 @@ export declare class FlowController {
             key: any;
             value: any;
         }[];
-        id: number;
+        id: string;
         name: string;
         description: string | null;
         version: number;
@@ -50,26 +50,26 @@ export declare class FlowController {
     }>;
     criar(body: any, headers: Record<string, string>, req: any): Promise<{
         ok: boolean;
-        id: number;
+        id: string;
         fluxo: {
-            id: number;
-            criadoEm: Date;
+            id: string;
             nome: string;
-            atualizadoEm: Date;
-            subOrganizacaoId: number | null;
-            ativo: boolean;
             descricao: string | null;
             versao: number;
+            ativo: boolean;
             flowJson: import("@prisma/client/runtime/library").JsonValue | null;
+            subOrganizacaoId: string | null;
+            criadoEm: Date;
+            atualizadoEm: Date;
         };
     }>;
-    atualizar(id: number, body: any): Promise<{
+    atualizar(id: string, body: any, req: any): Promise<{
         ok: boolean;
     }>;
-    excluir(id: number): Promise<{
+    excluir(id: string, req: any): Promise<{
         ok: boolean;
     }>;
-    ativar(id: number): Promise<{
+    ativar(id: string, req: any): Promise<{
         ok: boolean;
         mensagem: string;
     }>;

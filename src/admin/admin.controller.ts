@@ -7,7 +7,6 @@ import {
   Body,
   Param,
   UseGuards,
-  ParseIntPipe,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -52,12 +51,12 @@ export class AdminController {
   }
 
   @Put('transicoes/:id')
-  atualizarTransicao(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
+  atualizarTransicao(@Param('id') id: string, @Body() body: any) {
     return this.adminService.atualizarTransicao(id, body);
   }
 
   @Delete('transicoes/:id')
-  excluirTransicao(@Param('id', ParseIntPipe) id: number) {
+  excluirTransicao(@Param('id') id: string) {
     return this.adminService.excluirTransicao(id);
   }
 

@@ -61,7 +61,7 @@ export class AdminService {
     });
   }
 
-  async atualizarTransicao(id: number, data: { estado_origem: string; entrada: string; estado_destino: string; ativo?: boolean }) {
+  async atualizarTransicao(id: string, data: { estado_origem: string; entrada: string; estado_destino: string; ativo?: boolean }) {
     return this.prisma.botEstadoTransicao.update({
       where: { id },
       data: {
@@ -73,7 +73,7 @@ export class AdminService {
     });
   }
 
-  async excluirTransicao(id: number) {
+  async excluirTransicao(id: string) {
     await this.prisma.botEstadoTransicao.delete({ where: { id } });
     return { ok: true };
   }

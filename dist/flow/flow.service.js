@@ -13,12 +13,15 @@ exports.FlowService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const flow_converter_service_1 = require("./flow-converter.service");
+const organization_service_1 = require("../organization/organization.service");
 let FlowService = class FlowService {
     prisma;
     converter;
-    constructor(prisma, converter) {
+    orgService;
+    constructor(prisma, converter, orgService) {
         this.prisma = prisma;
         this.converter = converter;
+        this.orgService = orgService;
     }
     aplicarPrefixo(flowId, estados, transicoes) {
         const prefix = `F${flowId}_`;
@@ -30,17 +33,31 @@ let FlowService = class FlowService {
         }));
         return { estadosPrefixados, transicoesAtualizadas };
     }
-    async listar(subOrganizacaoId) {
+    async verificarAcessoFluxo(fluxo, usuarioId) {
+        if (fluxo.subOrganizacaoId) {
+            const temAcesso = await this.orgService.verificarAcessoSubOrg(usuarioId, fluxo.subOrganizacaoId);
+            if (!temAcesso) {
+                throw new common_1.ForbiddenException('Sem acesso a este fluxo');
+            }
+        }
+    }
+    async listar(subOrganizacaoId, usuarioId) {
+        const subOrgsAcessiveis = await this.orgService.getSubOrgsAcessiveis(usuarioId);
+        const idsAcessiveis = subOrgsAcessiveis.map((s) => s.id);
+        const where = subOrganizacaoId
+            ? idsAcessiveis.includes(subOrganizacaoId) ? { subOrganizacaoId } : { id: '' }
+            : idsAcessiveis.length > 0 ? { subOrganizacaoId: { in: idsAcessiveis } } : { id: '' };
         return this.prisma.botFluxo.findMany({
-            where: subOrganizacaoId ? { subOrganizacaoId } : {},
+            where,
             select: { id: true, nome: true, descricao: true, versao: true, ativo: true, subOrganizacaoId: true, criadoEm: true, atualizadoEm: true },
             orderBy: { atualizadoEm: 'desc' },
         });
     }
-    async obter(id) {
+    async obter(id, usuarioId) {
         const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
         if (!fluxo)
             throw new common_1.NotFoundException('Fluxo não encontrado');
+        await this.verificarAcessoFluxo(fluxo, usuarioId);
         if (fluxo.flowJson) {
             return {
                 id: fluxo.id,
@@ -94,10 +111,11 @@ let FlowService = class FlowService {
         }
         return { ok: true, id: fluxo.id, fluxo };
     }
-    async atualizar(id, data) {
+    async atualizar(id, data, usuarioId) {
         const fluxoExistente = await this.prisma.botFluxo.findUnique({ where: { id } });
         if (!fluxoExistente)
             throw new common_1.NotFoundException('Fluxo não encontrado');
+        await this.verificarAcessoFluxo(fluxoExistente, usuarioId);
         const flowJson = { nodes: data.nodes, connections: data.connections, variables: data.variables };
         await this.prisma.botFluxo.update({
             where: { id },
@@ -118,17 +136,22 @@ let FlowService = class FlowService {
         }
         return { ok: true };
     }
-    async excluir(id) {
+    async excluir(id, usuarioId) {
+        const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
+        if (!fluxo)
+            throw new common_1.NotFoundException('Fluxo não encontrado');
+        await this.verificarAcessoFluxo(fluxo, usuarioId);
         await this.prisma.botEstadoUsuario.deleteMany({
             where: { estado: { flowId: id } },
         });
         await this.prisma.botFluxo.delete({ where: { id } });
         return { ok: true };
     }
-    async ativar(id) {
+    async ativar(id, usuarioId) {
         const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
         if (!fluxo)
             throw new common_1.NotFoundException('Fluxo não encontrado');
+        await this.verificarAcessoFluxo(fluxo, usuarioId);
         await this.prisma.$transaction(async (tx) => {
             await tx.botEstadoConfig.updateMany({ where: { flowId: { not: null } }, data: { ativo: false } });
             await tx.$executeRaw `UPDATE bot_estado_transicao SET ativo = false WHERE estado_origem IN (SELECT estado FROM bot_estado_config WHERE flow_id IS NOT NULL)`;
@@ -197,6 +220,7 @@ exports.FlowService = FlowService;
 exports.FlowService = FlowService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        flow_converter_service_1.FlowConverterService])
+        flow_converter_service_1.FlowConverterService,
+        organization_service_1.OrganizationService])
 ], FlowService);
 //# sourceMappingURL=flow.service.js.map

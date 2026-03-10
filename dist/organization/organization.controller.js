@@ -95,118 +95,118 @@ __decorate([
 ], OrganizationController.prototype, "criar", null);
 __decorate([
     (0, common_1.Get)('organizacoes/:orgId'),
-    __param(0, (0, common_1.Param)('orgId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('orgId')),
     __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], OrganizationController.prototype, "obter", null);
 __decorate([
     (0, common_1.Put)('organizacoes/:orgId'),
-    __param(0, (0, common_1.Param)('orgId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('orgId')),
     __param(1, (0, common_1.Req)()),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object, Object]),
+    __metadata("design:paramtypes", [String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], OrganizationController.prototype, "atualizar", null);
 __decorate([
     (0, common_1.Delete)('organizacoes/:orgId'),
-    __param(0, (0, common_1.Param)('orgId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('orgId')),
     __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], OrganizationController.prototype, "excluir", null);
 __decorate([
     (0, common_1.Get)('organizacoes/:orgId/membros'),
-    __param(0, (0, common_1.Param)('orgId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('orgId')),
     __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], OrganizationController.prototype, "listarMembros", null);
 __decorate([
     (0, common_1.Post)('organizacoes/:orgId/membros'),
-    __param(0, (0, common_1.Param)('orgId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('orgId')),
     __param(1, (0, common_1.Req)()),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object, Object]),
+    __metadata("design:paramtypes", [String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], OrganizationController.prototype, "adicionarMembro", null);
 __decorate([
     (0, common_1.Delete)('organizacoes/:orgId/membros/:membroId'),
-    __param(0, (0, common_1.Param)('orgId', common_1.ParseIntPipe)),
-    __param(1, (0, common_1.Param)('membroId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('orgId')),
+    __param(1, (0, common_1.Param)('membroId')),
     __param(2, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Number, Object]),
+    __metadata("design:paramtypes", [String, String, Object]),
     __metadata("design:returntype", void 0)
 ], OrganizationController.prototype, "removerMembro", null);
 __decorate([
     (0, common_1.Get)('organizacoes/:orgId/sub-orgs'),
-    __param(0, (0, common_1.Param)('orgId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('orgId')),
     __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], OrganizationController.prototype, "listarSubOrgs", null);
 __decorate([
     (0, common_1.Post)('organizacoes/:orgId/sub-orgs'),
-    __param(0, (0, common_1.Param)('orgId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('orgId')),
     __param(1, (0, common_1.Req)()),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object, Object]),
+    __metadata("design:paramtypes", [String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], OrganizationController.prototype, "criarSubOrg", null);
 __decorate([
     (0, common_1.Put)('organizacoes/:orgId/sub-orgs/:subOrgId'),
-    __param(0, (0, common_1.Param)('orgId', common_1.ParseIntPipe)),
-    __param(1, (0, common_1.Param)('subOrgId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('orgId')),
+    __param(1, (0, common_1.Param)('subOrgId')),
     __param(2, (0, common_1.Req)()),
     __param(3, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Number, Object, Object]),
+    __metadata("design:paramtypes", [String, String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], OrganizationController.prototype, "atualizarSubOrg", null);
 __decorate([
     (0, common_1.Delete)('organizacoes/:orgId/sub-orgs/:subOrgId'),
-    __param(0, (0, common_1.Param)('orgId', common_1.ParseIntPipe)),
-    __param(1, (0, common_1.Param)('subOrgId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('orgId')),
+    __param(1, (0, common_1.Param)('subOrgId')),
     __param(2, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Number, Object]),
+    __metadata("design:paramtypes", [String, String, Object]),
     __metadata("design:returntype", void 0)
 ], OrganizationController.prototype, "excluirSubOrg", null);
 __decorate([
     (0, common_1.Post)('organizacoes/:orgId/sub-orgs/:subOrgId/transferir'),
-    __param(0, (0, common_1.Param)('subOrgId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('subOrgId')),
     __param(1, (0, common_1.Req)()),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object, Object]),
+    __metadata("design:paramtypes", [String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], OrganizationController.prototype, "transferirSubOrg", null);
 __decorate([
     (0, common_1.Post)('organizacoes/:orgId/sub-orgs/:subOrgId/membros'),
-    __param(0, (0, common_1.Param)('orgId', common_1.ParseIntPipe)),
-    __param(1, (0, common_1.Param)('subOrgId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('orgId')),
+    __param(1, (0, common_1.Param)('subOrgId')),
     __param(2, (0, common_1.Req)()),
     __param(3, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Number, Object, Object]),
+    __metadata("design:paramtypes", [String, String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], OrganizationController.prototype, "adicionarMembroSubOrg", null);
 __decorate([
     (0, common_1.Delete)('organizacoes/:orgId/sub-orgs/:subOrgId/membros/:membroId'),
-    __param(0, (0, common_1.Param)('orgId', common_1.ParseIntPipe)),
-    __param(1, (0, common_1.Param)('subOrgId', common_1.ParseIntPipe)),
-    __param(2, (0, common_1.Param)('membroId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('orgId')),
+    __param(1, (0, common_1.Param)('subOrgId')),
+    __param(2, (0, common_1.Param)('membroId')),
     __param(3, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Number, Number, Object]),
+    __metadata("design:paramtypes", [String, String, String, Object]),
     __metadata("design:returntype", void 0)
 ], OrganizationController.prototype, "removerMembroSubOrg", null);
 exports.OrganizationController = OrganizationController = __decorate([

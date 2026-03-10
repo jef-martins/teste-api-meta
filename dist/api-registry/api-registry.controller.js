@@ -23,13 +23,11 @@ let ApiRegistryController = class ApiRegistryController {
     }
     getSubOrgId(headers) {
         const raw = headers['x-suborg-id'];
-        const parsed = raw ? parseInt(raw) : NaN;
-        return isNaN(parsed) ? null : parsed;
+        return raw || null;
     }
     getOrgId(headers) {
         const raw = headers['x-org-id'];
-        const parsed = raw ? parseInt(raw) : NaN;
-        return isNaN(parsed) ? null : parsed;
+        return raw || null;
     }
     listar(req, headers) {
         const subOrgId = this.getSubOrgId(headers);
@@ -92,74 +90,74 @@ __decorate([
 ], ApiRegistryController.prototype, "criar", null);
 __decorate([
     (0, common_1.Put)(':id'),
-    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Req)()),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object, Object]),
+    __metadata("design:paramtypes", [String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], ApiRegistryController.prototype, "atualizar", null);
 __decorate([
     (0, common_1.Delete)(':id'),
-    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], ApiRegistryController.prototype, "excluir", null);
 __decorate([
     (0, common_1.Post)(':apiId/token'),
-    __param(0, (0, common_1.Param)('apiId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('apiId')),
     __param(1, (0, common_1.Headers)()),
     __param(2, (0, common_1.Req)()),
     __param(3, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object, Object, Object]),
+    __metadata("design:paramtypes", [String, Object, Object, Object]),
     __metadata("design:returntype", void 0)
 ], ApiRegistryController.prototype, "salvarToken", null);
 __decorate([
     (0, common_1.Delete)(':apiId/token'),
-    __param(0, (0, common_1.Param)('apiId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('apiId')),
     __param(1, (0, common_1.Headers)()),
     __param(2, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object, Object]),
+    __metadata("design:paramtypes", [String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], ApiRegistryController.prototype, "removerToken", null);
 __decorate([
     (0, common_1.Get)(':apiId/rotas'),
-    __param(0, (0, common_1.Param)('apiId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('apiId')),
     __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], ApiRegistryController.prototype, "listarRotas", null);
 __decorate([
     (0, common_1.Post)(':apiId/rotas'),
-    __param(0, (0, common_1.Param)('apiId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('apiId')),
     __param(1, (0, common_1.Req)()),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object, Object]),
+    __metadata("design:paramtypes", [String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], ApiRegistryController.prototype, "criarRota", null);
 __decorate([
     (0, common_1.Put)(':apiId/rotas/:rotaId'),
-    __param(0, (0, common_1.Param)('apiId', common_1.ParseIntPipe)),
-    __param(1, (0, common_1.Param)('rotaId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('apiId')),
+    __param(1, (0, common_1.Param)('rotaId')),
     __param(2, (0, common_1.Req)()),
     __param(3, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Number, Object, Object]),
+    __metadata("design:paramtypes", [String, String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], ApiRegistryController.prototype, "atualizarRota", null);
 __decorate([
     (0, common_1.Delete)(':apiId/rotas/:rotaId'),
-    __param(0, (0, common_1.Param)('apiId', common_1.ParseIntPipe)),
-    __param(1, (0, common_1.Param)('rotaId', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('apiId')),
+    __param(1, (0, common_1.Param)('rotaId')),
     __param(2, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Number, Object]),
+    __metadata("design:paramtypes", [String, String, Object]),
     __metadata("design:returntype", void 0)
 ], ApiRegistryController.prototype, "excluirRota", null);
 exports.ApiRegistryController = ApiRegistryController = __decorate([

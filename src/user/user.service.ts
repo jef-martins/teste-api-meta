@@ -26,7 +26,7 @@ export class UserService {
     }
   }
 
-  async atualizar(id: number, data: { nome?: string; email?: string; papel?: string; ativo?: boolean; senha?: string }) {
+  async atualizar(id: string, data: { nome?: string; email?: string; papel?: string; ativo?: boolean; senha?: string }) {
     const updateData: any = {
       nome: data.nome,
       email: data.email,
@@ -51,7 +51,7 @@ export class UserService {
     }
   }
 
-  async excluir(id: number, usuarioAtualId: number) {
+  async excluir(id: string, usuarioAtualId: string) {
     if (id === usuarioAtualId) {
       throw new BadRequestException('Você não pode excluir sua própria conta');
     }

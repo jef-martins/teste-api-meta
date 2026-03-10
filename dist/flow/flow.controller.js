@@ -26,49 +26,50 @@ let FlowController = class FlowController {
     }
     getSubOrgId(headers) {
         const raw = headers['x-suborg-id'];
-        const parsed = raw ? parseInt(raw) : NaN;
-        return isNaN(parsed) ? null : parsed;
+        return raw || null;
     }
-    listar(headers) {
+    listar(headers, req) {
         const subOrgId = this.getSubOrgId(headers);
-        return this.flowService.listar(subOrgId);
+        return this.flowService.listar(subOrgId, req.user.id);
     }
-    obter(id) {
-        return this.flowService.obter(id);
+    obter(id, req) {
+        return this.flowService.obter(id, req.user.id);
     }
     async criar(body, headers, req) {
         const subOrgId = this.getSubOrgId(headers);
         if (subOrgId) {
             const temAcesso = await this.orgService.verificarAcessoSubOrg(req.user.id, subOrgId);
             if (!temAcesso) {
-                throw new Error('Sem acesso a esta sub-organização');
+                throw new common_1.ForbiddenException('Sem acesso a esta sub-organização');
             }
         }
         return this.flowService.criar({ ...body, subOrganizacaoId: subOrgId });
     }
-    atualizar(id, body) {
-        return this.flowService.atualizar(id, body);
+    atualizar(id, body, req) {
+        return this.flowService.atualizar(id, body, req.user.id);
     }
-    excluir(id) {
-        return this.flowService.excluir(id);
+    excluir(id, req) {
+        return this.flowService.excluir(id, req.user.id);
     }
-    ativar(id) {
-        return this.flowService.ativar(id);
+    ativar(id, req) {
+        return this.flowService.ativar(id, req.user.id);
     }
 };
 exports.FlowController = FlowController;
 __decorate([
     (0, common_1.Get)(),
     __param(0, (0, common_1.Headers)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", void 0)
 ], FlowController.prototype, "listar", null);
 __decorate([
     (0, common_1.Get)(':id'),
-    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], FlowController.prototype, "obter", null);
 __decorate([
@@ -82,24 +83,27 @@ __decorate([
 ], FlowController.prototype, "criar", null);
 __decorate([
     (0, common_1.Put)(':id'),
-    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:paramtypes", [String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], FlowController.prototype, "atualizar", null);
 __decorate([
     (0, common_1.Delete)(':id'),
-    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], FlowController.prototype, "excluir", null);
 __decorate([
     (0, common_1.Post)(':id/ativar'),
-    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], FlowController.prototype, "ativar", null);
 exports.FlowController = FlowController = __decorate([
