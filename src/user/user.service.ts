@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserData } from './interfaces/update-user.interface';
@@ -9,7 +13,15 @@ export class UserService {
 
   async listar() {
     return this.prisma.botUsuario.findMany({
-      select: { id: true, email: true, nome: true, papel: true, ativo: true, criadoEm: true, atualizadoEm: true },
+      select: {
+        id: true,
+        email: true,
+        nome: true,
+        papel: true,
+        ativo: true,
+        criadoEm: true,
+        atualizadoEm: true,
+      },
       orderBy: { criadoEm: 'desc' },
     });
   }
@@ -19,15 +31,32 @@ export class UserService {
     try {
       return await this.prisma.botUsuario.create({
         data: { email, senhaHash, nome: nome || '', papel: papel || 'admin' },
-        select: { id: true, email: true, nome: true, papel: true, ativo: true, criadoEm: true },
+        select: {
+          id: true,
+          email: true,
+          nome: true,
+          papel: true,
+          ativo: true,
+          criadoEm: true,
+        },
       });
     } catch (err: any) {
-      if (err.code === 'P2002') throw new BadRequestException('Email já cadastrado');
+      if (err?.code === 'P2002')
+        throw new BadRequestException('Email já cadastrado');
       throw err;
     }
   }
 
-  async atualizar(id: string, data: { nome?: string; email?: string; papel?: string; ativo?: boolean; senha?: string }) {
+  async atualizar(
+    id: string,
+    data: {
+      nome?: string;
+      email?: string;
+      papel?: string;
+      ativo?: boolean;
+      senha?: string;
+    },
+  ) {
     const updateData: UpdateUserData = {
       nome: data.nome,
       email: data.email,
@@ -43,11 +72,21 @@ export class UserService {
       return await this.prisma.botUsuario.update({
         where: { id },
         data: updateData,
-        select: { id: true, email: true, nome: true, papel: true, ativo: true, criadoEm: true, atualizadoEm: true },
+        select: {
+          id: true,
+          email: true,
+          nome: true,
+          papel: true,
+          ativo: true,
+          criadoEm: true,
+          atualizadoEm: true,
+        },
       });
     } catch (err: any) {
-      if (err.code === 'P2025') throw new NotFoundException('Usuário não encontrado');
-      if (err.code === 'P2002') throw new BadRequestException('Email já cadastrado');
+      if (err?.code === 'P2025')
+        throw new NotFoundException('Usuário não encontrado');
+      if (err?.code === 'P2002')
+        throw new BadRequestException('Email já cadastrado');
       throw err;
     }
   }
@@ -60,7 +99,8 @@ export class UserService {
       await this.prisma.botUsuario.delete({ where: { id } });
       return { ok: true };
     } catch (err: any) {
-      if (err.code === 'P2025') throw new NotFoundException('Usuário não encontrado');
+      if (err?.code === 'P2025')
+        throw new NotFoundException('Usuário não encontrado');
       throw err;
     }
   }
