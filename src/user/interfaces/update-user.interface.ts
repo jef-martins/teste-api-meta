@@ -3,5 +3,5 @@ export interface UpdateUserData {
   email?: string;
   papel?: string;
   ativo?: boolean;
-  senhaHash?: string;
+  senha?: string;
 }

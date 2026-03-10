@@ -47,16 +47,8 @@ export class UserService {
     }
   }
 
-  async atualizar(
-    id: string,
-    data: {
-      nome?: string;
-      email?: string;
-      papel?: string;
-      ativo?: boolean;
-      senha?: string;
-    },
-  ) {
+  async atualizar(id: string, data: UpdateUserData) {
+
     const updateData: UpdateUserData = {
       nome: data.nome,
       email: data.email,
@@ -65,13 +57,24 @@ export class UserService {
     };
 
     if (data.senha) {
-      updateData.senhaHash = await bcrypt.hash(data.senha, 10);
+      updateData.senha = await bcrypt.hash(data.senha, 10);
+    }
+
+    const dataForPrisma: any = {
+      nome: updateData.nome,
+      email: updateData.email,
+      papel: updateData.papel,
+      ativo: updateData.ativo,
+    };
+
+    if (updateData.senha) {
+      dataForPrisma.senhaHash = updateData.senha;
     }
 
     try {
       return await this.prisma.botUsuario.update({
         where: { id },
-        data: updateData,
+        data: dataForPrisma,
         select: {
           id: true,
           email: true,
