@@ -9,12 +9,23 @@ export class AdminService {
 
   async listarEstados() {
     return this.prisma.botEstadoConfig.findMany({
-      select: { estado: true, handler: true, descricao: true, ativo: true, config: true },
+      select: {
+        estado: true,
+        handler: true,
+        descricao: true,
+        ativo: true,
+        config: true,
+      },
       orderBy: { estado: 'asc' },
     });
   }
 
-  async criarEstado(data: { estado: string; handler: string; descricao?: string; config?: any }) {
+  async criarEstado(data: {
+    estado: string;
+    handler: string;
+    descricao?: string;
+    config?: any;
+  }) {
     return this.prisma.botEstadoConfig.create({
       data: {
         estado: data.estado,
@@ -25,7 +36,15 @@ export class AdminService {
     });
   }
 
-  async atualizarEstado(estado: string, data: { handler: string; descricao?: string; config?: any; ativo?: boolean }) {
+  async atualizarEstado(
+    estado: string,
+    data: {
+      handler: string;
+      descricao?: string;
+      config?: any;
+      ativo?: boolean;
+    },
+  ) {
     return this.prisma.botEstadoConfig.update({
       where: { estado },
       data: {
@@ -46,12 +65,22 @@ export class AdminService {
 
   async listarTransicoes() {
     return this.prisma.botEstadoTransicao.findMany({
-      select: { id: true, estadoOrigem: true, entrada: true, estadoDestino: true, ativo: true },
+      select: {
+        id: true,
+        estadoOrigem: true,
+        entrada: true,
+        estadoDestino: true,
+        ativo: true,
+      },
       orderBy: [{ estadoOrigem: 'asc' }, { entrada: 'asc' }],
     });
   }
 
-  async criarTransicao(data: { estado_origem: string; entrada: string; estado_destino: string }) {
+  async criarTransicao(data: {
+    estado_origem: string;
+    entrada: string;
+    estado_destino: string;
+  }) {
     return this.prisma.botEstadoTransicao.create({
       data: {
         estadoOrigem: data.estado_origem,
@@ -61,7 +90,15 @@ export class AdminService {
     });
   }
 
-  async atualizarTransicao(id: string, data: { estado_origem: string; entrada: string; estado_destino: string; ativo?: boolean }) {
+  async atualizarTransicao(
+    id: string,
+    data: {
+      estado_origem: string;
+      entrada: string;
+      estado_destino: string;
+      ativo?: boolean;
+    },
+  ) {
     return this.prisma.botEstadoTransicao.update({
       where: { id },
       data: {
@@ -80,34 +117,53 @@ export class AdminService {
 
   // ─── Teste de Requisição ─────────────────────────────────────────────────
 
-  async testarRequisicao(data: { config: any; valor?: string; variaveis?: Record<string, string> }) {
+  async testarRequisicao(data: {
+    config: any;
+    valor?: string;
+    variaveis?: Record<string, string>;
+  }) {
     const { config, valor, variaveis } = data;
     if (!config?.url) throw new BadRequestException('URL não fornecida.');
 
     const interpolar = (texto: string, vars: Record<string, string>) =>
-      typeof texto === 'string' ? texto.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`) : texto;
+      typeof texto === 'string'
+        ? texto.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`)
+        : texto;
 
     const interpolarDeep = (obj: any, vars: Record<string, string>): any => {
       if (typeof obj === 'string') return interpolar(obj, vars);
-      if (Array.isArray(obj)) return obj.map((item) => interpolarDeep(item, vars));
+      if (Array.isArray(obj))
+        return obj.map((item) => interpolarDeep(item, vars));
       if (typeof obj === 'object' && obj !== null) {
-        return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, interpolarDeep(v, vars)]));
+        return Object.fromEntries(
+          Object.entries(obj).map(([k, v]) => [k, interpolarDeep(v, vars)]),
+        );
       }
       return obj;
     };
 
     const metodo = (config.metodo || 'GET').toUpperCase();
-    const tudo = { id: crypto.randomUUID(), valor: valor || '', ...(variaveis || {}) };
+    const tudo = {
+      id: crypto.randomUUID(),
+      valor: valor || '',
+      ...(variaveis || {}),
+    };
     const urlBase = interpolar(config.url, tudo);
-    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(config.headers || {}) };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(config.headers || {}),
+    };
 
-    const usandoBodyFixo = config.body && typeof config.body === 'object' && !Array.isArray(config.body);
+    const usandoBodyFixo =
+      config.body &&
+      typeof config.body === 'object' &&
+      !Array.isArray(config.body);
     let bodyObj: any;
 
     if (usandoBodyFixo) {
       bodyObj = interpolarDeep(config.body, tudo);
     } else if (config.campoEnviar && typeof config.campoEnviar === 'string') {
-      bodyObj = { [config.campoEnviar]: valor || (variaveis?.valor) || '' };
+      bodyObj = { [config.campoEnviar]: valor || variaveis?.valor || '' };
     } else {
       bodyObj = { ...tudo };
     }
@@ -119,7 +175,11 @@ export class AdminService {
       if (metodo === 'GET') {
         if (!usandoBodyFixo) {
           const params = new URLSearchParams(
-            Object.fromEntries(Object.entries(bodyObj).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)])),
+            Object.fromEntries(
+              Object.entries(bodyObj)
+                .filter(([, v]) => v !== undefined && v !== '')
+                .map(([k, v]) => [k, String(v)]),
+            ),
           ).toString();
           if (params) urlFinal += (urlFinal.includes('?') ? '&' : '?') + params;
         }

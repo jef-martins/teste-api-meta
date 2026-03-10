@@ -30,7 +30,9 @@ async function bootstrap() {
     rateLimit({
       windowMs: 1 * 60 * 1000,
       max: 100,
-      message: { erro: 'Limite de requisições atingido. Tente novamente em 1 minuto.' },
+      message: {
+        erro: 'Limite de requisições atingido. Tente novamente em 1 minuto.',
+      },
     }),
   );
 
@@ -39,7 +41,9 @@ async function bootstrap() {
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
-  console.log(`[API] Servidor NestJS rodando na porta ${port} → http://localhost:${port}`);
+  console.log(
+    `[API] Servidor NestJS rodando na porta ${port} → http://localhost:${port}`,
+  );
 }
 
 bootstrap();

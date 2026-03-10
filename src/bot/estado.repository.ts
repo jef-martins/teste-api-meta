@@ -14,14 +14,21 @@ export class EstadoRepository {
         select: { handler: true, descricao: true, config: true },
       });
       if (!row) return null;
-      return { handler: row.handler, descricao: row.descricao, config: (row.config as any) ?? {} };
+      return {
+        handler: row.handler,
+        descricao: row.descricao,
+        config: (row.config as any) ?? {},
+      };
     } catch (err: any) {
       this.logger.error(`Erro ao consultar estado ${estado}: ${err.message}`);
       return null;
     }
   }
 
-  async buscarProximoEstado(estadoAtual: string, entrada: string): Promise<string | null> {
+  async buscarProximoEstado(
+    estadoAtual: string,
+    entrada: string,
+  ): Promise<string | null> {
     try {
       // Exact match first
       let row = await this.prisma.botEstadoTransicao.findFirst({
@@ -40,7 +47,9 @@ export class EstadoRepository {
       }
       return null;
     } catch (err: any) {
-      this.logger.error(`Erro ao buscar próximo estado de ${estadoAtual} via ${entrada}: ${err.message}`);
+      this.logger.error(
+        `Erro ao buscar próximo estado de ${estadoAtual} via ${entrada}: ${err.message}`,
+      );
       return null;
     }
   }
@@ -58,7 +67,11 @@ export class EstadoRepository {
     }
   }
 
-  async salvarEstadoUsuario(chatId: string, estado: string, nome?: string | null) {
+  async salvarEstadoUsuario(
+    chatId: string,
+    estado: string,
+    nome?: string | null,
+  ) {
     try {
       await this.prisma.botEstadoUsuario.upsert({
         where: { chatId },
@@ -70,7 +83,12 @@ export class EstadoRepository {
     }
   }
 
-  async registrarTransicao(chatId: string, estadoAnterior: string, estadoNovo: string, mensagemGatilho?: string | null) {
+  async registrarTransicao(
+    chatId: string,
+    estadoAnterior: string,
+    estadoNovo: string,
+    mensagemGatilho?: string | null,
+  ) {
     try {
       await this.prisma.botEstadoHistorico.create({
         data: { chatId, estadoAnterior, estadoNovo, mensagemGatilho },

@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FlowConverterService } from './flow-converter.service';
 import { OrganizationService } from '../organization/organization.service';
@@ -13,7 +18,10 @@ export class FlowService {
 
   private aplicarPrefixo(flowId: string, estados: any[], transicoes: any[]) {
     const prefix = `F${flowId}_`;
-    const estadosPrefixados = estados.map((e: any) => ({ ...e, estado: prefix + e.estado }));
+    const estadosPrefixados = estados.map((e: any) => ({
+      ...e,
+      estado: prefix + e.estado,
+    }));
     const transicoesAtualizadas = transicoes.map((t: any) => ({
       ...t,
       estado_origem: prefix + t.estado_origem,
@@ -24,7 +32,10 @@ export class FlowService {
 
   private async verificarAcessoFluxo(fluxo: any, usuarioId: string) {
     if (fluxo.subOrganizacaoId) {
-      const temAcesso = await this.orgService.verificarAcessoSubOrg(usuarioId, fluxo.subOrganizacaoId);
+      const temAcesso = await this.orgService.verificarAcessoSubOrg(
+        usuarioId,
+        fluxo.subOrganizacaoId,
+      );
       if (!temAcesso) {
         throw new ForbiddenException('Sem acesso a este fluxo');
       }
@@ -32,16 +43,30 @@ export class FlowService {
   }
 
   async listar(subOrganizacaoId: string | null, usuarioId: string) {
-    const subOrgsAcessiveis = await this.orgService.getSubOrgsAcessiveis(usuarioId);
+    const subOrgsAcessiveis =
+      await this.orgService.getSubOrgsAcessiveis(usuarioId);
     const idsAcessiveis = subOrgsAcessiveis.map((s) => s.id);
 
     const where = subOrganizacaoId
-      ? idsAcessiveis.includes(subOrganizacaoId) ? { subOrganizacaoId } : { id: '' } // sem acesso à sub-org solicitada
-      : idsAcessiveis.length > 0 ? { subOrganizacaoId: { in: idsAcessiveis } } : { id: '' };
+      ? idsAcessiveis.includes(subOrganizacaoId)
+        ? { subOrganizacaoId }
+        : { id: '' } // sem acesso à sub-org solicitada
+      : idsAcessiveis.length > 0
+        ? { subOrganizacaoId: { in: idsAcessiveis } }
+        : { id: '' };
 
     return this.prisma.botFluxo.findMany({
       where,
-      select: { id: true, nome: true, descricao: true, versao: true, ativo: true, subOrganizacaoId: true, criadoEm: true, atualizadoEm: true },
+      select: {
+        id: true,
+        nome: true,
+        descricao: true,
+        versao: true,
+        ativo: true,
+        subOrganizacaoId: true,
+        criadoEm: true,
+        atualizadoEm: true,
+      },
       orderBy: { atualizadoEm: 'desc' },
     });
   }
@@ -76,7 +101,11 @@ export class FlowService {
       orderBy: { chave: 'asc' },
     });
 
-    const flowData = this.converter.stateMachineToFlow(estados, transicoes, variaveis);
+    const flowData = this.converter.stateMachineToFlow(
+      estados,
+      transicoes,
+      variaveis,
+    );
 
     return {
       id: fluxo.id,
@@ -88,10 +117,21 @@ export class FlowService {
     };
   }
 
-  async criar(data: { name: string; description?: string; nodes?: any[]; connections?: any[]; variables?: any[]; subOrganizacaoId?: string | null }) {
+  async criar(data: {
+    name: string;
+    description?: string;
+    nodes?: any[];
+    connections?: any[];
+    variables?: any[];
+    subOrganizacaoId?: string | null;
+  }) {
     if (!data.name) throw new BadRequestException('Nome é obrigatório');
 
-    const flowJson = { nodes: data.nodes, connections: data.connections, variables: data.variables };
+    const flowJson = {
+      nodes: data.nodes,
+      connections: data.connections,
+      variables: data.variables,
+    };
 
     const fluxo = await this.prisma.botFluxo.create({
       data: {
@@ -102,8 +142,13 @@ export class FlowService {
       },
     });
 
-    const { estados, transicoes, variaveis } = this.converter.flowToStateMachine(flowJson);
-    const { estadosPrefixados, transicoesAtualizadas } = this.aplicarPrefixo(fluxo.id, estados, transicoes);
+    const { estados, transicoes, variaveis } =
+      this.converter.flowToStateMachine(flowJson);
+    const { estadosPrefixados, transicoesAtualizadas } = this.aplicarPrefixo(
+      fluxo.id,
+      estados,
+      transicoes,
+    );
 
     await this.salvarEstados(fluxo.id, estadosPrefixados);
     await this.salvarTransicoes(transicoesAtualizadas);
@@ -115,13 +160,30 @@ export class FlowService {
     return { ok: true, id: fluxo.id, fluxo };
   }
 
-  async atualizar(id: string, data: { name?: string; description?: string; nodes?: any[]; connections?: any[]; variables?: any[]; version?: number }, usuarioId: string) {
-    const fluxoExistente = await this.prisma.botFluxo.findUnique({ where: { id } });
+  async atualizar(
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      nodes?: any[];
+      connections?: any[];
+      variables?: any[];
+      version?: number;
+    },
+    usuarioId: string,
+  ) {
+    const fluxoExistente = await this.prisma.botFluxo.findUnique({
+      where: { id },
+    });
     if (!fluxoExistente) throw new NotFoundException('Fluxo não encontrado');
 
     await this.verificarAcessoFluxo(fluxoExistente, usuarioId);
 
-    const flowJson = { nodes: data.nodes, connections: data.connections, variables: data.variables };
+    const flowJson = {
+      nodes: data.nodes,
+      connections: data.connections,
+      variables: data.variables,
+    };
 
     await this.prisma.botFluxo.update({
       where: { id },
@@ -136,7 +198,11 @@ export class FlowService {
     await this.limparEstados(id);
 
     const { estados, transicoes } = this.converter.flowToStateMachine(flowJson);
-    const { estadosPrefixados, transicoesAtualizadas } = this.aplicarPrefixo(id, estados, transicoes);
+    const { estadosPrefixados, transicoesAtualizadas } = this.aplicarPrefixo(
+      id,
+      estados,
+      transicoes,
+    );
 
     await this.salvarEstados(id, estadosPrefixados);
     await this.salvarTransicoes(transicoesAtualizadas);
@@ -170,7 +236,10 @@ export class FlowService {
 
     await this.prisma.$transaction(async (tx) => {
       // Deactivate all states belonging to flows
-      await tx.botEstadoConfig.updateMany({ where: { flowId: { not: null } }, data: { ativo: false } });
+      await tx.botEstadoConfig.updateMany({
+        where: { flowId: { not: null } },
+        data: { ativo: false },
+      });
 
       // Deactivate all transitions from flow states
       await tx.$executeRaw`UPDATE bot_estado_transicao SET ativo = false WHERE estado_origem IN (SELECT estado FROM bot_estado_config WHERE flow_id IS NOT NULL)`;
@@ -179,7 +248,10 @@ export class FlowService {
       await tx.botFluxo.updateMany({ data: { ativo: false } });
 
       // Activate this flow's states
-      await tx.botEstadoConfig.updateMany({ where: { flowId: id }, data: { ativo: true } });
+      await tx.botEstadoConfig.updateMany({
+        where: { flowId: id },
+        data: { ativo: true },
+      });
 
       // Activate transitions
       await tx.$executeRaw`UPDATE bot_estado_transicao SET ativo = true WHERE estado_origem IN (SELECT estado FROM bot_estado_config WHERE flow_id = ${id})`;
@@ -194,7 +266,9 @@ export class FlowService {
       });
 
       if (startState) {
-        await tx.botEstadoUsuario.updateMany({ data: { estadoAtual: startState.estado } });
+        await tx.botEstadoUsuario.updateMany({
+          data: { estadoAtual: startState.estado },
+        });
       } else {
         await tx.botEstadoUsuario.deleteMany();
       }
@@ -247,7 +321,11 @@ export class FlowService {
     await this.prisma.botFluxoVariavel.deleteMany({ where: { flowId } });
     for (const v of variaveis) {
       await this.prisma.botFluxoVariavel.create({
-        data: { flowId, chave: v.key || v.chave, valorPadrao: v.value || v.valor_padrao || '' },
+        data: {
+          flowId,
+          chave: v.key || v.chave,
+          valorPadrao: v.value || v.valor_padrao || '',
+        },
       });
     }
   }

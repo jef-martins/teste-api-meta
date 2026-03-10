@@ -32,7 +32,9 @@ const WsEvent = {
     credentials: true,
   },
 })
-export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class CollaborationGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server!: Server;
 
@@ -99,7 +101,10 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
     if (flowId === undefined) return;
 
     const remoteStateVector = new Uint8Array(data.stateVector);
-    const diff = this.collaborationService.getStateDiff(flowId, remoteStateVector);
+    const diff = this.collaborationService.getStateDiff(
+      flowId,
+      remoteStateVector,
+    );
 
     if (diff) {
       client.emit(WsEvent.SyncStep2, { update: Array.from(diff) });
