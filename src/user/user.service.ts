@@ -72,7 +72,7 @@ export class UserService {
     }
 
     try {
-      return await this.prisma.botUsuario.update({
+      return await (this.prisma.botUsuario as any).update({
         where: { id },
         data: dataForPrisma,
         select: {
@@ -99,7 +99,7 @@ export class UserService {
       throw new BadRequestException('Você não pode excluir sua própria conta');
     }
     try {
-      await this.prisma.botUsuario.delete({ where: { id } });
+      await (this.prisma.botUsuario as any).delete({ where: { id } });
       return { ok: true };
     } catch (err: any) {
       if (err?.code === 'P2025')
