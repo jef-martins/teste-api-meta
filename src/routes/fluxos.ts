@@ -1,6 +1,6 @@
-const express = require('express');
-const fluxoRepo = require('../database/fluxoRepository');
-const { flowToStateMachine, stateMachineToFlow } = require('../services/flowConverter');
+import express from 'express';
+import fluxoRepo from '../database/fluxoRepository';
+import { flowToStateMachine, stateMachineToFlow } from '../services/flowConverter';
 
 /**
  * Adiciona prefixo F{flowId}_ aos nomes dos estados para garantir unicidade entre fluxos.
@@ -166,4 +166,4 @@ router.post('/fluxos/:id/ativar', async (req, res) => {
     }
 });
 
-module.exports = router;
+export default router;

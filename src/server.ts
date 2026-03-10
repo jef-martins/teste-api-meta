@@ -1,16 +1,19 @@
-const express = require('express');
-const cors    = require('cors');
-const path    = require('path');
-const helmet  = require('helmet');
-const rateLimit = require('express-rate-limit');
-const rotasConversas = require('./routes/conversas');
-const rotasAdmin     = require('./routes/admin');
-const rotasFluxos        = require('./routes/fluxos');
-const rotasMonitoramento = require('./routes/monitoramento');
-const rotasAuth          = require('./routes/auth');
-const { autenticar }     = require('./middleware/auth');
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import rotasConversas from './routes/conversas';
+import rotasAdmin from './routes/admin';
+import rotasFluxos from './routes/fluxos';
+import rotasMonitoramento from './routes/monitoramento';
+import rotasAuth from './routes/auth';
+import { autenticar } from './middleware/auth';
 
 class AppServer {
+    public app: express.Application;
+    public porta: string | number;
+
     constructor() {
         this.app = express();
         this.porta = process.env.PORT || 4000;
@@ -86,4 +89,4 @@ class AppServer {
     }
 }
 
-module.exports = AppServer;
+export default AppServer;

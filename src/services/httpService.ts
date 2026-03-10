@@ -1,6 +1,8 @@
-const axios = require('axios').default;
+import axios from 'axios';
 
 class HttpService {
+    baseUrl: string;
+
     constructor() {
         // Base URL da API externa (configure no .env ou diretamente aqui)
         this.baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
@@ -15,7 +17,7 @@ class HttpService {
      * @param {object} headers - Headers adicionais (opcional)
      * @returns {Promise<object>} - Dados retornados pela API
      */
-    async enviarRequisicao(method, endpoint, body = null, headers = {}) {
+    async enviarRequisicao(method: string, endpoint: string, body: any = null, headers: any = {}) {
         const url = `${this.baseUrl}${endpoint}`;
 
         try {
@@ -40,4 +42,4 @@ class HttpService {
 }
 
 // Exportamos uma instância (padrão Singleton)
-module.exports = new HttpService();
+export default new HttpService();

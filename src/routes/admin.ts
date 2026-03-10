@@ -1,6 +1,6 @@
-const express  = require('express');
-const pool     = require('../database/db');
-const path     = require('path');
+import express from 'express';
+import pool from '../database/db';
+import path from 'path';
 
 const router = express.Router();
 
@@ -93,8 +93,9 @@ router.post('/testar-req', async (req, res) => {
 
         if (metodo === 'GET') {
             let urlFinal = urlBase;
-            if (!usandoBodyFixo) {
-                const queryParams = new URLSearchParams(Object.fromEntries(Object.entries(bodyObj).filter(([_,v]) => v !== undefined && v !== ''))).toString();
+            if (metodo === 'GET') {
+                const searchParamsBody = Object.fromEntries(Object.entries(bodyObj).filter(([_,v]) => v !== undefined && v !== '')) as Record<string, string>;
+                const queryParams = new URLSearchParams(searchParamsBody).toString();
                 if (queryParams) {
                     urlFinal += (urlFinal.includes('?') ? '&' : '?') + queryParams;
                 }
@@ -168,4 +169,4 @@ router.delete('/transicoes/:id', async (req, res) => {
     }
 });
 
-module.exports = router;
+export default router;

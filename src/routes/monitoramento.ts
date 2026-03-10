@@ -1,5 +1,5 @@
-const express = require('express');
-const pool = require('../database/db');
+import express from 'express';
+import pool from '../database/db';
 
 const router = express.Router();
 
@@ -138,4 +138,4 @@ router.get('/dashboard', async (req, res) => {
     }
 });
 
-module.exports = router;
+export default router;

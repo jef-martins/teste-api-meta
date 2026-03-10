@@ -1,4 +1,4 @@
-const conversaRepository = require('../database/conversaRepository');
+import conversaRepository from '../database/conversaRepository';
 
 class ConversaController {
     /**
@@ -14,4 +14,4 @@ class ConversaController {
     }
 }
 
-module.exports = new ConversaController();
+export default new ConversaController();

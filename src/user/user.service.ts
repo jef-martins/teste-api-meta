@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { UpdateUserData } from './interfaces/update-user.interface';
 
 @Injectable()
 export class UserService {
@@ -27,7 +28,7 @@ export class UserService {
   }
 
   async atualizar(id: string, data: { nome?: string; email?: string; papel?: string; ativo?: boolean; senha?: string }) {
-    const updateData: any = {
+    const updateData: UpdateUserData = {
       nome: data.nome,
       email: data.email,
       papel: data.papel,

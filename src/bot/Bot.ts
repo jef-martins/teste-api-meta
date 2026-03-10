@@ -1,12 +1,14 @@
-const BotWhatsApp      = require('./BotWhatsApp');
-const estadoRepository = require('../database/estadoRepository');
-const StateMachineEngine = require('./StateMachineEngine');
+import BotWhatsApp from './BotWhatsApp';
+import estadoRepository from '../database/estadoRepository';
+import StateMachineEngine from './StateMachineEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Classe principal apenas para Infra e Recepção de Payload
 // ─────────────────────────────────────────────────────────────────────────────
 
 class Bot extends BotWhatsApp {
+    public engine: StateMachineEngine;
+
     constructor(sessao = 'sessao-bot-wpp') {
         super(sessao);
 
@@ -51,4 +53,4 @@ class Bot extends BotWhatsApp {
     }
 }
 
-module.exports = Bot;
+export default Bot;

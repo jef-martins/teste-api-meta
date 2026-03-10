@@ -1,4 +1,4 @@
-const pool = require('./db');
+import pool from './db';
 
 class FluxoRepository {
 
@@ -215,4 +215,4 @@ class FluxoRepository {
     }
 }
 
-module.exports = new FluxoRepository();
+export default new FluxoRepository();
