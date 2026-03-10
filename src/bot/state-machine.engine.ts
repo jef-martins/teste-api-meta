@@ -41,7 +41,11 @@ export class StateMachineEngine {
     if (!path) return obj;
     // Suporta notação de array: "data[0].nome" -> "data.0.nome"
     const normalizado = path.replace(/\[(\d+)\]/g, '.$1');
-    return normalizado.split('.').reduce((acc: any, key: string) => acc?.[key], obj) ?? '';
+    return (
+      normalizado
+        .split('.')
+        .reduce((acc: any, key: string) => acc?.[key], obj) ?? ''
+    );
   }
 
   salvarDado(chatId: string, campo: string, valor: string) {
@@ -77,19 +81,33 @@ export class StateMachineEngine {
     const config = await this.estadoRepo.obterConfigEstado(estadoAtual);
 
     if (!config) {
-      this.logger.warn(`Estado "${estadoAtual}" não encontrado/ativo. Reiniciando para ${estadoPadrao}.`);
+      this.logger.warn(
+        `Estado "${estadoAtual}" não encontrado/ativo. Reiniciando para ${estadoPadrao}.`,
+      );
       await this.avancarEstado(chatId, estadoPadrao, entrada, nome);
       return;
     }
 
-    this.logger.log(`[${chatId}] estado=${estadoAtual} → handler=${config.handler}`);
+    this.logger.log(
+      `[${chatId}] estado=${estadoAtual} → handler=${config.handler}`,
+    );
     this.mensagemAtual = entrada;
     this.nomeAtual = nome;
 
     // aguardarEntrada flag
     if (config.config?.aguardarEntrada && entrada) {
-      this.logger.log(`[${chatId}] estado aguarda entrada → buscando transição para "${entrada}"`);
-      await this.transitarPorEntrada(chatId, estadoAtual, entrada, message, true, nome, actionDelegate);
+      this.logger.log(
+        `[${chatId}] estado aguarda entrada → buscando transição para "${entrada}"`,
+      );
+      await this.transitarPorEntrada(
+        chatId,
+        estadoAtual,
+        entrada,
+        message,
+        true,
+        nome,
+        actionDelegate,
+      );
       return;
     }
 
@@ -100,14 +118,28 @@ export class StateMachineEngine {
     }
   }
 
-  async avancarEstado(chatId: string, proximo: string, gatilho?: string | null, nome?: string | null) {
+  async avancarEstado(
+    chatId: string,
+    proximo: string,
+    gatilho?: string | null,
+    nome?: string | null,
+  ) {
     const anterior = this.estadosUsuarios.get(chatId) ?? 'NOVO';
     this.estadosUsuarios.set(chatId, proximo);
     this.logger.log(`[${chatId}] transição: ${anterior} → ${proximo}`);
 
     // Fire-and-forget persistence
-    this.estadoRepo.salvarEstadoUsuario(chatId, proximo, nome ?? this.nomeAtual).catch(() => {});
-    this.estadoRepo.registrarTransicao(chatId, anterior, proximo, gatilho ?? this.mensagemAtual).catch(() => {});
+    this.estadoRepo
+      .salvarEstadoUsuario(chatId, proximo, nome ?? this.nomeAtual)
+      .catch(() => {});
+    this.estadoRepo
+      .registrarTransicao(
+        chatId,
+        anterior,
+        proximo,
+        gatilho ?? this.mensagemAtual,
+      )
+      .catch(() => {});
   }
 
   async transitarPorEntrada(
@@ -119,14 +151,20 @@ export class StateMachineEngine {
     nome: string | null = null,
     actionDelegate?: any,
   ): Promise<string | null> {
-    const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, entrada);
+    const proximo = await this.estadoRepo.buscarProximoEstado(
+      estadoAtual,
+      entrada,
+    );
     if (!proximo) return null;
 
     await this.avancarEstado(chatId, proximo, this.mensagemAtual, nome);
 
     if (executarHandler && actionDelegate) {
       const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-      if (configProximo && typeof actionDelegate[configProximo.handler] === 'function') {
+      if (
+        configProximo &&
+        typeof actionDelegate[configProximo.handler] === 'function'
+      ) {
         await actionDelegate[configProximo.handler](message, chatId, '', this);
       }
     }

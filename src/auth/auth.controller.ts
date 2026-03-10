@@ -41,7 +41,9 @@ export class AuthController {
   }
 
   @Post('register')
-  async register(@Body() body: { email: string; senha: string; nome?: string }) {
+  async register(
+    @Body() body: { email: string; senha: string; nome?: string },
+  ) {
     if (!body.email || !body.senha) {
       throw new BadRequestException('Email e senha são obrigatórios');
     }

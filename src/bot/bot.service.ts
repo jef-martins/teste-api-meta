@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import * as wppconnect from '@wppconnect-team/wppconnect';
 import { ConversationService } from '../conversation/conversation.service';
 import { StateMachineEngine } from './state-machine.engine';
@@ -50,7 +55,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           console.log(asciiQR);
         },
         headless: true,
-        browserArgs: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+        browserArgs: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+        ],
       } as any);
 
       // Set client on handler so it can send messages
@@ -74,16 +83,26 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const texto = '🚀 Bot online e operante via NestJS + WPPConnect!';
 
     try {
-      await this.client.sendText(numero.includes('@') ? numero : `${numero}@c.us`, texto);
+      await this.client.sendText(
+        numero.includes('@') ? numero : `${numero}@c.us`,
+        texto,
+      );
       this.logger.log('Mensagem de inicialização enviada.');
     } catch (err: any) {
-      this.logger.error(`Erro ao enviar mensagem de inicialização: ${err.message}`);
+      this.logger.error(
+        `Erro ao enviar mensagem de inicialização: ${err.message}`,
+      );
     }
   }
 
   private ouvirMensagens() {
     this.client.onMessage(async (message: any) => {
-      if (!message || message.isGroupMsg || message.from === 'status@broadcast' || message.id?.remote === 'status@broadcast') {
+      if (
+        !message ||
+        message.isGroupMsg ||
+        message.from === 'status@broadcast' ||
+        message.id?.remote === 'status@broadcast'
+      ) {
         return;
       }
       if (message.fromMe) return;
@@ -93,21 +112,32 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
       // Test mode: only respond to admin
       if (process.env.BOT_MODO_TESTE === 'true') {
-        const numeroAdmin = (process.env.BOT_NUMERO_ADMIN || '').replace(/\D/g, '');
+        const numeroAdmin = (process.env.BOT_NUMERO_ADMIN || '').replace(
+          /\D/g,
+          '',
+        );
         const lidAdmin = (process.env.BOT_LID_ADMIN || '').replace(/\D/g, '');
-        const numeroRemetente = (message.from || '').split('@')[0].replace(/\D/g, '');
+        const numeroRemetente = (message.from || '')
+          .split('@')[0]
+          .replace(/\D/g, '');
 
-        const isAdmin = numeroRemetente === numeroAdmin || (lidAdmin && numeroRemetente === lidAdmin);
+        const isAdmin =
+          numeroRemetente === numeroAdmin ||
+          (lidAdmin && numeroRemetente === lidAdmin);
         if (!isAdmin) return;
       }
 
-      this.logger.log(`Mensagem de ${message.from} [${message.type}]: ${message.body ?? ''}`);
+      this.logger.log(
+        `Mensagem de ${message.from} [${message.type}]: ${message.body ?? ''}`,
+      );
 
       try {
         await this.salvarNoBanco(message);
         await this.processarMensagem(message);
       } catch (err: any) {
-        this.logger.error(`Erro ao processar mensagem de ${message.from}: ${err.message}`);
+        this.logger.error(
+          `Erro ao processar mensagem de ${message.from}: ${err.message}`,
+        );
       }
     });
   }

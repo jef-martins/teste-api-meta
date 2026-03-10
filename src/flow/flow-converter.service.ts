@@ -36,12 +36,19 @@ export class FlowConverterService {
     return text.replace(/\{(\w+(?:\.\w+)*)\}/g, '{{$1}}');
   }
 
-  private convertVariablesDeep(obj: any, converter: (s: string) => string): any {
+  private convertVariablesDeep(
+    obj: any,
+    converter: (s: string) => string,
+  ): any {
     if (typeof obj === 'string') return converter(obj);
-    if (Array.isArray(obj)) return obj.map((item) => this.convertVariablesDeep(item, converter));
+    if (Array.isArray(obj))
+      return obj.map((item) => this.convertVariablesDeep(item, converter));
     if (typeof obj === 'object' && obj !== null) {
       return Object.fromEntries(
-        Object.entries(obj).map(([k, v]) => [k, this.convertVariablesDeep(v, converter)]),
+        Object.entries(obj).map(([k, v]) => [
+          k,
+          this.convertVariablesDeep(v, converter),
+        ]),
       );
     }
     return obj;
@@ -67,7 +74,10 @@ export class FlowConverterService {
         handler,
         descricao: label,
         ativo: true,
-        config: this.convertVariablesDeep(config, this.convertVariablesFtoB.bind(this)),
+        config: this.convertVariablesDeep(
+          config,
+          this.convertVariablesFtoB.bind(this),
+        ),
         node_id: node.id,
         node_type: node.type,
         position: node.position || { x: 0, y: 0 },
@@ -81,11 +91,19 @@ export class FlowConverterService {
         if (!estadoOrigem || !estadoDestino) return null;
 
         const entrada = this.connectionToEntrada(conn, nodes);
-        return { estado_origem: estadoOrigem, entrada, estado_destino: estadoDestino, ativo: true };
+        return {
+          estado_origem: estadoOrigem,
+          entrada,
+          estado_destino: estadoDestino,
+          ativo: true,
+        };
       })
       .filter(Boolean);
 
-    const vars = variables.map((v: any) => ({ key: v.key, value: v.value || '' }));
+    const vars = variables.map((v: any) => ({
+      key: v.key,
+      value: v.value || '',
+    }));
 
     return { estados, transicoes, variaveis: vars };
   }
@@ -96,7 +114,10 @@ export class FlowConverterService {
 
     switch (node.type) {
       case 'start':
-        return { handler: '_handlerMensagem', config: { mensagens: [], transicaoAutomatica: true } };
+        return {
+          handler: '_handlerMensagem',
+          config: { mensagens: [], transicaoAutomatica: true },
+        };
 
       case 'message':
         return this.messageNodeToHandler(props, subs);
@@ -113,7 +134,10 @@ export class FlowConverterService {
         let duracao = duration;
         if (unit === 'hours') duracao = duration * 60;
         if (unit === 'days') duracao = duration * 1440;
-        const unidade = unit === 'minutes' || unit === 'hours' || unit === 'days' ? 'minutes' : 'seconds';
+        const unidade =
+          unit === 'minutes' || unit === 'hours' || unit === 'days'
+            ? 'minutes'
+            : 'seconds';
         return { handler: '_handlerDelay', config: { duracao, unidade } };
       }
 
@@ -121,12 +145,19 @@ export class FlowConverterService {
         const msgFim = props.mensagemFim?.trim();
         return {
           handler: '_handlerMensagem',
-          config: { mensagens: msgFim ? [msgFim] : [], aguardarEntrada: true, transicaoAutomatica: false },
+          config: {
+            mensagens: msgFim ? [msgFim] : [],
+            aguardarEntrada: true,
+            transicaoAutomatica: false,
+          },
         };
       }
 
       default:
-        return { handler: '_handlerMensagem', config: { mensagens: [], transicaoAutomatica: true } };
+        return {
+          handler: '_handlerMensagem',
+          config: { mensagens: [], transicaoAutomatica: true },
+        };
     }
   }
 
@@ -135,7 +166,9 @@ export class FlowConverterService {
     const waitForResp = subs.find((s: any) => s.type === 'waitForResponse');
 
     if (waitForResp) {
-      const mensagens = sendMessages.map((s: any) => s.properties?.content).filter(Boolean);
+      const mensagens = sendMessages
+        .map((s: any) => s.properties?.content)
+        .filter(Boolean);
       return {
         handler: '_handlerCapturar',
         config: {
@@ -152,7 +185,10 @@ export class FlowConverterService {
           ? [props.content]
           : [];
 
-    return { handler: '_handlerMensagem', config: { mensagens, transicaoAutomatica: true } };
+    return {
+      handler: '_handlerMensagem',
+      config: { mensagens, transicaoAutomatica: true },
+    };
   }
 
   private decisionNodeToHandler(props: any) {
@@ -171,12 +207,19 @@ export class FlowConverterService {
 
     return {
       handler: '_handlerLista',
-      config: { titulo: props.label || 'Escolha uma opção:', botaoTexto: 'Selecione:', secaoTitulo: 'Opções', opcoes },
+      config: {
+        titulo: props.label || 'Escolha uma opção:',
+        botaoTexto: 'Selecione:',
+        secaoTitulo: 'Opções',
+        opcoes,
+      },
     };
   }
 
   private actionNodeToHandler(props: any, subs: any[]) {
-    const apiCall = subs.find((s: any) => s.type === 'apiCall' || s.type === 'webhook');
+    const apiCall = subs.find(
+      (s: any) => s.type === 'apiCall' || s.type === 'webhook',
+    );
     const setVar = subs.find((s: any) => s.type === 'setVariable');
 
     if (apiCall) {
@@ -199,12 +242,21 @@ export class FlowConverterService {
       if (assignments.length === 1) {
         return {
           handler: '_handlerCapturar',
-          config: { campoSalvar: assignments[0].key || 'valor', transicaoAutomatica: true },
+          config: {
+            campoSalvar: assignments[0].key || 'valor',
+            transicaoAutomatica: true,
+          },
         };
       }
       return {
         handler: '_handlerCapturar',
-        config: { campos: assignments.map((a: any) => ({ nome: a.key, mensagemPedir: '' })), transicaoAutomatica: true },
+        config: {
+          campos: assignments.map((a: any) => ({
+            nome: a.key,
+            mensagemPedir: '',
+          })),
+          transicaoAutomatica: true,
+        },
       };
     }
 
@@ -221,7 +273,10 @@ export class FlowConverterService {
       };
     }
 
-    return { handler: '_handlerMensagem', config: { mensagens: [], transicaoAutomatica: true } };
+    return {
+      handler: '_handlerMensagem',
+      config: { mensagens: [], transicaoAutomatica: true },
+    };
   }
 
   private connectionToEntrada(conn: any, nodes: any[]): string {
@@ -253,15 +308,24 @@ export class FlowConverterService {
       const nodeId = e.node_id || `node-imported-${idx}`;
       estadoToNodeId.set(e.estado, nodeId);
 
-      const nodeType = e.node_type || this.handlerToNodeType(e.handler, e.config);
+      const nodeType =
+        e.node_type || this.handlerToNodeType(e.handler, e.config);
       const position = e.position || { x: 200, y: idx * 150 };
-      const properties = this.handlerConfigToProperties(nodeType, e.handler, e.config, e.estado);
+      const properties = this.handlerConfigToProperties(
+        nodeType,
+        e.handler,
+        e.config,
+        e.estado,
+      );
 
       return {
         id: nodeId,
         type: nodeType,
         position,
-        properties: this.convertVariablesDeep(properties, this.convertVariablesBtoF.bind(this)),
+        properties: this.convertVariablesDeep(
+          properties,
+          this.convertVariablesBtoF.bind(this),
+        ),
       };
     });
 
@@ -273,7 +337,11 @@ export class FlowConverterService {
         if (!sourceNodeId || !targetNodeId) return null;
 
         const sourceNode = nodes.find((n: any) => n.id === sourceNodeId);
-        const sourcePort = this.transicaoToSourcePort(t, sourceNode, transicoes);
+        const sourcePort = this.transicaoToSourcePort(
+          t,
+          sourceNode,
+          transicoes,
+        );
 
         return {
           id: `conn-imported-${connIdx++}`,
@@ -299,7 +367,11 @@ export class FlowConverterService {
   private handlerToNodeType(handler: string, config: any): string {
     switch (handler) {
       case '_handlerMensagem':
-        if (config?.transicaoAutomatica && (!config.mensagens || config.mensagens.length === 0)) return 'start';
+        if (
+          config?.transicaoAutomatica &&
+          (!config.mensagens || config.mensagens.length === 0)
+        )
+          return 'start';
         if (config?.aguardarEntrada) return 'end';
         return 'message';
       case '_handlerCapturar':
@@ -316,7 +388,12 @@ export class FlowConverterService {
     }
   }
 
-  private handlerConfigToProperties(nodeType: string, handler: string, config: any, estadoName: string) {
+  private handlerConfigToProperties(
+    nodeType: string,
+    handler: string,
+    config: any,
+    estadoName: string,
+  ) {
     config = config || {};
 
     switch (nodeType) {
@@ -324,7 +401,10 @@ export class FlowConverterService {
         return { label: estadoName || 'Start' };
 
       case 'end':
-        return { label: estadoName || 'End', mensagemFim: config.mensagens?.[0] || '' };
+        return {
+          label: estadoName || 'End',
+          mensagemFim: config.mensagens?.[0] || '',
+        };
 
       case 'message': {
         if (handler === '_handlerCapturar') {
@@ -333,7 +413,10 @@ export class FlowConverterService {
             subComponents.push({
               id: `sub-${Date.now()}-sm`,
               type: 'sendMessage',
-              properties: { content: config.mensagemPedir, channel: 'whatsapp' },
+              properties: {
+                content: config.mensagemPedir,
+                channel: 'whatsapp',
+              },
             });
           }
           subComponents.push({
@@ -341,7 +424,13 @@ export class FlowConverterService {
             type: 'waitForResponse',
             properties: { responseVariable: config.campoSalvar || 'valor' },
           });
-          return { label: estadoName || 'Message', channel: 'whatsapp', content: '', variables: [], subComponents };
+          return {
+            label: estadoName || 'Message',
+            channel: 'whatsapp',
+            content: '',
+            variables: [],
+            subComponents,
+          };
         }
 
         const mensagens = config.mensagens || [];
@@ -350,7 +439,13 @@ export class FlowConverterService {
           type: 'sendMessage',
           properties: { content: msg, channel: 'whatsapp' },
         }));
-        return { label: estadoName || 'Message', channel: 'whatsapp', content: '', variables: [], subComponents };
+        return {
+          label: estadoName || 'Message',
+          channel: 'whatsapp',
+          content: '',
+          variables: [],
+          subComponents,
+        };
       }
 
       case 'decision': {
@@ -378,16 +473,30 @@ export class FlowConverterService {
             },
           },
         ];
-        return { label: estadoName || 'Action', actionType: 'api_call', endpoint: '', method: 'GET', headers: {}, body: '', subComponents };
+        return {
+          label: estadoName || 'Action',
+          actionType: 'api_call',
+          endpoint: '',
+          method: 'GET',
+          headers: {},
+          body: '',
+          subComponents,
+        };
       }
 
       case 'delay': {
         let duration = config.duracao || 1;
         let unit = 'seconds';
         if (config.unidade === 'minutes') {
-          if (duration >= 1440) { duration = duration / 1440; unit = 'days'; }
-          else if (duration >= 60) { duration = duration / 60; unit = 'hours'; }
-          else { unit = 'minutes'; }
+          if (duration >= 1440) {
+            duration = duration / 1440;
+            unit = 'days';
+          } else if (duration >= 60) {
+            duration = duration / 60;
+            unit = 'hours';
+          } else {
+            unit = 'minutes';
+          }
         }
         return { label: estadoName || 'Delay', duration, unit };
       }
@@ -397,15 +506,24 @@ export class FlowConverterService {
     }
   }
 
-  private transicaoToSourcePort(transicao: any, sourceNode: any, todasTransicoes: any[]): string {
+  private transicaoToSourcePort(
+    transicao: any,
+    sourceNode: any,
+    todasTransicoes: any[],
+  ): string {
     if (!sourceNode || sourceNode.type !== 'decision') return 'output';
     if (transicao.entrada === '*') return 'output-default';
 
     const transicoesDoEstado = todasTransicoes
-      .filter((t: any) => t.estado_origem === transicao.estado_origem && t.entrada !== '*')
+      .filter(
+        (t: any) =>
+          t.estado_origem === transicao.estado_origem && t.entrada !== '*',
+      )
       .sort((a: any, b: any) => a.entrada.localeCompare(b.entrada));
 
-    const idx = transicoesDoEstado.findIndex((t: any) => t.entrada === transicao.entrada);
+    const idx = transicoesDoEstado.findIndex(
+      (t: any) => t.entrada === transicao.entrada,
+    );
     return `output-${idx >= 0 ? idx : 0}`;
   }
 }
