@@ -16,7 +16,9 @@ export class MonitoringService {
   }
 
   async detalhesSessao(chatId: string) {
-    const usuario = await this.prisma.botEstadoUsuario.findUnique({ where: { chatId } });
+    const usuario = await this.prisma.botEstadoUsuario.findUnique({
+      where: { chatId },
+    });
     if (!usuario) throw new NotFoundException('Sessão não encontrada');
 
     const historico = await this.prisma.botEstadoHistorico.findMany({
@@ -62,12 +64,19 @@ export class MonitoringService {
       mensagensPorDia,
     ] = await Promise.all([
       this.prisma.botEstadoUsuario.count(),
-      this.prisma.botEstadoUsuario.count({ where: { atualizadoEm: { gte: hoje } } }),
+      this.prisma.botEstadoUsuario.count({
+        where: { atualizadoEm: { gte: hoje } },
+      }),
       this.prisma.conversa.count(),
       this.prisma.conversa.count({ where: { criadoEm: { gte: hoje } } }),
-      this.prisma.botEstadoHistorico.count({ where: { criadoEm: { gte: hoje } } }),
+      this.prisma.botEstadoHistorico.count({
+        where: { criadoEm: { gte: hoje } },
+      }),
       this.prisma.botFluxo.count(),
-      this.prisma.botFluxo.findFirst({ where: { ativo: true }, select: { id: true, nome: true } }),
+      this.prisma.botFluxo.findFirst({
+        where: { ativo: true },
+        select: { id: true, nome: true },
+      }),
       this.prisma.$queryRaw`
         SELECT estado_novo AS estado, COUNT(*)::int AS total
         FROM bot_estado_historico

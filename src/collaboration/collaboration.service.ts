@@ -60,7 +60,9 @@ export class CollaborationService implements OnModuleDestroy {
     const room = this.rooms.get(flowId);
     if (room) {
       room.connections.add(clientId);
-      this.logger.debug(`Client ${clientId} entrou na room ${flowId} (${room.connections.size} conectados)`);
+      this.logger.debug(
+        `Client ${clientId} entrou na room ${flowId} (${room.connections.size} conectados)`,
+      );
     }
   }
 
@@ -69,7 +71,9 @@ export class CollaborationService implements OnModuleDestroy {
     if (!room) return;
 
     room.connections.delete(clientId);
-    this.logger.debug(`Client ${clientId} saiu da room ${flowId} (${room.connections.size} conectados)`);
+    this.logger.debug(
+      `Client ${clientId} saiu da room ${flowId} (${room.connections.size} conectados)`,
+    );
 
     if (room.connections.size === 0) {
       room.cleanupTimer = setTimeout(() => {
@@ -82,7 +86,10 @@ export class CollaborationService implements OnModuleDestroy {
     return this.rooms.get(flowId)?.doc ?? null;
   }
 
-  getStateDiff(flowId: string, remoteStateVector: Uint8Array): Uint8Array | null {
+  getStateDiff(
+    flowId: string,
+    remoteStateVector: Uint8Array,
+  ): Uint8Array | null {
     const doc = this.getDoc(flowId);
     if (!doc) return null;
     return Y.encodeStateAsUpdate(doc, remoteStateVector);
@@ -155,14 +162,20 @@ export class CollaborationService implements OnModuleDestroy {
       select: { id: true, update: true },
     });
 
-    const merged = Y.mergeUpdates(allUpdates.map((u) => new Uint8Array(u.update)));
+    const merged = Y.mergeUpdates(
+      allUpdates.map((u) => new Uint8Array(u.update)),
+    );
 
     await this.prisma.$transaction([
       this.prisma.yjsUpdate.deleteMany({ where: { flowId } }),
-      this.prisma.yjsUpdate.create({ data: { flowId, update: Buffer.from(merged) } }),
+      this.prisma.yjsUpdate.create({
+        data: { flowId, update: Buffer.from(merged) },
+      }),
     ]);
 
-    this.logger.log(`Compactados ${allUpdates.length} updates em 1 para fluxo ${flowId}`);
+    this.logger.log(
+      `Compactados ${allUpdates.length} updates em 1 para fluxo ${flowId}`,
+    );
   }
 
   private async loadFlowState(flowId: string, doc: Y.Doc) {
@@ -174,9 +187,13 @@ export class CollaborationService implements OnModuleDestroy {
     });
 
     if (updates.length > 0) {
-      const merged = Y.mergeUpdates(updates.map((u) => new Uint8Array(u.update)));
+      const merged = Y.mergeUpdates(
+        updates.map((u) => new Uint8Array(u.update)),
+      );
       Y.applyUpdate(doc, merged);
-      this.logger.log(`Carregados ${updates.length} updates para fluxo ${flowId}`);
+      this.logger.log(
+        `Carregados ${updates.length} updates para fluxo ${flowId}`,
+      );
       return;
     }
 

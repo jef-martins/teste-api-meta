@@ -12,7 +12,8 @@ import { PrismaModule } from '../prisma/prisma.module';
   imports: [
     PassportModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'telebots-dev-secret-change-in-production',
+      secret:
+        process.env.JWT_SECRET || 'telebots-dev-secret-change-in-production',
       signOptions: { expiresIn: '24h' },
     }),
     OrganizationModule,

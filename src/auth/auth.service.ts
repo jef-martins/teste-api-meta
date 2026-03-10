@@ -13,7 +13,9 @@ export class AuthService {
   ) {}
 
   async login(email: string, senha: string) {
-    const usuario = await this.prisma.botUsuario.findUnique({ where: { email } });
+    const usuario = await this.prisma.botUsuario.findUnique({
+      where: { email },
+    });
     if (!usuario) throw new UnauthorizedException('Credenciais inválidas');
     if (!usuario.ativo) throw new UnauthorizedException('Usuário inativo');
 
@@ -21,7 +23,9 @@ export class AuthService {
     if (!senhaCorreta) throw new UnauthorizedException('Credenciais inválidas');
 
     const token = this.gerarToken(usuario);
-    const subOrgsAcessiveis = await this.orgService.getSubOrgsAcessiveis(usuario.id);
+    const subOrgsAcessiveis = await this.orgService.getSubOrgsAcessiveis(
+      usuario.id,
+    );
 
     return {
       token,
@@ -59,7 +63,9 @@ export class AuthService {
     });
 
     const token = this.gerarToken(usuario);
-    const subOrgsAcessiveis = await this.orgService.getSubOrgsAcessiveis(usuario.id);
+    const subOrgsAcessiveis = await this.orgService.getSubOrgsAcessiveis(
+      usuario.id,
+    );
     return { token, usuario, subOrgsAcessiveis };
   }
 
