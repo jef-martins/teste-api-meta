@@ -120,7 +120,7 @@ export class OrganizationService {
   async obterOrganizacao(orgId: string, usuarioId: string) {
     await this.verificarMembroOrg(orgId, usuarioId);
     return this.prisma.organizacao.findUnique({
-      where: { id: orgId },
+      where: { id: orgId as any },
       include: {
         subOrganizacoes: { where: { ativa: true } },
         membros: {
@@ -138,12 +138,15 @@ export class OrganizationService {
     data: { nome?: string },
   ) {
     await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin']);
-    return this.prisma.organizacao.update({ where: { id: orgId }, data });
+    return this.prisma.organizacao.update({
+      where: { id: orgId as any },
+      data,
+    });
   }
 
   async excluirOrganizacao(orgId: string, usuarioId: string) {
     await this.verificarPapelOrg(orgId, usuarioId, ['dono']);
-    await this.prisma.organizacao.delete({ where: { id: orgId } });
+    await this.prisma.organizacao.delete({ where: { id: orgId as any } });
     return { ok: true };
   }
 
@@ -173,8 +176,8 @@ export class OrganizationService {
     const jaExiste = await this.prisma.orgMembro.findUnique({
       where: {
         organizacaoId_usuarioId: {
-          organizacaoId: orgId,
-          usuarioId: usuario.id,
+          organizacaoId: orgId as any,
+          usuarioId: usuario.id as any,
         },
       },
     });
@@ -190,7 +193,10 @@ export class OrganizationService {
     await this.verificarPapelOrg(orgId, solicitanteId, ['dono', 'admin']);
     await this.prisma.orgMembro.delete({
       where: {
-        organizacaoId_usuarioId: { organizacaoId: orgId, usuarioId: membroId },
+        organizacaoId_usuarioId: {
+          organizacaoId: orgId as any,
+          usuarioId: membroId as any,
+        },
       },
     });
     return { ok: true };
@@ -242,12 +248,15 @@ export class OrganizationService {
     data: { nome?: string },
   ) {
     await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin']);
-    return this.prisma.subOrganizacao.update({ where: { id: subOrgId }, data });
+    return this.prisma.subOrganizacao.update({
+      where: { id: subOrgId as any },
+      data,
+    });
   }
 
   async excluirSubOrg(orgId: string, subOrgId: string, usuarioId: string) {
     await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin']);
-    await this.prisma.subOrganizacao.delete({ where: { id: subOrgId } });
+    await this.prisma.subOrganizacao.delete({ where: { id: subOrgId as any } });
     return { ok: true };
   }
 
@@ -257,7 +266,7 @@ export class OrganizationService {
     usuarioId: string,
   ) {
     const subOrg = await this.prisma.subOrganizacao.findUnique({
-      where: { id: subOrgId },
+      where: { id: subOrgId as any },
     });
     if (!subOrg) throw new NotFoundException('Sub-organização não encontrada');
 
@@ -274,7 +283,7 @@ export class OrganizationService {
     const novoSlug = conflito ? `${slug}-${Date.now()}` : slug;
 
     return this.prisma.subOrganizacao.update({
-      where: { id: subOrgId },
+      where: { id: subOrgId as any },
       data: { organizacaoId: novaOrgId, slug: novoSlug },
     });
   }
@@ -298,8 +307,8 @@ export class OrganizationService {
     const jaExiste = await this.prisma.subOrgMembro.findUnique({
       where: {
         subOrganizacaoId_usuarioId: {
-          subOrganizacaoId: subOrgId,
-          usuarioId: usuario.id,
+          subOrganizacaoId: subOrgId as any,
+          usuarioId: usuario.id as any,
         },
       },
     });
@@ -323,8 +332,8 @@ export class OrganizationService {
     await this.prisma.subOrgMembro.delete({
       where: {
         subOrganizacaoId_usuarioId: {
-          subOrganizacaoId: subOrgId,
-          usuarioId: membroId,
+          subOrganizacaoId: subOrgId as any,
+          usuarioId: membroId as any,
         },
       },
     });
