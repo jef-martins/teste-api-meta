@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Bot Admin - Transições (Visual Flow)</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+    <h1>Bot Admin</h1>
+  </header>
+
+  <div class="tabs">
+    <a href="/telas/estados/index.html" class="tab" style="text-decoration:none">📁 Estados</a>
+    <a href="/telas/transicoes/tabela/index.html" class="tab active" style="text-decoration:none">🔀 Transições</a>
+  </div>
+
+  <div class="page active">
+    <!-- ═══════════════════════ ABA TRANSIÇÕES ═══════════════════════ -->
+    <div class="section-header">
+      <h2>Transições de Estado</h2>
+      <div style="display:flex; gap:10px;">
+        <div style="display:flex; background:var(--surface2); padding:4px; border-radius:8px; border:1px solid var(--border);">
+           <a href="/telas/transicoes/tabela/index.html" class="btn btn-ghost btn-sm" style="border:none; text-decoration:none">📋 Tabela</a>
+           <a href="/telas/transicoes/visual_flow/index.html" class="btn btn-primary btn-sm" style="border:none; text-decoration:none">🗺️ Visual (Flow)</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════ VISUAL DE FLUXO (MERMAID) ═════════════════════ -->
+    <div id="view-visual" style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; overflow:auto; height:80%; min-height:800px;">
+      <div id="mermaid-container" style="text-align:center; color:var(--muted)">Carregando painel visual...</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
