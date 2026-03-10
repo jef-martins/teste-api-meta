@@ -1,7 +1,7 @@
-require('dotenv').config();
+import 'dotenv/config';
 
-const AppServer = require('./src/server');
-const Handler = require('./src/bot/Handler');
+import AppServer from './src/server';
+import Handler from './src/bot/Handler';
 
 // ─── Servidor Express ────────────────────────────────────────────────────────
 const servidor = new AppServer();
