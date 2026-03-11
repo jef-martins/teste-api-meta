@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { EstadoRepository } from './estado.repository';
-import { StateMachineEngine } from './state-machine.engine';
+import { EstadoRepository } from '../estado.repository';
+import { StateMachineEngine } from '../state-machine.engine';
 import * as crypto from 'crypto';
 
 /**
