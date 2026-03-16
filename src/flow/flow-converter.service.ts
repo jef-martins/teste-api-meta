@@ -217,10 +217,24 @@ export class FlowConverterService {
   }
 
   private actionNodeToHandler(props: any, subs: any[]) {
+    const apiRoute = subs.find((s: any) => s.type === 'apiRoute');
     const apiCall = subs.find(
       (s: any) => s.type === 'apiCall' || s.type === 'webhook',
     );
     const setVar = subs.find((s: any) => s.type === 'setVariable');
+
+    if (apiRoute) {
+      const p = apiRoute.properties || {};
+      return {
+        handler: '_handlerRequisicao',
+        config: {
+          apiId: p.apiId || null,
+          routeId: p.routeId || null,
+          variavelResposta: p.responseVariable || 'resposta',
+          transicaoAutomatica: true,
+        },
+      };
+    }
 
     if (apiCall) {
       const p = apiCall.properties || {};

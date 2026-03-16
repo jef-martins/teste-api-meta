@@ -244,7 +244,7 @@ export class HandlerService {
       configProximo &&
       typeof (this as any)[configProximo.handler] === 'function'
     ) {
-      await (this as any)[configProximo.handler](message, chatId, '', engine);
+      await (this as any)[configProximo.handler](message, chatId, corpo, engine);
     }
   }
 
@@ -307,7 +307,7 @@ export class HandlerService {
       configProximo &&
       typeof (this as any)[configProximo.handler] === 'function'
     ) {
-      await (this as any)[configProximo.handler](message, chatId, '', engine);
+      await (this as any)[configProximo.handler](message, chatId, corpo, engine);
     }
   }
 
@@ -474,7 +474,7 @@ export class HandlerService {
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config =
+    let config =
       (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
 
     const dadosMemoria = engine.obterDados(chatId);
@@ -524,6 +524,21 @@ export class HandlerService {
     }
 
     let valorParaTransicao = '*';
+
+    // Resolver apiRoute registrada (apiId + routeId) em runtime
+    if (config.apiId && config.routeId) {
+      const rota = await this.estadoRepo.obterRotaApi(config.apiId, config.routeId);
+      if (!rota) {
+        await this.enviarResposta(message, config.mensagemErro ?? '❌ Rota de API não encontrada.');
+        return;
+      }
+      config = {
+        ...config,
+        url: rota.url,
+        metodo: rota.metodo,
+        headers: rota.headers,
+      };
+    }
 
     try {
       const metodo = (config.metodo ?? 'GET').toUpperCase();
@@ -598,6 +613,12 @@ export class HandlerService {
         });
         statusHttp = res.status;
         resposta = await res.json();
+      }
+
+      // Salva a resposta completa na variável nomeada (acessível em estados seguintes)
+      const nomeVariavel = config.variavelResposta || config.campoResposta;
+      if (nomeVariavel) {
+        engine.salvarDado(chatId, nomeVariavel, resposta);
       }
 
       if (statusHttp !== 200) {

@@ -31,9 +31,13 @@ export class EstadoRepository {
     acceptWildcard = true,
   ): Promise<string | null> {
     try {
-      // Exact match first
+      // Exact match (case-insensitive) first
       let row = await this.prisma.botEstadoTransicao.findFirst({
-        where: { estadoOrigem: estadoAtual, entrada, ativo: true },
+        where: {
+          estadoOrigem: estadoAtual,
+          entrada: { equals: entrada, mode: 'insensitive' },
+          ativo: true,
+        },
         select: { estadoDestino: true },
       });
       if (row) return row.estadoDestino;
@@ -74,6 +78,16 @@ export class EstadoRepository {
     nome?: string | null,
   ) {
     try {
+      const existe = await this.prisma.botEstadoConfig.findFirst({
+        where: { estado },
+        select: { estado: true },
+      });
+      if (!existe) {
+        this.logger.warn(
+          `Estado "${estado}" não existe em BotEstadoConfig — persistência ignorada para ${chatId}`,
+        );
+        return;
+      }
       await this.prisma.botEstadoUsuario.upsert({
         where: { chatId },
         update: { estadoAtual: estado, nome: nome || undefined },
@@ -96,6 +110,32 @@ export class EstadoRepository {
       });
     } catch (err: any) {
       this.logger.error(`Erro ao registrar transição: ${err.message}`);
+    }
+  }
+
+  async obterRotaApi(apiId: string, routeId: string) {
+    try {
+      const [api, rota] = await Promise.all([
+        this.prisma.apiRegistrada.findUnique({
+          where: { id: apiId },
+          select: { urlBase: true, headers: true },
+        }),
+        this.prisma.apiRota.findUnique({
+          where: { id: routeId },
+          select: { path: true, metodo: true, parametros: true, bodyTemplate: true },
+        }),
+      ]);
+      if (!api || !rota) return null;
+      return {
+        url: api.urlBase.replace(/\/$/, '') + rota.path,
+        metodo: rota.metodo || 'GET',
+        headers: (api.headers as Record<string, string>) || {},
+        parametros: (rota.parametros as any[]) || [],
+        bodyTemplate: rota.bodyTemplate ?? null,
+      };
+    } catch (err: any) {
+      this.logger.error(`Erro ao obter rota API: ${err.message}`);
+      return null;
     }
   }
 

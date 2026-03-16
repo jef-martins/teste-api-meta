@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import * as Y from 'yjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { FlowService } from '../flow/flow.service';
 
 const PERSIST_DEBOUNCE_MS = 2000;
 const ROOM_CLEANUP_TIMEOUT_MS = 30000;
@@ -18,7 +19,10 @@ export class CollaborationService implements OnModuleDestroy {
   private readonly logger = new Logger(CollaborationService.name);
   private rooms = new Map<string, Room>();
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private flowService: FlowService,
+  ) {}
 
   async onModuleDestroy() {
     for (const [flowId, room] of this.rooms) {
@@ -149,10 +153,14 @@ export class CollaborationService implements OnModuleDestroy {
     const variables = Array.from(variablesMap.values()) as any[];
 
     if (nodes.length > 0 || connections.length > 0) {
+      const flowJson = { nodes, connections, variables };
       await this.prisma.botFluxo.update({
         where: { id: flowId },
-        data: { flowJson: { nodes, connections, variables } as any },
+        data: { flowJson: flowJson as any },
       });
+
+      // Compila o fluxo para bot_estado_config/bot_estado_transicao
+      await this.flowService.recompilarFluxo(flowId, flowJson);
     }
   }
 

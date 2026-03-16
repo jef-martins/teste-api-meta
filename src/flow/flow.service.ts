@@ -276,6 +276,23 @@ export class FlowService {
     return { ok: true, mensagem: `Fluxo "${fluxo.nome}" ativado` };
   }
 
+  // ─── Compilação pública (usada pelo CollaborationService) ─────────────────
+
+  async recompilarFluxo(flowId: string, flowJson: any) {
+    const { estados, transicoes } = this.converter.flowToStateMachine(flowJson);
+    const { estadosPrefixados, transicoesAtualizadas } = this.aplicarPrefixo(
+      flowId,
+      estados,
+      transicoes,
+    );
+    await this.limparEstados(flowId);
+    await this.salvarEstados(flowId, estadosPrefixados);
+    await this.salvarTransicoes(transicoesAtualizadas);
+    if (flowJson.variables?.length) {
+      await this.salvarVariaveis(flowId, flowJson.variables);
+    }
+  }
+
   // ─── Helpers privados ────────────────────────────────────────────────────
 
   private async limparEstados(flowId: string) {
