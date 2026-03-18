@@ -15,6 +15,7 @@ model BotUsuario {
   senhaHash    String   @map("senha_hash") @db.VarChar(255)
   nome         String?  @db.VarChar(100)
   papel        String   @default("admin") @db.VarChar(20)
+  master       Boolean  @default(false)
   ativo        Boolean  @default(true)
   criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz()
   atualizadoEm DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz()

@@ -34,6 +34,7 @@ export class AuthService {
         email: usuario.email,
         nome: usuario.nome,
         papel: usuario.papel,
+        master: usuario.master,
       },
       subOrgsAcessiveis,
     };
@@ -48,7 +49,7 @@ export class AuthService {
     const senhaHash = await bcrypt.hash(senha, 10);
     const usuario = await this.prisma.botUsuario.create({
       data: { email, senhaHash, nome: nome || 'Admin', papel: 'admin' },
-      select: { id: true, email: true, nome: true, papel: true },
+      select: { id: true, email: true, nome: true, papel: true, master: true },
     });
 
     const token = this.gerarToken(usuario);
@@ -59,7 +60,7 @@ export class AuthService {
     const senhaHash = await bcrypt.hash(senha, 10);
     const usuario = await this.prisma.botUsuario.create({
       data: { email, senhaHash, nome: nome || 'Admin', papel: 'admin' },
-      select: { id: true, email: true, nome: true, papel: true },
+      select: { id: true, email: true, nome: true, papel: true, master: true },
     });
 
     const token = this.gerarToken(usuario);
@@ -72,17 +73,18 @@ export class AuthService {
   async getMe(userId: string) {
     const usuario = await this.prisma.botUsuario.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, nome: true, papel: true },
+      select: { id: true, email: true, nome: true, papel: true, master: true },
     });
     if (!usuario) throw new UnauthorizedException('Usuário não encontrado');
     return usuario;
   }
 
-  gerarToken(usuario: { id: string; email: string; papel: string }) {
+  gerarToken(usuario: { id: string; email: string; papel: string; master?: boolean }) {
     return this.jwtService.sign({
       id: usuario.id,
       email: usuario.email,
       papel: usuario.papel,
+      master: usuario.master ?? false,
     });
   }
 
