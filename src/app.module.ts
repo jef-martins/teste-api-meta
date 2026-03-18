@@ -8,10 +8,27 @@ import { MonitoringModule } from './monitoring/monitoring.module';
 import { ConversationModule } from './conversation/conversation.module';
 import { AdminModule } from './admin/admin.module';
 import { CollaborationModule } from './collaboration/collaboration.module';
-import { BotModule } from './bot/bot.module';
+import { BotModule } from './bot/wppConnect/bot.module';
 import { OrganizationModule } from './organization/organization.module';
 import { ApiRegistryModule } from './api-registry/api-registry.module';
 import { HealthController } from './health.controller';
+import { BotMetaModule } from './bot/meta/bot-meta.module';
+
+/**
+ * Estratégia de canal por ambiente:
+ *
+ *  NODE_ENV=development  → WPPConnect ativo  | Meta webhook DESATIVADO
+ *  NODE_ENV=production   → WPPConnect inativo | Meta webhook ATIVO
+ *
+ * O BotModule (WPPConnect) já controla seu próprio ciclo de vida
+ * em bot.service.ts (onModuleInit), desativando-se em produção.
+ * Aqui controlamos quais módulos são registrados no DI container.
+ */
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+const botChannelModules = isDevelopment
+  ? [BotModule]            // development: apenas WPPConnect
+  : [BotModule, BotMetaModule]; // production: Meta ativo (WPPConnect se desativa internamente)
 
 @Module({
   imports: [
@@ -24,9 +41,9 @@ import { HealthController } from './health.controller';
     ConversationModule,
     AdminModule,
     CollaborationModule,
-    BotModule,
     OrganizationModule,
     ApiRegistryModule,
+    ...botChannelModules,
   ],
   controllers: [HealthController],
 })
