@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import * as os from 'os';
 import { PrismaService } from '../prisma/prisma.service';
 
-interface SnapshotServidor {
+export interface SnapshotServidor {
   timestamp: number;
   memoriaPercent: number;
   heapPercent: number;

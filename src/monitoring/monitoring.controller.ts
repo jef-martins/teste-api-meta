@@ -1,5 +1,5 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
-import { MonitoringService } from './monitoring.service';
+import { MonitoringService, SnapshotServidor } from './monitoring.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MasterGuard } from '../auth/master.guard';
 
@@ -36,7 +36,7 @@ export class MonitoringController {
 
   @Get('admin/servidor/historico')
   @UseGuards(MasterGuard)
-  historicoServidor() {
+  historicoServidor(): SnapshotServidor[] {
     return this.monitoringService.historicoServidor();
   }
 }
