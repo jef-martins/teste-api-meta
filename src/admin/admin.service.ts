@@ -100,7 +100,7 @@ export class AdminService {
     },
   ) {
     return this.prisma.botEstadoTransicao.update({
-      where: { id: id as any },
+      where: { id },
       data: {
         estadoOrigem: data.estado_origem,
         entrada: data.entrada,
@@ -111,7 +111,7 @@ export class AdminService {
   }
 
   async excluirTransicao(id: string) {
-    await this.prisma.botEstadoTransicao.delete({ where: { id: id as any } });
+    await this.prisma.botEstadoTransicao.delete({ where: { id } });
     return { ok: true };
   }
 

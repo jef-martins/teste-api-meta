@@ -5,8 +5,8 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import * as wppconnect from '@wppconnect-team/wppconnect';
-import { ConversationService } from '../conversation/conversation.service';
-import { StateMachineEngine } from './state-machine.engine';
+import { ConversationService } from '../../conversation/conversation.service';
+import { StateMachineEngine } from '../state-machine.engine';
 import { HandlerService } from './handler.service';
 
 @Injectable()
@@ -25,6 +25,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
+    if (process.env.NODE_ENV === 'production') {
+      this.logger.log('Desativando WPPConnect no ambiente de produção (usando a Meta API).');
+      return;
+    }
     this.iniciar().catch((err) => {
       this.logger.error(`Falha ao iniciar o bot: ${err.message}`);
     });
