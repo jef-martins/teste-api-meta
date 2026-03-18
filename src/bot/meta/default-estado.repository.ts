@@ -130,3 +130,4 @@ export class DefaultEstadoRepository {
     this.logger.log(`[DefaultRepo] Sessão resetada para ${chatId}`);
   }
 }
+ 
