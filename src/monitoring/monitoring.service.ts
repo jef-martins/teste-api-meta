@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import * as os from 'os';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -101,6 +102,73 @@ export class MonitoringService {
       fluxoAtivo: fluxoAtivo || null,
       estadosMaisUsados,
       mensagensPorDia,
+    };
+  }
+
+  async infoServidor() {
+    const cpus = os.cpus();
+    const loadAvg = os.loadavg();
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
+
+    const [dbSize, tableStats, totalUsuarios, totalFluxos, totalOrgs, totalSubOrgs] =
+      await Promise.all([
+        this.prisma.$queryRaw<{ tamanho: string; bytes: bigint }[]>`
+          SELECT pg_size_pretty(pg_database_size(current_database())) AS tamanho,
+                 pg_database_size(current_database()) AS bytes
+        `,
+        this.prisma.$queryRaw<{ tabela: string; registros: bigint; tamanho: string }[]>`
+          SELECT relname AS tabela,
+                 n_live_tup AS registros,
+                 pg_size_pretty(pg_total_relation_size(relid)) AS tamanho
+          FROM pg_stat_user_tables
+          ORDER BY n_live_tup DESC
+          LIMIT 15
+        `,
+        this.prisma.botUsuario.count(),
+        this.prisma.botFluxo.count(),
+        this.prisma.organizacao.count(),
+        this.prisma.subOrganizacao.count(),
+      ]);
+
+    return {
+      servidor: {
+        hostname: os.hostname(),
+        plataforma: os.platform(),
+        arquitetura: os.arch(),
+        versaoNode: process.version,
+        uptimeServidor: Math.floor(os.uptime()),
+        uptimeProcesso: Math.floor(process.uptime()),
+      },
+      cpu: {
+        nucleos: cpus.length,
+        modelo: cpus[0]?.model || 'N/A',
+        cargaMedia1min: loadAvg[0],
+        cargaMedia5min: loadAvg[1],
+        cargaMedia15min: loadAvg[2],
+      },
+      memoria: {
+        totalBytes: totalMem,
+        livreBytes: freeMem,
+        usadaBytes: usedMem,
+        percentualUsada: Math.round((usedMem / totalMem) * 100),
+      },
+      banco: {
+        tamanho: dbSize[0]?.tamanho ?? 'N/A',
+        tamanhoBytes: Number(dbSize[0]?.bytes ?? 0),
+        tabelas: tableStats.map((t) => ({
+          tabela: t.tabela,
+          registros: Number(t.registros),
+          tamanho: t.tamanho,
+        })),
+        totais: {
+          usuarios: totalUsuarios,
+          fluxos: totalFluxos,
+          organizacoes: totalOrgs,
+          subOrganizacoes: totalSubOrgs,
+        },
+      },
     };
   }
 }
