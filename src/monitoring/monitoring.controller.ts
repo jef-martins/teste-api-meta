@@ -33,4 +33,10 @@ export class MonitoringController {
   infoServidor() {
     return this.monitoringService.infoServidor();
   }
+
+  @Get('admin/servidor/historico')
+  @UseGuards(MasterGuard)
+  historicoServidor() {
+    return this.monitoringService.historicoServidor();
+  }
 }
