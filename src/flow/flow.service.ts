@@ -30,7 +30,12 @@ export class FlowService {
     return { estadosPrefixados, transicoesAtualizadas };
   }
 
-  private async verificarAcessoFluxo(fluxo: any, usuarioId: string) {
+  private async verificarAcessoFluxo(
+    fluxo: any,
+    usuarioId: string,
+    isMaster = false,
+  ) {
+    if (isMaster) return;
     if (fluxo.subOrganizacaoId) {
       const temAcesso = await this.orgService.verificarAcessoSubOrg(
         usuarioId,
@@ -42,13 +47,19 @@ export class FlowService {
     }
   }
 
-  async listar(subOrganizacaoId: string | null, usuarioId: string) {
-    const subOrgsAcessiveis =
-      await this.orgService.getSubOrgsAcessiveis(usuarioId);
+  async listar(
+    subOrganizacaoId: string | null,
+    usuarioId: string,
+    isMaster = false,
+  ) {
+    const subOrgsAcessiveis = await this.orgService.getSubOrgsAcessiveis(
+      usuarioId,
+      isMaster,
+    );
     const idsAcessiveis = subOrgsAcessiveis.map((s) => s.id);
 
     const where = subOrganizacaoId
-      ? idsAcessiveis.includes(subOrganizacaoId)
+      ? isMaster || idsAcessiveis.includes(subOrganizacaoId)
         ? { subOrganizacaoId }
         : { id: '' } // sem acesso à sub-org solicitada
       : idsAcessiveis.length > 0
@@ -66,16 +77,17 @@ export class FlowService {
         subOrganizacaoId: true,
         criadoEm: true,
         atualizadoEm: true,
+        ultimoModificadorNome: true,
       },
       orderBy: { atualizadoEm: 'desc' },
     });
   }
 
-  async obter(id: string, usuarioId: string) {
+  async obter(id: string, usuarioId: string, isMaster = false) {
     const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
     if (!fluxo) throw new NotFoundException('Fluxo não encontrado');
 
-    await this.verificarAcessoFluxo(fluxo, usuarioId);
+    await this.verificarAcessoFluxo(fluxo, usuarioId, isMaster);
 
     if (fluxo.flowJson) {
       return {
@@ -117,15 +129,27 @@ export class FlowService {
     };
   }
 
-  async criar(data: {
-    name: string;
-    description?: string;
-    nodes?: any[];
-    connections?: any[];
-    variables?: any[];
-    subOrganizacaoId?: string | null;
-  }) {
+  async criar(
+    data: {
+      name: string;
+      description?: string;
+      nodes?: any[];
+      connections?: any[];
+      variables?: any[];
+      subOrganizacaoId?: string | null;
+    },
+    usuarioId?: string,
+  ) {
     if (!data.name) throw new BadRequestException('Nome é obrigatório');
+
+    let modificadorNome: string | null = null;
+    if (usuarioId) {
+      const u = await this.prisma.botUsuario.findUnique({
+        where: { id: usuarioId },
+        select: { nome: true, email: true },
+      });
+      modificadorNome = u?.nome || u?.email || null;
+    }
 
     const flowJson = {
       nodes: data.nodes,
@@ -139,6 +163,8 @@ export class FlowService {
         descricao: data.description || '',
         flowJson,
         subOrganizacaoId: data.subOrganizacaoId ?? null,
+        ultimoModificadoPorId: usuarioId ?? null,
+        ultimoModificadorNome: modificadorNome,
       },
     });
 
@@ -170,13 +196,20 @@ export class FlowService {
       version?: number;
     },
     usuarioId: string,
+    isMaster = false,
   ) {
     const fluxoExistente = await this.prisma.botFluxo.findUnique({
       where: { id },
     });
     if (!fluxoExistente) throw new NotFoundException('Fluxo não encontrado');
 
-    await this.verificarAcessoFluxo(fluxoExistente, usuarioId);
+    await this.verificarAcessoFluxo(fluxoExistente, usuarioId, isMaster);
+
+    const u = await this.prisma.botUsuario.findUnique({
+      where: { id: usuarioId },
+      select: { nome: true, email: true },
+    });
+    const modificadorNome = u?.nome || u?.email || null;
 
     const flowJson = {
       nodes: data.nodes,
@@ -191,6 +224,8 @@ export class FlowService {
         descricao: data.description ?? fluxoExistente.descricao,
         flowJson,
         versao: data.version || fluxoExistente.versao + 1,
+        ultimoModificadoPorId: usuarioId,
+        ultimoModificadorNome: modificadorNome,
       },
     });
 
@@ -213,11 +248,11 @@ export class FlowService {
     return { ok: true };
   }
 
-  async excluir(id: string, usuarioId: string) {
+  async excluir(id: string, usuarioId: string, isMaster = false) {
     const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
     if (!fluxo) throw new NotFoundException('Fluxo não encontrado');
 
-    await this.verificarAcessoFluxo(fluxo, usuarioId);
+    await this.verificarAcessoFluxo(fluxo, usuarioId, isMaster);
 
     // Remove user sessions pointing to this flow's states
     await this.prisma.botEstadoUsuario.deleteMany({
@@ -227,11 +262,11 @@ export class FlowService {
     return { ok: true };
   }
 
-  async ativar(id: string, usuarioId: string) {
+  async ativar(id: string, usuarioId: string, isMaster = false) {
     const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
     if (!fluxo) throw new NotFoundException('Fluxo não encontrado');
 
-    await this.verificarAcessoFluxo(fluxo, usuarioId);
+    await this.verificarAcessoFluxo(fluxo, usuarioId, isMaster);
 
     await this.prisma.$transaction(async (tx) => {
       // Deactivate all states belonging to flows

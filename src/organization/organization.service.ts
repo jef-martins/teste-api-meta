@@ -64,7 +64,9 @@ export class OrganizationService {
   async verificarAcessoSubOrg(
     usuarioId: string,
     subOrgId: string,
+    isMaster = false,
   ): Promise<boolean> {
+    if (isMaster) return true;
     const acessiveis = await this.getSubOrgsAcessiveis(usuarioId);
     return acessiveis.some((s) => s.id === subOrgId);
   }

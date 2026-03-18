@@ -35,10 +35,12 @@ model BotFluxo {
   descricao        String?  @db.Text
   versao           Int      @default(1)
   ativo            Boolean  @default(false)
-  flowJson         Json?    @map("flow_json")
-  subOrganizacaoId String?  @map("sub_organizacao_id")
-  criadoEm         DateTime @default(now()) @map("criado_em") @db.Timestamptz()
-  atualizadoEm     DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz()
+  flowJson              Json?    @map("flow_json")
+  subOrganizacaoId      String?  @map("sub_organizacao_id")
+  ultimoModificadoPorId String?  @map("ultimo_modificado_por_id")
+  ultimoModificadorNome String?  @map("ultimo_modificador_nome") @db.VarChar(100)
+  criadoEm              DateTime @default(now()) @map("criado_em") @db.Timestamptz()
+  atualizadoEm          DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz()
 
   subOrganizacao SubOrganizacao?  @relation(fields: [subOrganizacaoId], references: [id])
   estados        BotEstadoConfig[]
