@@ -56,8 +56,95 @@ export class FlowConverterService {
 
   // ─── Frontend → Backend ──────────────────────────────────────────────────
 
+  /**
+   * Flatten customComponent nodes into their internal nodes/connections
+   */
+  private flattenCustomComponents(
+    nodes: any[],
+    connections: any[],
+  ): { nodes: any[]; connections: any[] } {
+    const flatNodes: any[] = [];
+    const flatConnections = connections.map(c => ({ ...c }));
+    let hasCustom = false;
+
+    for (const node of nodes) {
+      if (node.type === 'customComponent') {
+        hasCustom = true;
+        const internalNodes = node.properties?.internalNodes || [];
+        const internalConnections = node.properties?.internalConnections || [];
+
+        // Generate new IDs to avoid collisions
+        const idMap: Record<string, string> = {};
+        for (const iNode of internalNodes) {
+          idMap[iNode.id] = `${node.id}_${iNode.id}`;
+        }
+
+        // Add internal nodes with remapped IDs and adjusted positions
+        const centerX =
+          internalNodes.reduce((s: number, n: any) => s + n.position.x, 0) /
+          (internalNodes.length || 1);
+        const centerY =
+          internalNodes.reduce((s: number, n: any) => s + n.position.y, 0) /
+          (internalNodes.length || 1);
+
+        for (const iNode of internalNodes) {
+          flatNodes.push({
+            ...iNode,
+            id: idMap[iNode.id],
+            position: {
+              x: node.position.x + (iNode.position.x - centerX),
+              y: node.position.y + (iNode.position.y - centerY),
+            },
+          });
+        }
+
+        // Add internal connections with remapped IDs
+        for (const iConn of internalConnections) {
+          flatConnections.push({
+            ...iConn,
+            id: `${node.id}_${iConn.id}`,
+            sourceNodeId: idMap[iConn.sourceNodeId] || iConn.sourceNodeId,
+            targetNodeId: idMap[iConn.targetNodeId] || iConn.targetNodeId,
+          });
+        }
+
+        // Entry node: first internal node with no incoming internal connections
+        const entryNode = internalNodes.find(
+          (n: any) => !internalConnections.some((c: any) => c.targetNodeId === n.id),
+        );
+        // Exit node: last internal node with no outgoing internal connections
+        const exitNode = internalNodes.find(
+          (n: any) => !internalConnections.some((c: any) => c.sourceNodeId === n.id),
+        );
+
+        // Remap external connections that pointed to/from this customComponent
+        for (const conn of flatConnections) {
+          if (conn.sourceNodeId === node.id) {
+            // Connection comes FROM the component → remap to exit node
+            if (exitNode) conn.sourceNodeId = idMap[exitNode.id];
+          }
+          if (conn.targetNodeId === node.id) {
+            // Connection goes INTO the component → remap to entry node
+            if (entryNode) conn.targetNodeId = idMap[entryNode.id];
+          }
+        }
+      } else {
+        flatNodes.push(node);
+      }
+    }
+
+    if (!hasCustom) return { nodes, connections };
+    return { nodes: flatNodes, connections: flatConnections };
+  }
+
   flowToStateMachine(flowJson: any) {
-    const { nodes = [], connections = [], variables = [] } = flowJson;
+    let { nodes = [], connections = [], variables = [] } = flowJson;
+
+    // Flatten customComponent nodes before processing
+    const flattened = this.flattenCustomComponents(nodes, connections);
+    nodes = flattened.nodes;
+    connections = flattened.connections;
+
     const existingNames = new Set<string>();
     const nodeIdToEstado = new Map<string, string>();
 
@@ -164,17 +251,33 @@ export class FlowConverterService {
   private messageNodeToHandler(props: any, subs: any[]) {
     const sendMessages = subs.filter((s: any) => s.type === 'sendMessage');
     const waitForResp = subs.find((s: any) => s.type === 'waitForResponse');
+    const setVars = subs.filter((s: any) => s.type === 'setVariable');
+
+    // Coletar assignments de todos os setVariable sub-componentes
+    const assignments: any[] = [];
+    for (const sv of setVars) {
+      const svAssignments = sv.properties?.assignments || [];
+      for (const a of svAssignments) {
+        if (a.key || a.name) {
+          assignments.push({ key: a.key || a.name, value: a.value || '' });
+        }
+      }
+    }
 
     if (waitForResp) {
       const mensagens = sendMessages
         .map((s: any) => s.properties?.content)
         .filter(Boolean);
+      const config: any = {
+        mensagemPedir: mensagens[0] || props.content || '',
+        campoSalvar: waitForResp.properties?.responseVariable || 'valor',
+      };
+      if (assignments.length > 0) {
+        config.assignments = assignments;
+      }
       return {
         handler: '_handlerCapturar',
-        config: {
-          mensagemPedir: mensagens[0] || props.content || '',
-          campoSalvar: waitForResp.properties?.responseVariable || 'valor',
-        },
+        config,
       };
     }
 
@@ -185,9 +288,14 @@ export class FlowConverterService {
           ? [props.content]
           : [];
 
+    const config: any = { mensagens, transicaoAutomatica: true };
+    if (assignments.length > 0) {
+      config.assignments = assignments;
+    }
+
     return {
       handler: '_handlerMensagem',
-      config: { mensagens, transicaoAutomatica: true },
+      config,
     };
   }
 
@@ -221,6 +329,7 @@ export class FlowConverterService {
     const apiCall = subs.find(
       (s: any) => s.type === 'apiCall' || s.type === 'webhook',
     );
+    const integration = subs.find((s: any) => s.type === 'integration');
     const setVar = subs.find((s: any) => s.type === 'setVariable');
 
     if (apiRoute) {
@@ -251,26 +360,31 @@ export class FlowConverterService {
       };
     }
 
-    if (setVar) {
-      const assignments = setVar.properties?.assignments || [];
-      if (assignments.length === 1) {
-        return {
-          handler: '_handlerCapturar',
-          config: {
-            campoSalvar: assignments[0].key || 'valor',
-            transicaoAutomatica: true,
-          },
-        };
-      }
+    if (integration) {
+      const p = integration.properties || {};
+      const cfg = p.config || {};
       return {
-        handler: '_handlerCapturar',
+        handler: '_handlerRequisicao',
         config: {
-          campos: assignments.map((a: any) => ({
-            nome: a.key,
-            mensagemPedir: '',
-          })),
+          url: cfg.endpoint || '',
+          metodo: (cfg.method || 'POST').toUpperCase(),
+          headers: cfg.headers || {},
+          body: cfg.body || undefined,
+          variavelResposta: p.responseVariable || 'integrationResponse',
           transicaoAutomatica: true,
         },
+      };
+    }
+
+    if (setVar) {
+      const rawAssignments = setVar.properties?.assignments || [];
+      const assignments = rawAssignments.map((a: any) => ({
+        key: a.key || a.name || 'valor',
+        value: a.value || '',
+      }));
+      return {
+        handler: '_handlerSetVariable',
+        config: { assignments },
       };
     }
 
@@ -395,6 +509,8 @@ export class FlowConverterService {
         return 'decision';
       case '_handlerRequisicao':
         return 'action';
+      case '_handlerSetVariable':
+        return 'action';
       case '_handlerDelay':
         return 'delay';
       default:
@@ -474,6 +590,29 @@ export class FlowConverterService {
       }
 
       case 'action': {
+        // setVariable handler → reconstruct setVariable sub-component
+        if (handler === '_handlerSetVariable') {
+          const assignments = (config.assignments || []).map(
+            (a: any, i: number) => ({
+              key: a.key,
+              name: a.key,
+              value: a.value || '',
+            }),
+          );
+          const subComponents = [
+            {
+              id: `sub-${Date.now()}-sv`,
+              type: 'setVariable',
+              properties: { assignments },
+            },
+          ];
+          return {
+            label: estadoName || 'Action',
+            actionType: 'set_variable',
+            subComponents,
+          };
+        }
+
         const subComponents = [
           {
             id: `sub-${Date.now()}-api`,

@@ -340,6 +340,119 @@ export class OrganizationService {
     return { ok: true };
   }
 
+  // ─── Lista membros da sub-organização ─────────────────────────────────────
+  async listarMembrosSubOrg(orgId: string, subOrgId: string, usuarioId: string) {
+    await this.verificarMembroOrg(orgId, usuarioId);
+    return this.prisma.subOrgMembro.findMany({
+      where: { subOrganizacaoId: subOrgId },
+      include: { usuario: { select: { id: true, email: true, nome: true } } },
+    });
+  }
+
+  // ─── Convites ─────────────────────────────────────────────────────────────
+
+  async criarConviteOrg(orgId: string, solicitanteId: string, email: string, papel = 'membro') {
+    await this.verificarPapelOrg(orgId, solicitanteId, ['dono', 'admin']);
+
+    // Verificar se usuário já é membro
+    const usuario = await this.prisma.botUsuario.findUnique({ where: { email } });
+    if (usuario) {
+      const jaExiste = await this.prisma.orgMembro.findUnique({
+        where: { organizacaoId_usuarioId: { organizacaoId: orgId as any, usuarioId: usuario.id as any } },
+      });
+      if (jaExiste) throw new BadRequestException('Usuário já é membro desta organização');
+    }
+
+    // Verificar convite pendente duplicado
+    const convitePendente = await this.prisma.convite.findFirst({
+      where: { orgId, email, status: 'pendente', tipo: 'org' },
+    });
+    if (convitePendente) throw new BadRequestException('Já existe um convite pendente para este e-mail');
+
+    return this.prisma.convite.create({
+      data: { tipo: 'org', orgId, email, papel, convidadoPorId: solicitanteId },
+    });
+  }
+
+  async criarConviteSubOrg(orgId: string, subOrgId: string, solicitanteId: string, email: string, papel = 'membro') {
+    await this.verificarPapelOrg(orgId, solicitanteId, ['dono', 'admin']);
+
+    const usuario = await this.prisma.botUsuario.findUnique({ where: { email } });
+    if (usuario) {
+      const jaExiste = await this.prisma.subOrgMembro.findUnique({
+        where: { subOrganizacaoId_usuarioId: { subOrganizacaoId: subOrgId as any, usuarioId: usuario.id as any } },
+      });
+      if (jaExiste) throw new BadRequestException('Usuário já é membro desta sub-organização');
+    }
+
+    const convitePendente = await this.prisma.convite.findFirst({
+      where: { subOrgId, email, status: 'pendente', tipo: 'suborg' },
+    });
+    if (convitePendente) throw new BadRequestException('Já existe um convite pendente para este e-mail');
+
+    return this.prisma.convite.create({
+      data: { tipo: 'suborg', orgId, subOrgId, email, papel, convidadoPorId: solicitanteId },
+    });
+  }
+
+  async listarMeusConvites(usuarioId: string) {
+    const usuario = await this.prisma.botUsuario.findUnique({ where: { id: usuarioId } });
+    if (!usuario) throw new NotFoundException('Usuário não encontrado');
+
+    return this.prisma.convite.findMany({
+      where: { email: usuario.email, status: 'pendente' },
+      include: {
+        org: { select: { id: true, nome: true } },
+        subOrg: { select: { id: true, nome: true } },
+        convidadoPor: { select: { id: true, nome: true, email: true } },
+      },
+      orderBy: { criadoEm: 'desc' },
+    });
+  }
+
+  async aceitarConvite(conviteId: string, usuarioId: string) {
+    const convite = await this.prisma.convite.findUnique({ where: { id: conviteId } });
+    if (!convite) throw new NotFoundException('Convite não encontrado');
+
+    const usuario = await this.prisma.botUsuario.findUnique({ where: { id: usuarioId } });
+    if (!usuario || usuario.email !== convite.email) {
+      throw new ForbiddenException('Este convite não é para você');
+    }
+    if (convite.status !== 'pendente') throw new BadRequestException('Este convite já foi processado');
+
+    await this.prisma.convite.update({ where: { id: conviteId }, data: { status: 'aceito' } });
+
+    if (convite.tipo === 'org' && convite.orgId) {
+      await this.prisma.orgMembro.upsert({
+        where: { organizacaoId_usuarioId: { organizacaoId: convite.orgId, usuarioId } },
+        create: { organizacaoId: convite.orgId, usuarioId, papel: convite.papel },
+        update: {},
+      });
+    } else if (convite.tipo === 'suborg' && convite.subOrgId) {
+      await this.prisma.subOrgMembro.upsert({
+        where: { subOrganizacaoId_usuarioId: { subOrganizacaoId: convite.subOrgId, usuarioId } },
+        create: { subOrganizacaoId: convite.subOrgId, usuarioId, papel: convite.papel },
+        update: {},
+      });
+    }
+
+    return { ok: true };
+  }
+
+  async rejeitarConvite(conviteId: string, usuarioId: string) {
+    const convite = await this.prisma.convite.findUnique({ where: { id: conviteId } });
+    if (!convite) throw new NotFoundException('Convite não encontrado');
+
+    const usuario = await this.prisma.botUsuario.findUnique({ where: { id: usuarioId } });
+    if (!usuario || usuario.email !== convite.email) {
+      throw new ForbiddenException('Este convite não é para você');
+    }
+    if (convite.status !== 'pendente') throw new BadRequestException('Este convite já foi processado');
+
+    await this.prisma.convite.update({ where: { id: conviteId }, data: { status: 'rejeitado' } });
+    return { ok: true };
+  }
+
   // ─── Helpers privados ─────────────────────────────────────────────────────
 
   private async verificarMembroOrg(orgId: string, usuarioId: string) {

@@ -10,7 +10,7 @@ export class StateMachineEngine {
   estadosUsuarios = new Map<string, string>();
 
   /** chatId → captured data in memory { field: value } */
-  dadosCapturados = new Map<string, Record<string, string>>();
+  dadosCapturados = new Map<string, Record<string, any>>();
 
   /** Current message context */
   mensagemAtual = '';
@@ -52,12 +52,12 @@ export class StateMachineEngine {
     );
   }
 
-  salvarDado(chatId: string, campo: string, valor: string) {
+  salvarDado(chatId: string, campo: string, valor: any) {
     const atual = this.dadosCapturados.get(chatId) ?? {};
     this.dadosCapturados.set(chatId, { ...atual, [campo]: valor });
   }
 
-  obterDados(chatId: string): Record<string, string> {
+  obterDados(chatId: string): Record<string, any> {
     return this.dadosCapturados.get(chatId) ?? {};
   }
 
@@ -89,6 +89,17 @@ export class StateMachineEngine {
           `[${chatId}] estado restaurado do banco: ${estadoSalvo}`,
         );
         this.estadosAvisados.add(chatId);
+      }
+    }
+
+    // Carregar variáveis globais do fluxo ativo na primeira interação
+    if (!this.dadosCapturados.has(chatId)) {
+      const varsGlobais = await this.estadoRepo.obterVariaveisFluxoAtivo();
+      if (Object.keys(varsGlobais).length > 0) {
+        this.dadosCapturados.set(chatId, { ...varsGlobais });
+        this.logger.log(
+          `[${chatId}] variáveis globais carregadas: ${Object.keys(varsGlobais).join(', ')}`,
+        );
       }
     }
 

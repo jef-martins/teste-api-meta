@@ -167,6 +167,21 @@ export class HandlerService {
       await this.enviarResposta(message, textoInterpolado);
     }
 
+    // Processar assignments de setVariable (sub-componentes inline)
+    const assignments = config.assignments ?? [];
+    if (assignments.length > 0) {
+      const dadosAtuais = engine.obterDados(chatId);
+      for (const assignment of assignments) {
+        const key = assignment.key;
+        const rawValue = assignment.value ?? '';
+        const interpolado = engine.interpolar(String(rawValue), dadosAtuais);
+        engine.salvarDado(chatId, key, interpolado);
+      }
+      this.logger.log(
+        `[${chatId}] mensagem+setVariable: ${assignments.map((a: any) => a.key).join(', ')}`,
+      );
+    }
+
     if (config.transicaoAutomatica || config.transicao_automatica) {
       await engine.transitarPorEntrada(
         chatId,
@@ -207,7 +222,9 @@ export class HandlerService {
     // Simple mode
     if (!corpo) {
       if (config.mensagemPedir) {
-        await this.enviarResposta(message, config.mensagemPedir);
+        const dadosChat = engine.obterDados(chatId);
+        const textoInterpolado = engine.interpolar(config.mensagemPedir, dadosChat);
+        await this.enviarResposta(message, textoInterpolado);
       }
       return;
     }
@@ -229,6 +246,18 @@ export class HandlerService {
 
     const chave = config.campoSalvar || config.campoEnviar;
     if (chave) engine.salvarDado(chatId, chave, corpo);
+
+    // Processar assignments de setVariable (se houver junto com waitForResponse)
+    const captureAssignments = config.assignments ?? [];
+    if (captureAssignments.length > 0) {
+      const dadosAtuais = engine.obterDados(chatId);
+      for (const assignment of captureAssignments) {
+        const key = assignment.key;
+        const rawValue = assignment.value ?? '';
+        const interpolado = engine.interpolar(String(rawValue), dadosAtuais);
+        engine.salvarDado(chatId, key, interpolado);
+      }
+    }
 
     if (config.mensagemConfirmacao) {
       const texto = engine.interpolar(config.mensagemConfirmacao, {
@@ -263,7 +292,8 @@ export class HandlerService {
     if (!proximoCampo) return;
 
     if (!corpo) {
-      await this.enviarResposta(message, proximoCampo.mensagemPedir);
+      const textoInterpolado = engine.interpolar(proximoCampo.mensagemPedir, dados);
+      await this.enviarResposta(message, textoInterpolado);
       return;
     }
 
@@ -734,6 +764,48 @@ export class HandlerService {
             engine,
           );
         }
+      }
+    }
+  }
+
+  // ─── _handlerSetVariable ────────────────────────────────────────────────
+
+  async _handlerSetVariable(
+    message: any,
+    chatId: string,
+    corpo: string,
+    engine: StateMachineEngine,
+  ) {
+    const estadoAtual = engine.estadosUsuarios.get(chatId)!;
+    const config =
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
+
+    const assignments = config.assignments ?? [];
+    const dadosChat = engine.obterDados(chatId);
+
+    for (const assignment of assignments) {
+      const key = assignment.key;
+      const rawValue = assignment.value ?? '';
+      const interpolado = engine.interpolar(String(rawValue), dadosChat);
+      engine.salvarDado(chatId, key, interpolado);
+    }
+
+    if (assignments.length > 0) {
+      this.logger.log(
+        `[${chatId}] setVariable: ${assignments.map((a: any) => a.key).join(', ')}`,
+      );
+    }
+
+    // Transição automática
+    const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+    if (proximo) {
+      await engine.avancarEstado(chatId, proximo, '[setVariable]');
+      const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
+      if (
+        configProximo &&
+        typeof (this as any)[configProximo.handler] === 'function'
+      ) {
+        await (this as any)[configProximo.handler](message, chatId, '', engine);
       }
     }
   }

@@ -147,20 +147,38 @@ export class CollaborationService implements OnModuleDestroy {
     const nodesMap = doc.getMap('nodes');
     const connectionsMap = doc.getMap('connections');
     const variablesMap = doc.getMap('variables');
+    const metaMap = doc.getMap('meta');
 
     const nodes = Array.from(nodesMap.values()) as any[];
     const connections = Array.from(connectionsMap.values()) as any[];
     const variables = Array.from(variablesMap.values()) as any[];
 
+    const nome = metaMap.get('name') as string | undefined;
+    const descricao = metaMap.get('description') as string | undefined;
+
     if (nodes.length > 0 || connections.length > 0) {
       const flowJson = { nodes, connections, variables };
+      const updateData: any = { flowJson: flowJson as any };
+
+      if (nome !== undefined && nome.trim() !== '') {
+        updateData.nome = nome;
+      }
+      if (descricao !== undefined) {
+        updateData.descricao = descricao;
+      }
+
       await this.prisma.botFluxo.update({
         where: { id: flowId },
-        data: { flowJson: flowJson as any },
+        data: updateData,
       });
 
       // Compila o fluxo para bot_estado_config/bot_estado_transicao
       await this.flowService.recompilarFluxo(flowId, flowJson);
+    } else if (nome !== undefined && nome.trim() !== '') {
+      // Persiste ao menos o nome/descrição mesmo quando o fluxo ainda está vazio
+      const updateData: any = { nome };
+      if (descricao !== undefined) updateData.descricao = descricao;
+      await this.prisma.botFluxo.update({ where: { id: flowId }, data: updateData });
     }
   }
 
@@ -212,7 +230,7 @@ export class CollaborationService implements OnModuleDestroy {
     // Fallback: load from flow_json
     const fluxo = await this.prisma.botFluxo.findUnique({
       where: { id: flowId },
-      select: { flowJson: true },
+      select: { flowJson: true, nome: true, descricao: true },
     });
 
     if (fluxo?.flowJson) {
@@ -220,6 +238,7 @@ export class CollaborationService implements OnModuleDestroy {
       const nodesMap = doc.getMap('nodes');
       const connectionsMap = doc.getMap('connections');
       const variablesMap = doc.getMap('variables');
+      const metaMap = doc.getMap('meta');
 
       doc.transact(() => {
         for (const node of flowData.nodes || []) {
@@ -231,6 +250,8 @@ export class CollaborationService implements OnModuleDestroy {
         for (const v of flowData.variables || []) {
           variablesMap.set(v.id || v.key, v);
         }
+        metaMap.set('name', fluxo.nome);
+        metaMap.set('description', fluxo.descricao || '');
       });
 
       this.logger.log(`Fluxo ${flowId} carregado do flow_json`);

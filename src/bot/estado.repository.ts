@@ -139,6 +139,34 @@ export class EstadoRepository {
     }
   }
 
+  async obterVariaveisFluxoAtivo(): Promise<Record<string, string>> {
+    try {
+      const fluxoAtivo = await this.prisma.botFluxo.findFirst({
+        where: { ativo: true },
+        select: { id: true },
+      });
+      if (!fluxoAtivo) return {};
+
+      const variaveis = await this.prisma.botFluxoVariavel.findMany({
+        where: { flowId: fluxoAtivo.id },
+        select: { chave: true, valorPadrao: true },
+      });
+
+      const resultado: Record<string, string> = {};
+      for (const v of variaveis) {
+        if (v.chave && v.valorPadrao) {
+          resultado[v.chave] = v.valorPadrao;
+        }
+      }
+      return resultado;
+    } catch (err: any) {
+      this.logger.error(
+        `Erro ao obter variáveis do fluxo ativo: ${err.message}`,
+      );
+      return {};
+    }
+  }
+
   async obterEstadoInicial(): Promise<string> {
     try {
       const row = await this.prisma.botEstadoConfig.findFirst({

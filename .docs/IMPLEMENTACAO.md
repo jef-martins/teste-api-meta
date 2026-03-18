@@ -167,6 +167,136 @@ Adicionado controle de acesso completo nos endpoints de fluxo (`obter`, `atualiz
 
 ---
 
+---
+
+## Módulo: Componentes Personalizados (`src/custom-component/`)
+
+### Objetivo
+Armazenar sequências de nós (e as conexões entre eles) que o usuário pode reutilizar em fluxos.
+
+### Modelo Prisma
+```prisma
+model ComponentePersonalizado {
+  id               String   @id @default(uuid())
+  nome             String   @db.VarChar(100)
+  descricao        String?  @db.Text
+  icone            String?  @default("package") @db.VarChar(50)
+  nodesJson        Json     // { nodes: [...], connections: [...] }
+  subOrganizacaoId String?
+  criadoEm         DateTime
+  atualizadoEm     DateTime
+  subOrganizacao   SubOrganizacao? @relation(...)
+}
+```
+
+### Endpoints
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | /api/custom-components | Lista componentes da sub-org |
+| POST | /api/custom-components | Cria novo componente |
+| PUT | /api/custom-components/:id | Atualiza componente |
+| DELETE | /api/custom-components/:id | Exclui componente |
+
+- Autenticados via JWT (`JwtAuthGuard`)
+- Sub-org lida do header `X-SubOrg-Id`
+- Acesso verificado via `OrganizationService.verificarAcessoSubOrg()`
+
+### Migração
+`prisma/migrations/20260317133133_add_componente_personalizado/`
+
+---
+
+---
+
+## Correções no Fluxo Bot ↔ Mensagens Reais (17/03/2026)
+
+### Problema
+Variáveis definidas no fluxo visual (ex: `{{nome}}`) funcionavam corretamente no simulador do frontend mas **não eram substituídas nas mensagens reais** enviadas pelo bot via WhatsApp. A causa raiz era composta por 4 bugs:
+
+### Bug 1: `setVariable` em MESSAGE nodes ignorado na conversão
+- **Arquivo**: `src/flow/flow-converter.service.ts` → `messageNodeToHandler()`
+- **Causa**: Só processava sub-componentes `sendMessage` e `waitForResponse`, ignorando `setVariable`
+- **Correção**: Agora coleta `assignments` de todos os `setVariable` sub-componentes e os inclui na config do handler como `config.assignments`
+
+### Bug 2: `setVariable` em ACTION nodes convertido incorretamente
+- **Arquivo**: `src/flow/flow-converter.service.ts` → `actionNodeToHandler()`
+- **Causa**: `setVariable` era mapeado para `_handlerCapturar`, que espera input do usuário. Mas `setVariable` deveria definir o valor diretamente sem esperar input.
+- **Correção**: Agora gera `_handlerSetVariable` em vez de `_handlerCapturar`
+
+### Bug 3: Variáveis globais do fluxo não carregadas no runtime
+- **Arquivo**: `src/bot/state-machine.engine.ts` → `process()`
+- **Causa**: O simulador pré-carrega variáveis globais do `flowStore.variables`, mas o engine do backend não
+- **Correção**: Na primeira interação de um chatId, carrega variáveis do fluxo ativo (`BotFluxoVariavel`) via `obterVariaveisFluxoAtivo()` e pre-popula `dadosCapturados[chatId]`
+
+### Bug 4: `_handlerMensagem` não processava assignments inline
+- **Arquivo**: `src/bot/handler.service.ts`
+- **Correção**: Após enviar mensagens, se `config.assignments` existe, interpola e salva cada variável em `dadosCapturados`
+
+### Novo Handler: `_handlerSetVariable`
+- **Arquivo**: `src/bot/handler.service.ts`
+- Lê `config.assignments` (array de `{key, value}`)
+- Interpola o `value` com dados existentes do chat
+- Salva em `engine.dadosCapturados`
+- Transição automática para próximo estado
+
+### Novo Método: `obterVariaveisFluxoAtivo()`
+- **Arquivo**: `src/bot/estado.repository.ts`
+- Busca o fluxo ativo e retorna suas variáveis como `Record<string, string>`
+
+### Conversão reversa (backend→frontend)
+- **Arquivo**: `src/flow/flow-converter.service.ts`
+- `handlerToNodeType`: reconhece `_handlerSetVariable` como tipo `action`
+- `handlerConfigToProperties`: reconstrói sub-componente `setVariable` com assignments corretos
+
+---
+
+---
+
+## Correções Adicionais no Fluxo Bot ↔ Mensagens (17/03/2026 — segunda rodada)
+
+### Bug 5: Tipo `string` em `salvarDado`/`obterDados` impedia objetos API
+- **Arquivo**: `src/bot/state-machine.engine.ts`
+- **Causa**: `salvarDado(valor: string)` e `dadosCapturados: Map<string, Record<string, string>>` não suportavam objetos JSON de respostas API. Ao salvar `resposta` (objeto), era coercido para `"[object Object]"`, impossibilitando `{{resposta.data.field}}`
+- **Correção**: Alterado para `valor: any` e `Record<string, any>` em dadosCapturados e obterDados
+
+### Bug 6: MESSAGE + waitForResponse + setVariable perdia assignments
+- **Arquivo**: `src/flow/flow-converter.service.ts` → `messageNodeToHandler()`
+- **Causa**: Quando `waitForResp` existia, o return era feito sem incluir os assignments coletados
+- **Correção**: Agora a config do `_handlerCapturar` inclui `assignments` quando presentes
+
+### Bug 7: `mensagemPedir` não interpolada no `_handlerCapturar`
+- **Arquivo**: `src/bot/handler.service.ts` (simple mode e multi mode)
+- **Causa**: O prompt era enviado ao usuário sem interpolação de variáveis
+- **Correção**: Agora interpola `mensagemPedir` e `proximoCampo.mensagemPedir` com `engine.obterDados(chatId)` antes de enviar
+
+### Bug 8: Sub-componente `integration` não tratado no converter
+- **Arquivo**: `src/flow/flow-converter.service.ts` → `actionNodeToHandler()`
+- **Causa**: Não havia case para `integration`, causando fallback silencioso para handler vazio
+- **Correção**: Agora `integration` é convertido para `_handlerRequisicao` usando `config.endpoint`, `config.method`, etc.
+
+### Processamento de assignments no `_handlerCapturar`
+- **Arquivo**: `src/bot/handler.service.ts`
+- Após capturar o valor do usuário e salvar via `campoSalvar`, agora processa `config.assignments` interpolando e salvando cada variável
+
+---
+
+## Suporte a Nós customComponent no Converter (17/03/2026)
+
+### Descrição
+O `FlowConverterService` agora suporta nós do tipo `customComponent` que representam componentes personalizados colapsados no editor visual. Antes da conversão para state machine, esses nós são "achatados" em seus nós internos.
+
+### Arquivos Modificados
+- `src/flow/flow-converter.service.ts`:
+  - Novo método privado `flattenCustomComponents(nodes, connections)` que:
+    - Itera sobre nós buscando tipo `customComponent`
+    - Extrai `internalNodes` e `internalConnections` das properties
+    - Gera novos IDs prefixados (`nodeId_internalId`) para evitar colisões
+    - Ajusta posições dos nós internos relativas à posição do nó colapsado
+    - Remapeia conexões externas que apontavam para o customComponent para o nó "entrada" interno
+  - `flowToStateMachine()` chama `flattenCustomComponents()` no início
+
+---
+
 ## O que Ainda Pode Ser Implementado
 
 ### Retrocompatibilidade de usuários sem sub-org

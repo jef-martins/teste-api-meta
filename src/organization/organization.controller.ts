@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -164,5 +165,48 @@ export class OrganizationController {
       req.user.id,
       membroId,
     );
+  }
+
+  @Get('organizacoes/:orgId/sub-orgs/:subOrgId/membros')
+  listarMembrosSubOrg(
+    @Param('orgId') orgId: string,
+    @Param('subOrgId') subOrgId: string,
+    @Req() req: any,
+  ) {
+    return this.orgService.listarMembrosSubOrg(orgId, subOrgId, req.user.id);
+  }
+
+  @Post('organizacoes/:orgId/convites')
+  criarConviteOrg(
+    @Param('orgId') orgId: string,
+    @Body() body: { email: string; papel?: string },
+    @Req() req: any,
+  ) {
+    return this.orgService.criarConviteOrg(orgId, req.user.id, body.email, body.papel);
+  }
+
+  @Post('organizacoes/:orgId/sub-orgs/:subOrgId/convites')
+  criarConviteSubOrg(
+    @Param('orgId') orgId: string,
+    @Param('subOrgId') subOrgId: string,
+    @Body() body: { email: string; papel?: string },
+    @Req() req: any,
+  ) {
+    return this.orgService.criarConviteSubOrg(orgId, subOrgId, req.user.id, body.email, body.papel);
+  }
+
+  @Get('convites/meus')
+  listarMeusConvites(@Req() req: any) {
+    return this.orgService.listarMeusConvites(req.user.id);
+  }
+
+  @Patch('convites/:id/aceitar')
+  aceitarConvite(@Param('id') id: string, @Req() req: any) {
+    return this.orgService.aceitarConvite(id, req.user.id);
+  }
+
+  @Patch('convites/:id/rejeitar')
+  rejeitarConvite(@Param('id') id: string, @Req() req: any) {
+    return this.orgService.rejeitarConvite(id, req.user.id);
   }
 }
