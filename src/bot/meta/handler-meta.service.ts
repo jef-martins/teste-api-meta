@@ -3,22 +3,40 @@ import { EstadoRepository } from '../estado.repository';
 import { StateMachineEngine } from '../state-machine.engine';
 import * as crypto from 'crypto';
 
+/**
+ * Implementa todos os handlers da máquina de estados para a integração Meta.
+ * Cada handler corresponde a um valor em bot_estado_config.handler.
+ *
+ * Handlers disponíveis:
+ *   _handlerMensagem   — envia mensagens de texto simples
+ *   _handlerCapturar   — captura entrada de texto do usuário
+ *   _handlerLista      — envia menu de lista interativo (WhatsApp List Message)
+ *   _handlerBotoes     — envia botões de resposta rápida (máx. 3)
+ *   _handlerRequisicao — faz chamada HTTP (GET/POST) a uma API externa
+ *   _handlerDelay      — aguarda um tempo antes de avançar o estado
+ */
 @Injectable()
 export class HandlerMetaService {
   private readonly logger = new Logger(HandlerMetaService.name);
 
+  /** Definidos pelo BotMetaService antes de cada processamento */
   public phone_id: string | null = null;
   public access_token: string | null = null;
 
   constructor(private estadoRepo: EstadoRepository) {}
 
-  private async chamadaMetaAPI(payload: any) {
+  // ─── Método privado: chama a Graph API da Meta ────────────────────────────
+
+  private async chamadaMetaAPI(payload: any): Promise<void> {
     if (!this.phone_id || !this.access_token) {
-      this.logger.error('Meta API client não inicializado (phone_id ou access_token ausente).');
+      this.logger.error(
+        'Meta API não inicializada: phone_id ou access_token ausente.',
+      );
       return;
     }
 
     const url = `https://graph.facebook.com/v18.0/${this.phone_id}/messages`;
+
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -30,18 +48,23 @@ export class HandlerMetaService {
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        this.logger.error(`Erro na chamada da Meta API: ${JSON.stringify(errData)}`);
+        const errData = await response.json().catch(() => ({}));
+        this.logger.error(
+          `Erro na Meta API [${response.status}]: ${JSON.stringify(errData)}`,
+        );
       } else {
-        this.logger.log(`Mensagem enviada com sucesso pela Meta API.`);
+        this.logger.log('Mensagem enviada com sucesso via Meta API.');
       }
     } catch (err: any) {
       this.logger.error(`Exceção ao chamar a Meta API: ${err.message}`);
     }
   }
 
-  private async enviarResposta(message: any, texto: string) {
-    const destino = message.from.replace('@c.us', ''); 
+  // ─── Helper: envia mensagem de texto simples ──────────────────────────────
+
+  private async enviarResposta(message: any, texto: string): Promise<void> {
+    // Remove o sufixo @meta (ou @c.us) para obter o número puro
+    const destino = message.from.replace(/@(meta|c\.us)$/, '');
     const payload = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
@@ -52,8 +75,12 @@ export class HandlerMetaService {
     await this.chamadaMetaAPI(payload);
   }
 
-  // ─── _handlerMensagem ────────────────────────────────────────────────────
+  // ─── _handlerMensagem ─────────────────────────────────────────────────────
 
+  /**
+   * Envia uma ou mais mensagens de texto configuradas no estado.
+   * Se transicaoAutomatica=true, avança automaticamente para o próximo estado.
+   */
   async _handlerMensagem(
     message: any,
     chatId: string,
@@ -63,7 +90,7 @@ export class HandlerMetaService {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
     const config =
       (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
-    const mensagens = config.mensagens ?? [];
+    const mensagens: string[] = config.mensagens ?? [];
 
     const dadosChat = engine.obterDados(chatId);
     for (const texto of mensagens) {
@@ -84,8 +111,12 @@ export class HandlerMetaService {
     }
   }
 
-  // ─── _handlerCapturar ────────────────────────────────────────────────────
+  // ─── _handlerCapturar ─────────────────────────────────────────────────────
 
+  /**
+   * Captura texto digitado pelo usuário e avança o estado.
+   * Suporta modo simples (um campo) e modo multi-campo (config.campos[]).
+   */
   async _handlerCapturar(
     message: any,
     chatId: string,
@@ -96,7 +127,7 @@ export class HandlerMetaService {
     const config =
       (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
 
-    // Multi-field mode
+    // Modo multi-campo
     if (Array.isArray(config.campos) && config.campos.length > 0) {
       return this._handlerCapturarMulti(
         message,
@@ -108,7 +139,7 @@ export class HandlerMetaService {
       );
     }
 
-    // Simple mode
+    // Modo simples: aguarda texto
     if (!corpo) {
       if (config.mensagemPedir) {
         await this.enviarResposta(message, config.mensagemPedir);
@@ -117,10 +148,7 @@ export class HandlerMetaService {
     }
 
     let proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, corpo);
-    if (
-      !proximo &&
-      (config.transicaoAutomatica || config.transicao_automatica)
-    ) {
+    if (!proximo && (config.transicaoAutomatica || config.transicao_automatica)) {
       proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
     }
 
@@ -215,8 +243,15 @@ export class HandlerMetaService {
     }
   }
 
-  // ─── _handlerLista ───────────────────────────────────────────────────────
+  // ─── _handlerLista ────────────────────────────────────────────────────────
 
+  /**
+   * Exibe um menu de Lista Interativa do WhatsApp (máx. 10 linhas).
+   * Se já houver um corpo (seleção feita), navega para o próximo estado.
+   * Fallback: envia lista em texto simples se a API falhar.
+   *
+   * Config esperada: { titulo, botaoTexto, secaoTitulo, rodape, opcoes: [{entrada, label, descricao}] }
+   */
   async _handlerLista(
     message: any,
     chatId: string,
@@ -228,6 +263,7 @@ export class HandlerMetaService {
       (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
     if (typeof config === 'string') config = JSON.parse(config);
 
+    // Se o usuário já enviou uma seleção, processa a transição
     if (corpo) {
       const proximo = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
@@ -255,13 +291,15 @@ export class HandlerMetaService {
       }
     }
 
+    // Monta o payload de lista interativa
     const opcoes = config.opcoes ?? [];
-
     const titulo = (config.titulo ?? 'Menu').substring(0, 1024);
+    const destino = message.from.replace(/@(meta|c\.us)$/, '');
+
     const payload: any = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to: message.from.replace('@c.us', ''),
+      to: destino,
       type: 'interactive',
       interactive: {
         type: 'list',
@@ -274,21 +312,24 @@ export class HandlerMetaService {
               rows: opcoes.slice(0, 10).map((op: any) => ({
                 id: String(op.entrada).substring(0, 200),
                 title: op.label.substring(0, 24),
-                description: (op.descricao || '').substring(0, 72)
-              }))
-            }
-          ]
-        }
-      }
+                description: (op.descricao || '').substring(0, 72),
+              })),
+            },
+          ],
+        },
+      },
     };
+
     if (config.rodape) {
-        payload.interactive.footer = { text: config.rodape.substring(0, 60) };
+      payload.interactive.footer = { text: config.rodape.substring(0, 60) };
     }
 
     try {
       await this.chamadaMetaAPI(payload);
     } catch (err: any) {
-      this.logger.warn(`[${chatId}] Fallback texto — motivo: ${err.message}`);
+      this.logger.warn(
+        `[${chatId}] Fallback para texto em _handlerLista: ${err.message}`,
+      );
       const linhas = opcoes
         .map((o: any) => `*${o.entrada}* - ${o.label}`)
         .join('\n');
@@ -296,8 +337,14 @@ export class HandlerMetaService {
     }
   }
 
-  // ─── _handlerBotoes ──────────────────────────────────────────────────────
+  // ─── _handlerBotoes ───────────────────────────────────────────────────────
 
+  /**
+   * Exibe botões de resposta rápida (máx. 3 pela limitação da Meta).
+   * Se já houver uma seleção, navega para o próximo estado.
+   *
+   * Config esperada: { titulo, cabecalho, rodape, botoes: [{entrada, label}] }
+   */
   async _handlerBotoes(
     message: any,
     chatId: string,
@@ -308,6 +355,7 @@ export class HandlerMetaService {
     const config =
       (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
 
+    // Se o usuário já clicou em um botão, processa a transição
     if (corpo) {
       const proximo = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
@@ -335,46 +383,70 @@ export class HandlerMetaService {
     const botoesLimitados = botoes.slice(0, 3);
 
     if (botoes.length > 3) {
-      this.logger.warn(`[${chatId}] Mais de 3 botões fornecidos, limitando apenas aos 3 primeiros.`);
+      this.logger.warn(
+        `[${chatId}] _handlerBotoes: mais de 3 botões fornecidos, limitando aos 3 primeiros.`,
+      );
     }
+
+    const destino = message.from.replace(/@(meta|c\.us)$/, '');
 
     const payload: any = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to: message.from.replace('@c.us', ''),
+      to: destino,
       type: 'interactive',
       interactive: {
         type: 'button',
-        body: { text: (config.titulo ?? 'Escolha uma opção:').substring(0, 1024) },
+        body: {
+          text: (config.titulo ?? 'Escolha uma opção:').substring(0, 1024),
+        },
         action: {
           buttons: botoesLimitados.map((b: any) => ({
             type: 'reply',
             reply: {
               id: String(b.entrada).substring(0, 256),
-              title: String(b.label || '').substring(0, 20)
-            }
-          }))
-        }
-      }
+              title: String(b.label || '').substring(0, 20),
+            },
+          })),
+        },
+      },
     };
+
     if (config.rodape) {
-        payload.interactive.footer = { text: config.rodape.substring(0, 60) };
+      payload.interactive.footer = { text: config.rodape.substring(0, 60) };
     }
     if (config.cabecalho) {
-        payload.interactive.header = { type: 'text', text: config.cabecalho.substring(0, 60) };
+      payload.interactive.header = {
+        type: 'text',
+        text: config.cabecalho.substring(0, 60),
+      };
     }
 
     try {
       await this.chamadaMetaAPI(payload);
     } catch (err: any) {
-      this.logger.error(`Erro ao enviar botões: ${err.message}`);
-      const linhas = (config.botoes ?? []).map((b: any) => b.label).join('\n');
-      await this.enviarResposta(message, `${config.titulo ?? ''}\n\n${linhas}`);
+      this.logger.error(
+        `[${chatId}] Fallback para texto em _handlerBotoes: ${err.message}`,
+      );
+      const linhas = botoes.map((b: any) => b.label).join('\n');
+      await this.enviarResposta(
+        message,
+        `${config.titulo ?? ''}\n\n${linhas}`,
+      );
     }
   }
 
-  // ─── _handlerRequisicao ──────────────────────────────────────────────────
+  // ─── _handlerRequisicao ───────────────────────────────────────────────────
 
+  /**
+   * Faz uma chamada HTTP (GET ou POST) a uma API externa e exibe o resultado.
+   * Suporta: corpo fixo (config.body), multi-campo (config.camposEnviar[]),
+   * ou campo único (config.campoEnviar).
+   *
+   * Config esperada:
+   *   url, metodo, headers, campoResposta, mensagemSucesso,
+   *   mensagemErro, mensagemNaoEncontrado, transicaoAutomatica, palavraSair
+   */
   async _handlerRequisicao(
     message: any,
     chatId: string,
@@ -393,7 +465,7 @@ export class HandlerMetaService {
     const usandoMulti =
       Array.isArray(config.camposEnviar) && config.camposEnviar.length > 0;
 
-    // Intercept exit word
+    // Intercepta palavra de saída (ex: "sair")
     const palavraSair = (config.palavraSair ?? 'sair').toLowerCase();
     if (corpo && corpo.toLowerCase() === palavraSair) {
       const proximo = await this.estadoRepo.buscarProximoEstado(
@@ -419,6 +491,7 @@ export class HandlerMetaService {
       }
     }
 
+    // Se não há entrada e nem dados em memória, solicita ao usuário
     if (
       !corpo &&
       !usandoBodyFixo &&
@@ -436,7 +509,7 @@ export class HandlerMetaService {
     try {
       const metodo = (config.metodo ?? 'GET').toUpperCase();
       const from = message.from ?? chatId;
-      const numero = from.split('@')[0];
+      const numero = from.replace(/@(meta|c\.us)$/, '').split('@')[0];
       const tudo: Record<string, any> = {
         id: crypto.randomUUID(),
         valor: corpo,
@@ -497,7 +570,7 @@ export class HandlerMetaService {
         }
         const res = await fetch(urlFinal, { headers });
         statusHttp = res.status;
-        resposta = await res.json();
+        resposta = await res.json().catch(() => ({}));
       } else {
         const res = await fetch(urlBase, {
           method: metodo,
@@ -505,7 +578,6 @@ export class HandlerMetaService {
           body: JSON.stringify(bodyObj),
         });
         statusHttp = res.status;
-        // avoid json parsing errors
         resposta = await res.json().catch(() => ({}));
       }
 
@@ -527,13 +599,13 @@ export class HandlerMetaService {
         ) {
           await this.enviarResposta(
             message,
-            config.mensagemNaoEncontrado ?? '🤷‍♂️ Não encontrado.',
+            config.mensagemNaoEncontrado ?? '🤷 Não encontrado.',
           );
         } else if (Array.isArray(valorExtraido)) {
           if (valorExtraido.length === 0) {
             await this.enviarResposta(
               message,
-              config.mensagemNaoEncontrado ?? '🤷‍♂️ Não encontrado.',
+              config.mensagemNaoEncontrado ?? '🤷 Não encontrado.',
             );
           } else {
             const separador = config.separador ?? '➖➖➖➖➖';
@@ -586,13 +658,16 @@ export class HandlerMetaService {
         }
       }
     } catch (err: any) {
-      this.logger.error(`Erro na requisição: ${err.message}`);
+      this.logger.error(
+        `[${chatId}] Erro em _handlerRequisicao: ${err.message}`,
+      );
       await this.enviarResposta(
         message,
         config.mensagemErro ?? '❌ Erro ao processar a solicitação.',
       );
     }
 
+    // Limpa dados da memória se necessário
     if (
       config.limparDados !== false &&
       (usandoBodyFixo || usandoMulti || config.campoSalvar)
@@ -600,6 +675,7 @@ export class HandlerMetaService {
       engine.limparDados(chatId);
     }
 
+    // Transição automática após a requisição
     if (config.transicaoAutomatica || config.transicao_automatica) {
       let proximo = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
@@ -626,8 +702,14 @@ export class HandlerMetaService {
     }
   }
 
-  // ─── _handlerDelay ───────────────────────────────────────────────────────
+  // ─── _handlerDelay ────────────────────────────────────────────────────────
 
+  /**
+   * Aguarda um tempo configurado antes de avançar o estado automaticamente.
+   *
+   * Config esperada: { mensagem, duracao, unidade: 'seconds'|'minutes' }
+   * Tempo máximo: 5 minutos (300s).
+   */
   async _handlerDelay(
     message: any,
     chatId: string,
@@ -647,7 +729,7 @@ export class HandlerMetaService {
       await this.enviarResposta(message, config.mensagem);
     }
 
-    const tempoReal = Math.min(ms, 300000);
+    const tempoReal = Math.min(ms, 300000); // máx 5 minutos
     await new Promise((resolve) => setTimeout(resolve, tempoReal));
 
     const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
