@@ -6,6 +6,12 @@ import { ConversationService } from '../../conversation/conversation.service';
 @Injectable()
 export class BotMetaService {
   private readonly logger = new Logger(BotMetaService.name);
+
+  /**
+   * Timestamp de início do servidor (em segundos).
+   * Mensagens com timestamp anterior a este valor são ignoradas
+   * para evitar reprocessamento de mensagens antigas ao reiniciar.
+   */
   private iniciadoEm = Math.floor(Date.now() / 1000);
 
   constructor(
@@ -16,84 +22,104 @@ export class BotMetaService {
 
   async processarMensagem(messageItem: any, value: any) {
     const timestampMsg = parseInt(messageItem.timestamp || '0', 10);
-    // Ignore old messages before server startup
-    if (timestampMsg > 0 && timestampMsg < this.iniciadoEm) return;
 
-    let nome = null;
+    // Ignora mensagens antigas (anteriores ao início do servidor)
+    if (timestampMsg > 0 && timestampMsg < this.iniciadoEm) {
+      this.logger.debug(
+        `Mensagem ignorada (anterior ao boot): ts=${timestampMsg}`,
+      );
+      return;
+    }
+
+    // Extrai o nome do contato, se disponível
+    let nome: string | null = null;
     if (value.contacts && value.contacts.length > 0) {
       nome = value.contacts[0].profile?.name || null;
     }
 
-    const from = messageItem.from; 
-    const phone_id = value.metadata?.phone_number_id; 
+    const from = messageItem.from; // número puro, ex: "5514999999999"
+    const phone_id = value.metadata?.phone_number_id;
 
-    // Configurando as informações para uso no HandlerMetaService
+    // Configura o HandlerMetaService com os dados desta requisição
     this.handler.phone_id = phone_id || null;
-    this.handler.access_token = process.env.VERIFY_TOKEN || null; // Ou criar uma nova env META_API_TOKEN
+    this.handler.access_token = process.env.VERIFY_TOKEN || null;
 
-    // Test mode
+    // Modo de teste: responde apenas ao número do admin
     if (process.env.BOT_MODO_TESTE === 'true') {
       const numeroAdmin = (process.env.BOT_NUMERO_ADMIN || '').replace(/\D/g, '');
-      const isAdmin = from === numeroAdmin;
-      if (!isAdmin) return;
+      const numeroRemetente = from.replace(/\D/g, '');
+      const isAdmin = numeroRemetente === numeroAdmin;
+      if (!isAdmin) {
+        this.logger.debug(`[Modo Teste] Ignorando mensagem de ${from}`);
+        return;
+      }
     }
 
-    this.logger.log(`Mensagem recebida da Meta [${messageItem.type}] de ${from}`);
+    this.logger.log(`Mensagem recebida via Meta [${messageItem.type}] de ${from}`);
 
+    // Normaliza o corpo da mensagem conforme o tipo
     let corpo = '';
-    
     if (messageItem.type === 'text') {
       corpo = (messageItem.text?.body || '').trim();
     } else if (messageItem.type === 'interactive') {
-      if (messageItem.interactive.type === 'list_reply') {
+      if (messageItem.interactive?.type === 'list_reply') {
         corpo = (messageItem.interactive.list_reply?.id || '').trim();
-      } else if (messageItem.interactive.type === 'button_reply') {
+      } else if (messageItem.interactive?.type === 'button_reply') {
         corpo = (messageItem.interactive.button_reply?.id || '').trim();
       }
     } else if (messageItem.type === 'button') {
       corpo = (messageItem.button?.payload || '').trim();
+    } else {
+      // Tipos não suportados (áudio, imagem, etc.) — ignora silenciosamente
+      this.logger.debug(`Tipo de mensagem não tratado: ${messageItem.type}`);
+      return;
     }
 
-    const fromComDominio = `${from}@c.us`; 
+    // Usa o número puro como chatId para compatibilidade com a state machine.
+    // Adicionamos sufixo @meta para diferenciar de sessões WPPConnect no banco.
+    const chatId = `${from}@meta`;
 
+    // Objeto de mensagem no formato esperado pelo StateMachineEngine e Handlers
     const mockMessage = {
-      from: fromComDominio,
-      to: `${phone_id}@c.us`, 
-      body: corpo, 
+      from: chatId,
+      to: `${phone_id}@meta`,
+      body: corpo,
       type: messageItem.type === 'text' ? 'chat' : messageItem.type,
       sender: {
         pushname: nome,
-        name: nome
+        name: nome,
       },
-      _metaOriginal: messageItem
+      _metaOriginal: messageItem,
     };
 
     try {
+      // Persiste a mensagem no banco de dados
       await this.salvarNoBanco(mockMessage, from, phone_id, nome, corpo);
-      
+
+      // Processa a mensagem pela máquina de estados
       await this.engine.process(
         mockMessage,
-        fromComDominio,
-        corpo.toLowerCase(), // Bot usa lowerCase para verificar options
+        chatId,
+        corpo.toLowerCase(), // Engine usa lowercase para comparar transições
         nome,
-        this.handler as any 
+        this.handler as any,
       );
     } catch (err: any) {
-      this.logger.error(`Erro ao processar mensagem MS: ${err.message}`);
+      this.logger.error(`Erro ao processar mensagem via Meta: ${err.message}`);
     }
   }
 
-  private async salvarNoBanco(message: any, from: string, to: string, nome: string | null, corpo: string) {
+  private async salvarNoBanco(
+    message: any,
+    from: string,
+    to: string,
+    nome: string | null,
+    corpo: string,
+  ) {
     try {
-      await this.conversationService.salvarMensagem(
-        nome,
-        message, 
-        from,
-        to,
-        corpo, 
-      );
+      await this.conversationService.salvarMensagem(nome, message, from, to, corpo);
     } catch (err: any) {
-      this.logger.error(`Falha ao salvar mensagem: ${err.message}`);
+      this.logger.error(`Falha ao salvar mensagem no banco: ${err.message}`);
     }
   }
 }
