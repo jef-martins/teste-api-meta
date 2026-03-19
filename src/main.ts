@@ -33,16 +33,17 @@ async function bootstrap() {
     }),
   );
 
-  app.use(
-    '/api',
-    rateLimit({
+  // Rate limiting em /api — EXCLUI o webhook da Meta para ele nunca ser bloqueado
+  app.use('/api', (req: any, res: any, next: any) => {
+    if (req.path.startsWith('/webhook-meta')) return next();
+    return rateLimit({
       windowMs: 1 * 60 * 1000,
       max: 100,
       message: {
         erro: 'Limite de requisições atingido. Tente novamente em 1 minuto.',
       },
-    }),
-  );
+    })(req, res, next);
+  });
 
   app.useWebSocketAdapter(new IoAdapter(app));
   app.setGlobalPrefix('api', { exclude: ['health'] });
