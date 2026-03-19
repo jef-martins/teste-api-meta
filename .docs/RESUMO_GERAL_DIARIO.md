@@ -5,6 +5,50 @@
 
 ---
 
+## 19/03/2026 — Novas funcionalidades: hierarquia de usuários, roteamento e seed
+
+### Backend (`telebots-backend-nestjs`)
+
+**Correção de rate limiting:**
+- Rate limiting de login agora conta apenas tentativas com senha incorreta (não logins bem-sucedidos)
+- Usa Map em memória por IP — máximo 10 tentativas em janela de 15 minutos
+- Contador zerado após login bem-sucedido
+- Removido middleware global de rate limit em `main.ts`
+
+**Novo AdminGuard:**
+- `src/auth/admin.guard.ts`: aceita `master === true` OU `papel === 'admin'`
+- Aplicado nas rotas GET e POST de `/api/usuarios`
+
+**Hierarquia de usuários:**
+- `src/user/user.service.ts`: `criar()` aceita `organizacaoId?` e `subOrganizacaoId?`
+- Master criando admin → cria `OrgMembro`; master/admin criando common → cria `SubOrgMembro`
+- `listarPorAdmin(adminId)` retorna apenas usuários da org do admin
+- Default de `papel` alterado de `'admin'` para `'user'`
+
+**Prisma seed:**
+- `prisma/seed.ts`: cria usuário master inicial (master@telecontrol.com.br) se não existir
+- `package.json`: adicionado `"prisma": { "seed": "ts-node --transpile-only prisma/seed.ts" }`
+- Executar com: `npx prisma db seed`
+
+### Frontend (`telebots-frontend`)
+
+**Roteamento:**
+- `/` → Home.vue (novo, cards por tipo de usuário)
+- `/flow-list` → FlowList.vue (movido de `/`)
+- `/users` e `/organizations` mudaram de `masterOnly` para `adminOrMaster`
+- Login redireciona para `/` (antes ia direto para `/`)
+
+**Home.vue (novo):**
+- Cards diferenciados por tipo: master vê tudo; admin vê fluxos/users/orgs/docs; comum vê fluxos/docs
+
+**PageHeader.vue:**
+- Botões de navegação agora filtrados por papel: Users e Orgs visíveis para admin e master
+
+**Users.vue:**
+- Formulário de criação: master vê seletor de papel; admin criando comum vê seletor de sub-org
+
+---
+
 ## 19/03/2026 — Refactoring: remoção de código morto, N+1 e padrões repetidos
 
 ### Backend (`telebots-backend-nestjs`)
@@ -64,17 +108,29 @@ A plataforma permite criar fluxos visuais de conversa (editor drag-and-drop), co
 - **JWT** com payload: `{ sub, email, nome, master }`
 - Registro e login via `auth.service.ts`
 - **Flag `master`** em `BotUsuario` (Boolean, default false) para superadministradores
+- **Campo `papel`** em `BotUsuario`: `'admin'` para administradores de org, `'user'` para usuários comuns
 - **MasterGuard**: guard NestJS que protege rotas exclusivas de usuários master
-- `UserController` protegido com `MasterGuard` (listar, criar, editar, excluir usuários)
+- **AdminGuard**: guard NestJS que aceita master OU admin (papel='admin')
+- `UserController`: GET/POST protegidos com AdminGuard; PUT/DELETE com MasterGuard
 - Login retorna `subOrgsAcessiveis` para o frontend saber quais sub-orgs o usuário pode acessar
+
+### Hierarquia de Usuários
+| Tipo | Campo | Cria | Acesso a fluxos | Páginas |
+|------|-------|------|-----------------|---------|
+| Master | `master: true` | Qualquer usuário | Todos os fluxos | Todas |
+| Admin | `papel: 'admin'` | Apenas usuários comuns da sua org | Sub-orgs da sua org | `/`, `/flow-list`, `/users`, `/organizations`, `/docs` |
+| Comum | `papel: 'user'` | Nenhum | Sua sub-org | `/`, `/flow-list`, `/docs` |
 
 ### Frontend
 - `Login.vue`: formulário de login + seletor de sub-org pós-login
   - 0 sub-orgs → aviso e redirect para `/`
   - 1 sub-org → seleciona automaticamente
   - 2+ sub-orgs → exibe seletor visual antes de redirecionar
-- Rota `/users` com meta `masterOnly: true` — usuários não-master são redirecionados
-- `Users.vue`: CRUD de usuários (somente master)
+- `Home.vue`: tela inicial com cards por tipo de usuário (rota `/`)
+- `FlowList.vue`: lista de fluxos (rota `/flow-list`, antes era `/`)
+- Rota `/users` com meta `adminOrMaster: true` — usuários comuns são redirecionados
+- Rota `/organizations` com meta `adminOrMaster: true`
+- `Users.vue`: CRUD de usuários; admin pode criar apenas usuários comuns
 
 ---
 
@@ -170,8 +226,8 @@ A plataforma permite criar fluxos visuais de conversa (editor drag-and-drop), co
 |--------|-----------|
 | `Organizacao` | Agrupa sub-organizações |
 | `SubOrganizacao` | Contexto isolado de fluxos e bots |
-| `OrgMembro` | Membro de uma Organização (acessa todas as sub-orgs) |
-| `SubOrgMembro` | Membro direto de uma Sub-org (acessa apenas ela) |
+| `OrgMembro` | Membro de uma Organização (admin — acessa todas as sub-orgs) |
+| `SubOrgMembro` | Membro direto de uma Sub-org (usuário comum — acessa apenas ela) |
 
 `BotFluxo` tem campo `subOrganizacaoId` (nullable, retrocompatível).
 
@@ -223,7 +279,7 @@ A plataforma permite criar fluxos visuais de conversa (editor drag-and-drop), co
 ### PageHeader (Componente Compartilhado)
 - Componente `PageHeader.vue` usado em todas as páginas exceto `/flow`
 - Estrutura: lado esquerdo (botão voltar + ícone + título) + lado direito (navegação + usuário)
-- Botões de navegação: Organizações, Dashboard, Docs, Dev (master), Usuários (master)
+- Botões de navegação: Organizações e Usuários visíveis para admin e master; Dashboard e Dev Docs apenas master
 - Botão de logout com limpeza de stores
 - Modal de configurações do usuário (tema, idioma)
 
@@ -233,22 +289,24 @@ A plataforma permite criar fluxos visuais de conversa (editor drag-and-drop), co
 - Separação clara entre navegação global (header) e controles de página (toolbar)
 - Usado em: Dashboard, Users, Organizations, ServerMonitoring, DevDocs
 
-### Painel Master (`/master`)
-- Página inicial exclusiva para usuários master
-- Cards de acesso rápido: Lista de Fluxos, Usuários, Organizações, Monitoramento, Docs, Documentação Dev
+### Home (`/`)
+- Tela inicial após login com cards de acesso rápido por tipo de usuário
+- Master: vê todos os cards (fluxos, usuários, orgs, monitoramento, docs, dev-docs)
+- Admin: vê fluxos, usuários, orgs, docs
+- Comum: vê apenas fluxos e docs
 
 ### Rotas
 | Rota | Acesso | Descrição |
 |------|--------|-----------|
 | `/login` | público | Login e registro |
-| `/` | autenticado | Lista de fluxos |
+| `/` | autenticado | Home com cards por tipo de usuário |
+| `/flow-list` | autenticado | Lista de fluxos |
 | `/flow/new` | autenticado | Novo fluxo |
 | `/flow/:id` | autenticado | Editor de fluxo |
-| `/dashboard` | autenticado | Dashboard de analytics |
-| `/organizations` | autenticado | Gerenciar orgs e sub-orgs |
-| `/docs` | público | Documentação para usuários finais |
-| `/master` | master | Painel master |
-| `/users` | master | Gerenciar usuários |
+| `/users` | admin ou master | Gerenciar usuários |
+| `/organizations` | admin ou master | Gerenciar orgs e sub-orgs |
+| `/dashboard` | master | Dashboard de analytics |
+| `/docs` | todos | Documentação para usuários finais |
 | `/monitoring` | master | Monitoramento do servidor |
 | `/dev-docs` | master | Documentação técnica para desenvolvedores |
 
@@ -259,11 +317,13 @@ A plataforma permite criar fluxos visuais de conversa (editor drag-and-drop), co
 ### `/docs` (Usuários Finais)
 - Acessível publicamente (sem login)
 - Explica como usar a plataforma: criar fluxos, variáveis, simulador, etc.
+- Seção "Acesso e Permissões" explica os tipos de usuário
 
 ### `/dev-docs` (Desenvolvedores — Master Only)
 - Referência técnica completa: arquitetura, endpoints REST, FlowJSON, máquina de estados, schema do banco, variáveis de ambiente, colaboração Yjs
 - Sidebar de navegação entre seções
 - Exemplos de código em blocos formatados
+- Seção "Hierarquia de Usuários" com tabela de permissões e rotas
 
 ---
 
