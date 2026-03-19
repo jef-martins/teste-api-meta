@@ -102,10 +102,52 @@ export class OrganizationService {
       },
     });
 
-    return membros.map((m) => ({
-      ...m.organizacao,
-      papel: m.papel,
-    }));
+    const resultado = new Map<string, any>();
+    for (const m of membros) {
+      resultado.set(m.organizacao.id, { ...m.organizacao, papel: m.papel });
+    }
+
+    // Usuários comuns podem pertencer a sub-orgs sem ser membros diretos da org
+    const subOrgMembros = await this.prisma.subOrgMembro.findMany({
+      where: { usuarioId },
+      include: {
+        subOrganizacao: {
+          include: {
+            organizacao: {
+              include: { _count: { select: { membros: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    for (const sm of subOrgMembros) {
+      if (!sm.subOrganizacao || !sm.subOrganizacao.ativa) continue;
+      const org = sm.subOrganizacao.organizacao;
+      if (resultado.has(org.id)) {
+        // Já existe via OrgMembro — sub-orgs já carregadas corretamente
+        continue;
+      }
+      const entry = resultado.get(org.id) ?? {
+        ...org,
+        papel: 'membro',
+        subOrganizacoes: [],
+      };
+      if (!entry.subOrganizacoes) entry.subOrganizacoes = [];
+      const jaAdicionada = entry.subOrganizacoes.some(
+        (s: any) => s.id === sm.subOrganizacao.id,
+      );
+      if (!jaAdicionada) {
+        entry.subOrganizacoes.push({
+          id: sm.subOrganizacao.id,
+          nome: sm.subOrganizacao.nome,
+          slug: sm.subOrganizacao.slug,
+        });
+      }
+      resultado.set(org.id, entry);
+    }
+
+    return Array.from(resultado.values());
   }
 
   async criarOrganizacao(
