@@ -42,7 +42,7 @@ export class BotMetaService {
 
     // Configura o HandlerMetaService com os dados desta requisição
     this.handler.phone_id = phone_id || null;
-    this.handler.access_token = process.env.VERIFY_TOKEN || null;
+    this.handler.access_token = process.env.META_ACCESS_TOKEN || null;
 
     // Modo de teste: responde apenas ao número do admin
     if (process.env.BOT_MODO_TESTE === 'true') {
