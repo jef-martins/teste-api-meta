@@ -34,6 +34,7 @@ export class UserService {
     papel?: string,
     organizacaoId?: string,
     subOrganizacaoId?: string,
+    criadorId?: string,
   ) {
     const senhaHash = await bcrypt.hash(senha, 10);
     try {
@@ -55,7 +56,31 @@ export class UserService {
         });
       }
 
-      if (subOrganizacaoId) {
+      // Usuário comum com sub-org: cria convite em vez de vínculo direto
+      if (subOrganizacaoId && papel !== 'admin' && criadorId) {
+        const subOrg = await this.prisma.subOrganizacao.findUnique({
+          where: { id: subOrganizacaoId },
+          select: { organizacaoId: true },
+        });
+        if (subOrg) {
+          const jaExiste = await this.prisma.convite.findFirst({
+            where: { subOrgId: subOrganizacaoId, email, status: 'pendente' },
+          });
+          if (!jaExiste) {
+            await this.prisma.convite.create({
+              data: {
+                tipo: 'suborg',
+                orgId: subOrg.organizacaoId,
+                subOrgId: subOrganizacaoId,
+                email,
+                papel: 'membro',
+                convidadoPorId: criadorId,
+              },
+            });
+          }
+        }
+      } else if (subOrganizacaoId && papel !== 'admin') {
+        // Fallback sem criadorId: vínculo direto
         await (this.prisma.subOrgMembro as any).create({
           data: { subOrganizacaoId, usuarioId: usuario.id, papel: 'membro' },
         });

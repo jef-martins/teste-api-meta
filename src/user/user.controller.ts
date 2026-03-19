@@ -69,6 +69,7 @@ export class UserController {
       papel,
       body.organizacaoId,
       body.subOrganizacaoId,
+      req.user.id,
     );
   }
 
