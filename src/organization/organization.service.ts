@@ -502,7 +502,11 @@ export class OrganizationService {
     if (isMaster) return;
     const membro = await this.prisma.orgMembro.findUnique({
       where: { organizacaoId_usuarioId: { organizacaoId: orgId, usuarioId } },
+      include: { usuario: { select: { papel: true } } },
     });
+    // Admin do sistema (BotUsuario.papel = 'admin') tem permissão em qualquer
+    // org da qual é membro, independentemente do papel no OrgMembro
+    if (membro && membro.usuario.papel === 'admin') return;
     if (!membro || !papeisPermitidos.includes(membro.papel)) {
       throw new ForbiddenException('Permissão insuficiente');
     }
