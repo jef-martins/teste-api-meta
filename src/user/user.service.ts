@@ -51,7 +51,7 @@ export class UserService {
 
       if (organizacaoId) {
         await (this.prisma.orgMembro as any).create({
-          data: { organizacaoId, usuarioId: usuario.id, papel: 'membro' },
+          data: { organizacaoId, usuarioId: usuario.id, papel: papel === 'admin' ? 'admin' : 'membro' },
         });
       }
 
