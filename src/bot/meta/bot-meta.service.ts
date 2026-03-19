@@ -42,7 +42,19 @@ export class BotMetaService {
 
     // Configura o HandlerMetaService com os dados desta requisição
     this.handler.phone_id = phone_id || null;
-    this.handler.access_token = process.env.META_ACCESS_TOKEN || null;
+
+    // META_ACCESS_TOKEN é o token Bearer para enviar mensagens.
+    // Fallback para VERIFY_TOKEN para compatibilidade com configurações antigas
+    // onde o mesmo token era usado para ambos os propósitos (como no jasper.js).
+    const accessToken = process.env.META_ACCESS_TOKEN || process.env.VERIFY_TOKEN || null;
+    if (!process.env.META_ACCESS_TOKEN) {
+      this.logger.warn(
+        '[Config] META_ACCESS_TOKEN não definido. Usando VERIFY_TOKEN como fallback. ' +
+        'Defina META_ACCESS_TOKEN no Render para clareza.',
+      );
+    }
+    this.handler.access_token = accessToken;
+
 
     // Modo de teste: responde apenas ao número do admin
     if (process.env.BOT_MODO_TESTE === 'true') {
