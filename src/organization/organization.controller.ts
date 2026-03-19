@@ -29,7 +29,7 @@ export class OrganizationController {
 
   @Get('organizacoes')
   listar(@Req() req: any) {
-    return this.orgService.listarOrganizacoes(req.user.id, req.user.master);
+    return this.orgService.listarOrganizacoes(req.user.id, req.user.master, req.user.papel);
   }
 
   @Post('organizacoes')

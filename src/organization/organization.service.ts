@@ -73,7 +73,11 @@ export class OrganizationService {
 
   // ─── Organizações do usuário ──────────────────────────────────────────────
 
-  async listarOrganizacoes(usuarioId: string, isMaster = false) {
+  async listarOrganizacoes(
+    usuarioId: string,
+    isMaster = false,
+    papel = 'user',
+  ) {
     if (isMaster) {
       const orgs = await this.prisma.organizacao.findMany({
         include: {
@@ -87,27 +91,26 @@ export class OrganizationService {
       return orgs.map((org) => ({ ...org, papel: 'master' }));
     }
 
-    const membros = await this.prisma.orgMembro.findMany({
-      where: { usuarioId },
-      include: {
-        organizacao: {
-          include: {
-            subOrganizacoes: {
-              where: { ativa: true },
-              select: { id: true, nome: true, slug: true },
+    // Usuário admin: vê todas as orgs que pertence com todas as sub-orgs
+    if (papel === 'admin') {
+      const membros = await this.prisma.orgMembro.findMany({
+        where: { usuarioId },
+        include: {
+          organizacao: {
+            include: {
+              subOrganizacoes: {
+                where: { ativa: true },
+                select: { id: true, nome: true, slug: true },
+              },
+              _count: { select: { membros: true } },
             },
-            _count: { select: { membros: true } },
           },
         },
-      },
-    });
-
-    const resultado = new Map<string, any>();
-    for (const m of membros) {
-      resultado.set(m.organizacao.id, { ...m.organizacao, papel: m.papel });
+      });
+      return membros.map((m) => ({ ...m.organizacao, papel: m.papel }));
     }
 
-    // Usuários comuns podem pertencer a sub-orgs sem ser membros diretos da org
+    // Usuário comum: vê apenas as sub-orgs que pertence, agrupadas por org-pai
     const subOrgMembros = await this.prisma.subOrgMembro.findMany({
       where: { usuarioId },
       include: {
@@ -121,19 +124,15 @@ export class OrganizationService {
       },
     });
 
+    const resultado = new Map<string, any>();
     for (const sm of subOrgMembros) {
       if (!sm.subOrganizacao || !sm.subOrganizacao.ativa) continue;
       const org = sm.subOrganizacao.organizacao;
-      if (resultado.has(org.id)) {
-        // Já existe via OrgMembro — sub-orgs já carregadas corretamente
-        continue;
-      }
       const entry = resultado.get(org.id) ?? {
         ...org,
         papel: 'membro',
         subOrganizacoes: [],
       };
-      if (!entry.subOrganizacoes) entry.subOrganizacoes = [];
       const jaAdicionada = entry.subOrganizacoes.some(
         (s: any) => s.id === sm.subOrganizacao.id,
       );
