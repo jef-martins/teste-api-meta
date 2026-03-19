@@ -4,7 +4,6 @@ import {
   OnModuleInit,
   OnModuleDestroy,
 } from '@nestjs/common';
-import * as wppconnect from '@wppconnect-team/wppconnect';
 import { ConversationService } from '../../conversation/conversation.service';
 import { StateMachineEngine } from '../state-machine.engine';
 import { HandlerService } from './handler.service';
@@ -50,6 +49,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Iniciando sessão WPPConnect: ${this.sessao}`);
 
     try {
+      // Import dinâmico do WPPConnect para economizar memória em produção
+      const wppconnect = await import('@wppconnect-team/wppconnect');
+
       this.client = await wppconnect.create({
         session: this.sessao,
         logQR: true,
