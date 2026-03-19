@@ -112,6 +112,7 @@ export class UserService {
       nome: data.nome,
       email: data.email,
       papel: data.papel,
+      master: data.master,
       ativo: data.ativo,
     };
 
@@ -123,6 +124,7 @@ export class UserService {
       nome: updateData.nome,
       email: updateData.email,
       papel: updateData.papel,
+      master: updateData.master,
       ativo: updateData.ativo,
     };
 
