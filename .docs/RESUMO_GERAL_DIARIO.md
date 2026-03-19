@@ -5,6 +5,30 @@
 
 ---
 
+## 19/03/2026 — Refactoring: remoção de código morto, N+1 e padrões repetidos
+
+### Backend (`telebots-backend-nestjs`)
+
+**Código morto removido:**
+- Removido `src/database/` (4 arquivos: `db.ts`, `fluxoRepository.ts`, `estadoRepository.ts`, `conversaRepository.ts`) — código legado pré-NestJS usando raw `pg` pool, não importado por nenhum módulo NestJS
+- Removido `src/controllers/conversaController.ts` — controller Express legado
+- Removido `src/services/flowConverter.ts` — cópia JavaScript desatualizada do `FlowConverterService`; o NestJS usa `src/flow/flow-converter.service.ts`
+- Removido `src/services/httpService.ts` — wrapper axios legado, sem uso
+
+**N+1 queries eliminados (`flow.service.ts`):**
+- `salvarEstados()`, `salvarTransicoes()`, `salvarVariaveis()` convertidos de loops com `create()` individual para `createMany()`, reduzindo de N queries para 1 por operação
+
+**Padrões repetidos extraídos (`handler.service.ts`):**
+- Extraído helper `avancarEExecutar()` — eliminado bloco "avançar estado + buscar config + executar handler" que se repetia 7 vezes
+- Extraído helper `limparHtml()` — eliminada duplicação de lógica de strip de HTML em `_handlerRequisicao`
+- Extraído `obterNomeModificador()` em `FlowService` — eliminou duplicação de lookup de nome do usuário em `criar()` e `atualizar()`
+
+### Frontend (`telebots-frontend`)
+
+- Removidos 3 `console.log` de debug em `flowStore.js → addConnection()` deixados durante desenvolvimento
+
+---
+
 ## Visão Geral
 
 O **Telebots** é uma plataforma de criação e execução de chatbots para WhatsApp (via WPPConnect). Ele é dividido em dois projetos:
