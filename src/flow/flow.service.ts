@@ -16,6 +16,14 @@ export class FlowService {
     private orgService: OrganizationService,
   ) {}
 
+  private async obterNomeModificador(usuarioId: string): Promise<string | null> {
+    const u = await this.prisma.botUsuario.findUnique({
+      where: { id: usuarioId },
+      select: { nome: true, email: true },
+    });
+    return u?.nome || u?.email || null;
+  }
+
   private aplicarPrefixo(flowId: string, estados: any[], transicoes: any[]) {
     const prefix = `F${flowId}_`;
     const estadosPrefixados = estados.map((e: any) => ({
@@ -142,14 +150,7 @@ export class FlowService {
   ) {
     if (!data.name) throw new BadRequestException('Nome é obrigatório');
 
-    let modificadorNome: string | null = null;
-    if (usuarioId) {
-      const u = await this.prisma.botUsuario.findUnique({
-        where: { id: usuarioId },
-        select: { nome: true, email: true },
-      });
-      modificadorNome = u?.nome || u?.email || null;
-    }
+    const modificadorNome = usuarioId ? await this.obterNomeModificador(usuarioId) : null;
 
     const flowJson = {
       nodes: data.nodes,
@@ -205,11 +206,7 @@ export class FlowService {
 
     await this.verificarAcessoFluxo(fluxoExistente, usuarioId, isMaster);
 
-    const u = await this.prisma.botUsuario.findUnique({
-      where: { id: usuarioId },
-      select: { nome: true, email: true },
-    });
-    const modificadorNome = u?.nome || u?.email || null;
+    const modificadorNome = await this.obterNomeModificador(usuarioId);
 
     const flowJson = {
       nodes: data.nodes,
@@ -338,46 +335,43 @@ export class FlowService {
   }
 
   private async salvarEstados(flowId: string, estados: any[]) {
-    for (const e of estados) {
-      await this.prisma.botEstadoConfig.create({
-        data: {
-          estado: e.estado,
-          handler: e.handler,
-          descricao: e.descricao || '',
-          ativo: e.ativo !== false,
-          config: e.config || {},
-          nodeId: e.node_id || null,
-          nodeType: e.node_type || null,
-          position: e.position || { x: 0, y: 0 },
-          flowId,
-        },
-      });
-    }
+    if (!estados.length) return;
+    await this.prisma.botEstadoConfig.createMany({
+      data: estados.map((e) => ({
+        estado: e.estado,
+        handler: e.handler,
+        descricao: e.descricao || '',
+        ativo: e.ativo !== false,
+        config: e.config || {},
+        nodeId: e.node_id || null,
+        nodeType: e.node_type || null,
+        position: e.position || { x: 0, y: 0 },
+        flowId,
+      })),
+    });
   }
 
   private async salvarTransicoes(transicoes: any[]) {
-    for (const t of transicoes) {
-      await this.prisma.botEstadoTransicao.create({
-        data: {
-          estadoOrigem: t.estado_origem,
-          entrada: t.entrada,
-          estadoDestino: t.estado_destino,
-          ativo: t.ativo !== false,
-        },
-      });
-    }
+    if (!transicoes.length) return;
+    await this.prisma.botEstadoTransicao.createMany({
+      data: transicoes.map((t) => ({
+        estadoOrigem: t.estado_origem,
+        entrada: t.entrada,
+        estadoDestino: t.estado_destino,
+        ativo: t.ativo !== false,
+      })),
+    });
   }
 
   private async salvarVariaveis(flowId: string, variaveis: any[]) {
     await this.prisma.botFluxoVariavel.deleteMany({ where: { flowId } });
-    for (const v of variaveis) {
-      await this.prisma.botFluxoVariavel.create({
-        data: {
-          flowId,
-          chave: v.key || v.chave,
-          valorPadrao: v.value || v.valor_padrao || '',
-        },
-      });
-    }
+    if (!variaveis.length) return;
+    await this.prisma.botFluxoVariavel.createMany({
+      data: variaveis.map((v) => ({
+        flowId,
+        chave: v.key || v.chave,
+        valorPadrao: v.value || v.valor_padrao || '',
+      })),
+    });
   }
 }

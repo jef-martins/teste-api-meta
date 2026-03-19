@@ -117,6 +117,38 @@ export class HandlerService {
       );
   }
 
+  // ─── Helper: advance to next state and execute its handler ──────────────
+
+  private async avancarEExecutar(
+    proximo: string,
+    message: any,
+    chatId: string,
+    corpo: string,
+    engine: StateMachineEngine,
+    gatilho?: string,
+  ) {
+    await engine.avancarEstado(chatId, proximo, gatilho ?? corpo);
+    const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
+    if (
+      configProximo &&
+      typeof (this as any)[configProximo.handler] === 'function'
+    ) {
+      await (this as any)[configProximo.handler](message, chatId, '', engine);
+    }
+  }
+
+  // ─── Helper: strip HTML tags from object values ──────────────────────────
+
+  private limparHtml(obj: any): any {
+    if (typeof obj !== 'object' || obj === null) return obj;
+    return Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => [
+        k,
+        typeof v === 'string' ? v.replace(/<[^>]+>/g, ' ').trim() : v,
+      ]),
+    );
+  }
+
   // ─── Helper: send response and save to DB ────────────────────────────────
 
   private async enviarResposta(message: any, texto: string) {
@@ -183,15 +215,7 @@ export class HandlerService {
     }
 
     if (config.transicaoAutomatica || config.transicao_automatica) {
-      await engine.transitarPorEntrada(
-        chatId,
-        estadoAtual,
-        '*',
-        message,
-        true,
-        null,
-        this,
-      );
+      await engine.transitarPorEntrada(chatId, estadoAtual, '*', message, true, null, this);
     }
   }
 
@@ -266,15 +290,7 @@ export class HandlerService {
       await this.enviarResposta(message, texto);
     }
 
-    await engine.avancarEstado(chatId, proximo, corpo);
-
-    const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-    if (
-      configProximo &&
-      typeof (this as any)[configProximo.handler] === 'function'
-    ) {
-      await (this as any)[configProximo.handler](message, chatId, corpo, engine);
-    }
+    await this.avancarEExecutar(proximo, message, chatId, corpo, engine);
   }
 
   private async _handlerCapturarMulti(
@@ -331,14 +347,7 @@ export class HandlerService {
     const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
     if (!proximo) return;
 
-    await engine.avancarEstado(chatId, proximo, '[multi-captura concluída]');
-    const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-    if (
-      configProximo &&
-      typeof (this as any)[configProximo.handler] === 'function'
-    ) {
-      await (this as any)[configProximo.handler](message, chatId, corpo, engine);
-    }
+    await this.avancarEExecutar(proximo, message, chatId, corpo, engine, '[multi-captura concluída]');
   }
 
   // ─── _handlerLista ───────────────────────────────────────────────────────
@@ -360,24 +369,9 @@ export class HandlerService {
         corpo,
       );
       if (proximo) {
-        await engine.avancarEstado(chatId, proximo, corpo);
-        const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (
-          configProximo &&
-          typeof (this as any)[configProximo.handler] === 'function'
-        ) {
-          return await (this as any)[configProximo.handler](
-            message,
-            chatId,
-            '',
-            engine,
-          );
-        }
+        return await this.avancarEExecutar(proximo, message, chatId, '', engine, corpo);
       } else {
-        return await this.enviarResposta(
-          message,
-          config.mensagemInvalida ?? '⚠️ Opção inválida.',
-        );
+        return await this.enviarResposta(message, config.mensagemInvalida ?? '⚠️ Opção inválida.');
       }
     }
 
@@ -447,19 +441,7 @@ export class HandlerService {
         corpo,
       );
       if (proximo) {
-        await engine.avancarEstado(chatId, proximo, corpo);
-        const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (
-          configProximo &&
-          typeof (this as any)[configProximo.handler] === 'function'
-        ) {
-          await (this as any)[configProximo.handler](
-            message,
-            chatId,
-            '',
-            engine,
-          );
-        }
+        await this.avancarEExecutar(proximo, message, chatId, '', engine, corpo);
         return;
       }
     }
@@ -680,12 +662,7 @@ export class HandlerService {
           } else {
             const separador = config.separador ?? '➖➖➖➖➖';
             const partes = valorExtraido.map((item: any) => {
-              const objLimpo = Object.fromEntries(
-                Object.entries(item).map(([k, v]) => [
-                  k,
-                  typeof v === 'string' ? v.replace(/<[^>]+>/g, ' ').trim() : v,
-                ]),
-              );
+              const objLimpo = this.limparHtml(item);
               const vars = {
                 resposta: item,
                 valor: corpo,
@@ -712,13 +689,7 @@ export class HandlerService {
             ...dadosMemoria,
           };
           if (typeof valorExtraido === 'object' && valorExtraido !== null) {
-            const objLimpo = Object.fromEntries(
-              Object.entries(valorExtraido).map(([k, v]) => [
-                k,
-                typeof v === 'string' ? v.replace(/<[^>]+>/g, ' ').trim() : v,
-              ]),
-            );
-            variaveis = { ...variaveis, ...objLimpo };
+            variaveis = { ...variaveis, ...this.limparHtml(valorExtraido) };
           }
           const msgSucesso = engine.interpolar(
             config.mensagemSucesso ?? '✅ Resposta: {resposta}',
@@ -743,27 +714,12 @@ export class HandlerService {
     }
 
     if (config.transicaoAutomatica || config.transicao_automatica) {
-      let proximo = await this.estadoRepo.buscarProximoEstado(
-        estadoAtual,
-        valorParaTransicao,
-      );
+      let proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, valorParaTransicao);
       if (!proximo && valorParaTransicao !== '*') {
         proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
       }
       if (proximo) {
-        await engine.avancarEstado(chatId, proximo, corpo);
-        const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (
-          configProximo &&
-          typeof (this as any)[configProximo.handler] === 'function'
-        ) {
-          await (this as any)[configProximo.handler](
-            message,
-            chatId,
-            '',
-            engine,
-          );
-        }
+        await this.avancarEExecutar(proximo, message, chatId, '', engine, corpo);
       }
     }
   }
@@ -799,14 +755,7 @@ export class HandlerService {
     // Transição automática
     const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
     if (proximo) {
-      await engine.avancarEstado(chatId, proximo, '[setVariable]');
-      const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-      if (
-        configProximo &&
-        typeof (this as any)[configProximo.handler] === 'function'
-      ) {
-        await (this as any)[configProximo.handler](message, chatId, '', engine);
-      }
+      await this.avancarEExecutar(proximo, message, chatId, '', engine, '[setVariable]');
     }
   }
 
@@ -836,14 +785,7 @@ export class HandlerService {
 
     const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
     if (proximo) {
-      await engine.avancarEstado(chatId, proximo, '[delay]');
-      const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-      if (
-        configProximo &&
-        typeof (this as any)[configProximo.handler] === 'function'
-      ) {
-        await (this as any)[configProximo.handler](message, chatId, '', engine);
-      }
+      await this.avancarEExecutar(proximo, message, chatId, '', engine, '[delay]');
     }
   }
 }
