@@ -8,7 +8,7 @@
   "scripts": {
     "build": "PUPPETEER_SKIP_DOWNLOAD=true nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "npm run start:prod",
+    "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "export NODE_OPTIONS='--max-old-space-size=450' && node dist/main",
@@ -39,12 +39,12 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.3",
-    "yjs": "^13.6.29",
-    "@nestjs/cli": "^11.0.0"
+    "yjs": "^13.6.29"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.18.0",
+    "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
     "@swc/cli": "^0.7.10",
