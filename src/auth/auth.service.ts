@@ -1,18 +1,57 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, HttpException, HttpStatus } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrganizationService } from '../organization/organization.service';
 
+const MAX_ATTEMPTS = 10;
+const WINDOW_MS = 15 * 60 * 1000;
+
 @Injectable()
 export class AuthService {
+  private failedAttempts = new Map<string, { count: number; lastAttempt: number }>();
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
     private orgService: OrganizationService,
   ) {}
 
-  async login(email: string, senha: string) {
+  private checkRateLimit(key: string): void {
+    const entry = this.failedAttempts.get(key);
+    if (!entry) return;
+    const now = Date.now();
+    if (now - entry.lastAttempt > WINDOW_MS) {
+      this.failedAttempts.delete(key);
+      return;
+    }
+    if (entry.count >= MAX_ATTEMPTS) {
+      throw new HttpException(
+        { erro: 'Muitas tentativas com senha incorreta. Tente novamente em 15 minutos.' },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  private recordFailedAttempt(key: string): void {
+    const now = Date.now();
+    const entry = this.failedAttempts.get(key);
+    if (!entry || now - entry.lastAttempt > WINDOW_MS) {
+      this.failedAttempts.set(key, { count: 1, lastAttempt: now });
+    } else {
+      entry.count += 1;
+      entry.lastAttempt = now;
+    }
+  }
+
+  private clearFailedAttempts(key: string): void {
+    this.failedAttempts.delete(key);
+  }
+
+  async login(email: string, senha: string, ip?: string) {
+    const key = ip || email;
+    this.checkRateLimit(key);
+
     const usuario = await this.prisma.botUsuario.findUnique({
       where: { email },
     });
@@ -20,8 +59,12 @@ export class AuthService {
     if (!usuario.ativo) throw new UnauthorizedException('Usuário inativo');
 
     const senhaCorreta = await bcrypt.compare(senha, usuario.senhaHash);
-    if (!senhaCorreta) throw new UnauthorizedException('Credenciais inválidas');
+    if (!senhaCorreta) {
+      this.recordFailedAttempt(key);
+      throw new UnauthorizedException('Credenciais inválidas');
+    }
 
+    this.clearFailedAttempts(key);
     const token = this.gerarToken(usuario);
     const subOrgsAcessiveis = await this.orgService.getSubOrgsAcessiveis(
       usuario.id,
