@@ -1,4 +1,4 @@
-const API = 'http://localhost:3000/admin';
+const API = '/admin';
 let estadosCache = [];
 let MODO_PADRAO = false;
 
