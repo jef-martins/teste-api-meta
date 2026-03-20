@@ -35,7 +35,7 @@ export class BotMetaService {
     let nome: string | null = null;
     if (value.contacts && value.contacts.length > 0) {
       nome = value.contacts[0].profile?.name || null;
-    }
+    } 
 
     const from = messageItem.from; // número puro, ex: "5514999999999"
     const phone_id = value.metadata?.phone_number_id;
