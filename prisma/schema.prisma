@@ -67,13 +67,13 @@ model BotFluxoVariavel {
 // ── Configuração de estados (máquina de estados) ───────────────────────────
 
 model BotEstadoConfig {
-  estado    String   @id @db.VarChar(100)
-  handler   String   @db.VarChar(100)
+  estado    String   @id @db.VarChar(255)
+  handler   String   @db.VarChar(255)
   descricao String?  @db.Text
   ativo     Boolean  @default(true)
   config    Json     @default("{}")
-  nodeId    String?  @map("node_id") @db.VarChar(50)
-  nodeType  String?  @map("node_type") @db.VarChar(20)
+  nodeId    String?  @map("node_id") @db.VarChar(255)
+  nodeType  String?  @map("node_type") @db.VarChar(50)
   position  Json?    @default("{\"x\": 0, \"y\": 0}")
   flowId    String?  @map("flow_id")
   criadoEm  DateTime @default(now()) @map("criado_em") @db.Timestamptz()
@@ -91,9 +91,9 @@ model BotEstadoConfig {
 
 model BotEstadoTransicao {
   id            String   @id @default(uuid())
-  estadoOrigem  String   @map("estado_origem") @db.VarChar(100)
-  entrada       String   @default("*") @db.VarChar(100)
-  estadoDestino String   @map("estado_destino") @db.VarChar(100)
+  estadoOrigem  String   @map("estado_origem") @db.VarChar(255)
+  entrada       String   @default("*") @db.VarChar(255)
+  estadoDestino String   @map("estado_destino") @db.VarChar(255)
   ativo         Boolean  @default(true)
   criadoEm      DateTime @default(now()) @map("criado_em") @db.Timestamptz()
 
@@ -124,7 +124,7 @@ model BotKeywordGlobal {
 model BotEstadoUsuario {
   chatId       String   @id @map("chat_id") @db.VarChar(100)
   nome         String?  @db.VarChar(255)
-  estadoAtual  String   @default("NOVO") @map("estado_atual") @db.VarChar(100)
+  estadoAtual  String   @default("NOVO") @map("estado_atual") @db.VarChar(255)
   contexto     Json     @default("{}")
   criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz()
   atualizadoEm DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz()
@@ -139,8 +139,8 @@ model BotEstadoUsuario {
 model BotEstadoHistorico {
   id              String   @id @default(uuid())
   chatId          String   @map("chat_id") @db.VarChar(100)
-  estadoAnterior  String   @map("estado_anterior") @db.VarChar(100)
-  estadoNovo      String   @map("estado_novo") @db.VarChar(100)
+  estadoAnterior  String   @map("estado_anterior") @db.VarChar(255)
+  estadoNovo      String   @map("estado_novo") @db.VarChar(255)
   mensagemGatilho String?  @map("mensagem_gatilho") @db.Text
   config          Json     @default("{}")
   criadoEm        DateTime @default(now()) @map("criado_em") @db.Timestamptz()
