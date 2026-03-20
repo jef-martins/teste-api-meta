@@ -176,8 +176,7 @@ export class FlowService {
       transicoes,
     );
 
-    await this.salvarEstados(fluxo.id, estadosPrefixados);
-    await this.salvarTransicoes(transicoesAtualizadas);
+    await this.persistirEstados(fluxo.id, estadosPrefixados, transicoesAtualizadas);
 
     if (data.variables?.length) {
       await this.salvarVariaveis(fluxo.id, data.variables);
@@ -226,8 +225,6 @@ export class FlowService {
       },
     });
 
-    await this.limparEstados(id);
-
     const { estados, transicoes } = this.converter.flowToStateMachine(flowJson);
     const { estadosPrefixados, transicoesAtualizadas } = this.aplicarPrefixo(
       id,
@@ -235,8 +232,7 @@ export class FlowService {
       transicoes,
     );
 
-    await this.salvarEstados(id, estadosPrefixados);
-    await this.salvarTransicoes(transicoesAtualizadas);
+    await this.persistirEstados(id, estadosPrefixados, transicoesAtualizadas);
 
     if (data.variables) {
       await this.salvarVariaveis(id, data.variables);
@@ -317,9 +313,7 @@ export class FlowService {
       estados,
       transicoes,
     );
-    await this.limparEstados(flowId);
-    await this.salvarEstados(flowId, estadosPrefixados);
-    await this.salvarTransicoes(transicoesAtualizadas);
+    await this.persistirEstados(flowId, estadosPrefixados, transicoesAtualizadas);
     if (flowJson.variables?.length) {
       await this.salvarVariaveis(flowId, flowJson.variables);
     }
@@ -327,39 +321,52 @@ export class FlowService {
 
   // ─── Helpers privados ────────────────────────────────────────────────────
 
-  private async limparEstados(flowId: string) {
-    await this.prisma.botEstadoUsuario.deleteMany({
-      where: { estado: { flowId } },
-    });
-    await this.prisma.botEstadoConfig.deleteMany({ where: { flowId } });
-  }
+  /**
+   * Apaga e recria os estados/transições de um fluxo dentro de uma única
+   * transação, evitando race condition entre atualizar() e recompilarFluxo().
+   */
+  private async persistirEstados(
+    flowId: string,
+    estados: any[],
+    transicoes: any[],
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Apagar usuários cujo estado pertence a este fluxo (FK constraint)
+      await tx.botEstadoUsuario.deleteMany({
+        where: { estado: { flowId } },
+      });
+      // 2. Apagar configs (cascade apaga também botEstadoTransicao)
+      await tx.botEstadoConfig.deleteMany({ where: { flowId } });
 
-  private async salvarEstados(flowId: string, estados: any[]) {
-    if (!estados.length) return;
-    await this.prisma.botEstadoConfig.createMany({
-      data: estados.map((e) => ({
-        estado: e.estado,
-        handler: e.handler,
-        descricao: e.descricao || '',
-        ativo: e.ativo !== false,
-        config: e.config || {},
-        nodeId: e.node_id || null,
-        nodeType: e.node_type || null,
-        position: e.position || { x: 0, y: 0 },
-        flowId,
-      })),
-    });
-  }
+      // 3. Criar novos estados
+      if (estados.length) {
+        await tx.botEstadoConfig.createMany({
+          data: estados.map((e) => ({
+            estado: e.estado,
+            handler: e.handler,
+            descricao: e.descricao || '',
+            ativo: e.ativo !== false,
+            config: e.config || {},
+            nodeId: e.node_id || null,
+            nodeType: e.node_type || null,
+            position: e.position || { x: 0, y: 0 },
+            flowId,
+          })),
+        });
+      }
 
-  private async salvarTransicoes(transicoes: any[]) {
-    if (!transicoes.length) return;
-    await this.prisma.botEstadoTransicao.createMany({
-      data: transicoes.map((t) => ({
-        estadoOrigem: t.estado_origem,
-        entrada: t.entrada,
-        estadoDestino: t.estado_destino,
-        ativo: t.ativo !== false,
-      })),
+      // 4. Criar novas transições (estados já existem no mesmo tx)
+      if (transicoes.length) {
+        await tx.botEstadoTransicao.createMany({
+          data: transicoes.map((t) => ({
+            estadoOrigem: t.estado_origem,
+            entrada: t.entrada,
+            estadoDestino: t.estado_destino,
+            ativo: t.ativo !== false,
+          })),
+          skipDuplicates: true,
+        });
+      }
     });
   }
 
