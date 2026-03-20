@@ -1,4 +1,4 @@
-const API = '/admin';
+const API = '/api/admin';
 let estadosCache = [];
 let transicoesCache = [];
 let MODO_PADRAO = false;

@@ -1,4 +1,4 @@
-const API = '/admin';
+const API = '/api/admin';
 let MODO_PADRAO = false;
 
 async function verificarModo() {
