@@ -36,6 +36,16 @@ export class AdminService {
     }
   }
 
+  obterModo() {
+    const padrao = this.isDefaultMode();
+    return {
+      modoPadrao: padrao,
+      descricao: padrao
+        ? 'Modo padrão (memória): alterações são temporárias e serão perdidas ao reiniciar o servidor.'
+        : 'Modo banco de dados: alterações são persistidas.',
+    };
+  }
+
   // ─── Estados ─────────────────────────────────────────────────────────────
 
   async listarEstados() {
@@ -141,20 +151,20 @@ export class AdminService {
 
   async listarTransicoes() {
     if (this.isDefaultMode()) {
-      const transicoes = [];
+      const transicoes: Array<{ id: string | undefined; estado_origem: string; entrada: string; estado_destino: string; ativo: boolean }> = [];
       for (const [estadoOrigem, lista] of Object.entries(DEFAULT_TRANSICOES)) {
         for (const t of lista) {
           transicoes.push({
             id: t.id,
-            estadoOrigem,
+            estado_origem: estadoOrigem,
             entrada: t.entrada,
-            estadoDestino: t.estadoDestino,
+            estado_destino: t.estadoDestino,
             ativo: t.ativo !== false,
           });
         }
       }
       return transicoes.sort((a, b) =>
-        a.estadoOrigem.localeCompare(b.estadoOrigem),
+        a.estado_origem.localeCompare(b.estado_origem),
       );
     }
 
@@ -179,14 +189,21 @@ export class AdminService {
       if (!DEFAULT_TRANSICOES[data.estado_origem]) {
         DEFAULT_TRANSICOES[data.estado_origem] = [];
       }
+      const id = crypto.randomUUID();
       const nova = {
-        id: crypto.randomUUID(),
+        id,
         entrada: data.entrada,
         estadoDestino: data.estado_destino,
         ativo: true,
       };
       DEFAULT_TRANSICOES[data.estado_origem].push(nova);
-      return nova;
+      return {
+        id,
+        estado_origem: data.estado_origem,
+        entrada: data.entrada,
+        estado_destino: data.estado_destino,
+        ativo: true,
+      };
     }
 
     return this.prisma.botEstadoTransicao.create({
@@ -208,12 +225,10 @@ export class AdminService {
     },
   ) {
     if (this.isDefaultMode()) {
-      let encontrada = false;
       for (const origem in DEFAULT_TRANSICOES) {
         const idx = DEFAULT_TRANSICOES[origem].findIndex((t) => t.id === id);
         if (idx !== -1) {
           DEFAULT_TRANSICOES[origem].splice(idx, 1);
-          encontrada = true;
           break;
         }
       }
@@ -226,7 +241,13 @@ export class AdminService {
         estadoDestino: data.estado_destino,
         ativo: data.ativo !== false,
       });
-      return { id };
+      return {
+        id,
+        estado_origem: data.estado_origem,
+        entrada: data.entrada,
+        estado_destino: data.estado_destino,
+        ativo: data.ativo !== false,
+      };
     }
 
     return this.prisma.botEstadoTransicao.update({

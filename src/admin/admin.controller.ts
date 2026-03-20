@@ -16,6 +16,11 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 export class AdminController {
   constructor(private adminService: AdminService) {}
 
+  @Get('modo')
+  obterModo() {
+    return this.adminService.obterModo();
+  }
+
   // ─── Estados ─────────────────────────────────────────────────────────────
 
   @Get('estados')

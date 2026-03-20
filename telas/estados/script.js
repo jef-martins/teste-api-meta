@@ -1,4 +1,34 @@
 const API = 'http://localhost:3000/admin';
+let MODO_PADRAO = false;
+
+async function verificarModo() {
+  try {
+    const r = await fetch(API + '/modo');
+    if (!r.ok) return;
+    const dados = await r.json();
+    MODO_PADRAO = dados.modoPadrao === true;
+    const banner = document.getElementById('banner-modo');
+    if (banner) {
+      if (MODO_PADRAO) {
+        banner.style.display = 'flex';
+        banner.innerHTML = `
+          <span>⚠️ <strong>Modo Padrão (Memória)</strong> — BOT_STATE_MACHINE_PADRAO=true. Banco de dados não conectado.
+          As alterações feitas aqui ficarão <strong>ativas enquanto o servidor estiver rodando</strong>, mas serão perdidas ao reiniciar.</span>`;
+      } else {
+        banner.style.display = 'none';
+      }
+    }
+    const statusLabel = document.getElementById('status-label');
+    if (statusLabel && MODO_PADRAO) {
+      statusLabel.textContent = '🟡 Modo Memória';
+      statusLabel.style.background = 'rgba(210,153,34,0.2)';
+      statusLabel.style.color = '#d2991a';
+      statusLabel.style.border = '1px solid rgba(210,153,34,0.4)';
+    }
+  } catch (e) {
+    console.warn('Não foi possível verificar o modo de operação:', e);
+  }
+}
 
 const HANDLER_DEFAULTS = {
   _handlerMensagem: [['mensagens', 'array', '["Olá! Como posso ajudar?"]'], ['transicaoAutomatica', 'bool', 'false']],
@@ -430,4 +460,5 @@ async function testarRequisicao() {
   btn.disabled = false;
 }
 
+verificarModo();
 carregarEstados();
