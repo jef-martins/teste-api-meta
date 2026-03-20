@@ -1,13 +1,56 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  DEFAULT_ESTADOS,
+  DEFAULT_TRANSICOES,
+} from '../bot/meta/default-state-machine.config';
 
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {
+    this.initMemoryTransitions();
+  }
+
+  private isDefaultMode() {
+    return process.env.BOT_STATE_MACHINE_PADRAO === 'true';
+  }
+
+  private initMemoryTransitions() {
+    if (this.isDefaultMode()) {
+      let idCounter = 1;
+      for (const transicoes of Object.values(DEFAULT_TRANSICOES)) {
+        for (const t of transicoes) {
+          if (!t.id) {
+            t.id = String(idCounter++);
+          }
+          if (t.ativo === undefined) {
+            t.ativo = true;
+          }
+        }
+      }
+      for (const estado of Object.values(DEFAULT_ESTADOS)) {
+        if (estado.ativo === undefined) {
+          estado.ativo = true;
+        }
+      }
+    }
+  }
 
   // ─── Estados ─────────────────────────────────────────────────────────────
 
   async listarEstados() {
+    if (this.isDefaultMode()) {
+      return Object.entries(DEFAULT_ESTADOS)
+        .map(([estado, data]) => ({
+          estado,
+          handler: data.handler,
+          descricao: data.descricao,
+          ativo: data.ativo !== false,
+          config: data.config,
+        }))
+        .sort((a, b) => a.estado.localeCompare(b.estado));
+    }
+
     return this.prisma.botEstadoConfig.findMany({
       select: {
         estado: true,
@@ -26,6 +69,16 @@ export class AdminService {
     descricao?: string;
     config?: any;
   }) {
+    if (this.isDefaultMode()) {
+      DEFAULT_ESTADOS[data.estado] = {
+        handler: data.handler,
+        descricao: data.descricao || '',
+        config: data.config || {},
+        ativo: true,
+      };
+      return { estado: data.estado };
+    }
+
     return this.prisma.botEstadoConfig.create({
       data: {
         estado: data.estado,
@@ -45,6 +98,17 @@ export class AdminService {
       ativo?: boolean;
     },
   ) {
+    if (this.isDefaultMode()) {
+      if (!DEFAULT_ESTADOS[estado]) {
+        throw new BadRequestException('Estado não encontrado na memória.');
+      }
+      DEFAULT_ESTADOS[estado].handler = data.handler;
+      DEFAULT_ESTADOS[estado].descricao = data.descricao || '';
+      DEFAULT_ESTADOS[estado].config = data.config || {};
+      DEFAULT_ESTADOS[estado].ativo = data.ativo !== false;
+      return { estado };
+    }
+
     return this.prisma.botEstadoConfig.update({
       where: { estado },
       data: {
@@ -57,6 +121,18 @@ export class AdminService {
   }
 
   async excluirEstado(estado: string) {
+    if (this.isDefaultMode()) {
+      delete DEFAULT_ESTADOS[estado];
+      delete DEFAULT_TRANSICOES[estado];
+      // remove transitions targeting this state
+      for (const origem in DEFAULT_TRANSICOES) {
+        DEFAULT_TRANSICOES[origem] = DEFAULT_TRANSICOES[origem].filter(
+          (t) => t.estadoDestino !== estado,
+        );
+      }
+      return { ok: true };
+    }
+
     await this.prisma.botEstadoConfig.delete({ where: { estado } });
     return { ok: true };
   }
@@ -64,6 +140,24 @@ export class AdminService {
   // ─── Transições ──────────────────────────────────────────────────────────
 
   async listarTransicoes() {
+    if (this.isDefaultMode()) {
+      const transicoes = [];
+      for (const [estadoOrigem, lista] of Object.entries(DEFAULT_TRANSICOES)) {
+        for (const t of lista) {
+          transicoes.push({
+            id: t.id,
+            estadoOrigem,
+            entrada: t.entrada,
+            estadoDestino: t.estadoDestino,
+            ativo: t.ativo !== false,
+          });
+        }
+      }
+      return transicoes.sort((a, b) =>
+        a.estadoOrigem.localeCompare(b.estadoOrigem),
+      );
+    }
+
     return this.prisma.botEstadoTransicao.findMany({
       select: {
         id: true,
@@ -81,6 +175,20 @@ export class AdminService {
     entrada: string;
     estado_destino: string;
   }) {
+    if (this.isDefaultMode()) {
+      if (!DEFAULT_TRANSICOES[data.estado_origem]) {
+        DEFAULT_TRANSICOES[data.estado_origem] = [];
+      }
+      const nova = {
+        id: crypto.randomUUID(),
+        entrada: data.entrada,
+        estadoDestino: data.estado_destino,
+        ativo: true,
+      };
+      DEFAULT_TRANSICOES[data.estado_origem].push(nova);
+      return nova;
+    }
+
     return this.prisma.botEstadoTransicao.create({
       data: {
         estadoOrigem: data.estado_origem,
@@ -99,6 +207,28 @@ export class AdminService {
       ativo?: boolean;
     },
   ) {
+    if (this.isDefaultMode()) {
+      let encontrada = false;
+      for (const origem in DEFAULT_TRANSICOES) {
+        const idx = DEFAULT_TRANSICOES[origem].findIndex((t) => t.id === id);
+        if (idx !== -1) {
+          DEFAULT_TRANSICOES[origem].splice(idx, 1);
+          encontrada = true;
+          break;
+        }
+      }
+      if (!DEFAULT_TRANSICOES[data.estado_origem]) {
+        DEFAULT_TRANSICOES[data.estado_origem] = [];
+      }
+      DEFAULT_TRANSICOES[data.estado_origem].push({
+        id,
+        entrada: data.entrada,
+        estadoDestino: data.estado_destino,
+        ativo: data.ativo !== false,
+      });
+      return { id };
+    }
+
     return this.prisma.botEstadoTransicao.update({
       where: { id },
       data: {
@@ -111,6 +241,15 @@ export class AdminService {
   }
 
   async excluirTransicao(id: string) {
+    if (this.isDefaultMode()) {
+      for (const origem in DEFAULT_TRANSICOES) {
+        DEFAULT_TRANSICOES[origem] = DEFAULT_TRANSICOES[origem].filter(
+          (t) => t.id !== id,
+        );
+      }
+      return { ok: true };
+    }
+
     await this.prisma.botEstadoTransicao.delete({ where: { id } });
     return { ok: true };
   }

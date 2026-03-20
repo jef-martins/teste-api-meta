@@ -14,12 +14,15 @@
  */
 
 export interface EstadoConfigDefault {
+  ativo?: boolean;
   handler: string;
   descricao: string;
   config: Record<string, any>;
 }
 
 export interface TransicaoDefault {
+  id?: string;
+  ativo?: boolean;
   entrada: string;
   estadoDestino: string;
 }

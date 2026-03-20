@@ -32,9 +32,9 @@ export class DefaultEstadoRepository {
     config: any;
   } | null> {
     const cfg = DEFAULT_ESTADOS[estado];
-    if (!cfg) {
+    if (!cfg || cfg.ativo === false) {
       this.logger.warn(
-        `[DefaultRepo] Estado "${estado}" não existe na máquina padrão.`,
+        `[DefaultRepo] Estado "${estado}" não existe na máquina padrão ou está inativo.`,
       );
       return null;
     }
@@ -54,14 +54,15 @@ export class DefaultEstadoRepository {
     entrada: string,
   ): Promise<string | null> {
     const transicoes = DEFAULT_TRANSICOES[estadoAtual] ?? [];
+    const transicoesAtivas = transicoes.filter((t) => t.ativo !== false);
 
     // 1. Correspondência exata
-    const exactMatch = transicoes.find((t) => t.entrada === entrada);
+    const exactMatch = transicoesAtivas.find((t) => t.entrada === entrada);
     if (exactMatch) return exactMatch.estadoDestino;
 
     // 2. Wildcard fallback
     if (entrada !== '*') {
-      const wildcard = transicoes.find((t) => t.entrada === '*');
+      const wildcard = transicoesAtivas.find((t) => t.entrada === '*');
       if (wildcard) return wildcard.estadoDestino;
     }
 
