@@ -134,7 +134,8 @@ export class FlowConverterService {
     }
 
     if (!hasCustom) return { nodes, connections };
-    return { nodes: flatNodes, connections: flatConnections };
+    // Recurse to flatten any nested customComponent nodes that were inside internalNodes
+    return this.flattenCustomComponents(flatNodes, flatConnections);
   }
 
   flowToStateMachine(flowJson: any) {
