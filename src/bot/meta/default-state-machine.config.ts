@@ -14,12 +14,15 @@
  */
 
 export interface EstadoConfigDefault {
+  ativo?: boolean;
   handler: string;
   descricao: string;
   config: Record<string, any>;
 }
 
 export interface TransicaoDefault {
+  id?: string;
+  ativo?: boolean;
   entrada: string;
   estadoDestino: string;
 }
@@ -196,7 +199,7 @@ export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
         'Atendimento finalizado. Obrigado por entrar em contato! 👋\n\n' +
         'Envie qualquer mensagem para iniciar um novo atendimento.',
       ],
-      transicaoAutomatica: true,
+      transicaoAutomatica: false,
     },
   },
 };

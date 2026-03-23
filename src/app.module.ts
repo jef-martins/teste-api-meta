@@ -10,9 +10,10 @@ import { AdminModule } from './admin/admin.module';
 import { CollaborationModule } from './collaboration/collaboration.module';
 import { BotModule } from './bot/wppConnect/bot.module';
 import { OrganizationModule } from './organization/organization.module';
-import { ApiRegistryModule } from './api-registry/api-registry.module';
+import { ApiRegistryModule } from './api-registry/api-registry.module'; 
 import { HealthController } from './health.controller';
 import { BotMetaModule } from './bot/meta/bot-meta.module';
+import { GlobalKeywordModule } from './global-keyword/global-keyword.module';
 
 /**
  * Estratégia de canal por ambiente:
@@ -43,6 +44,7 @@ const botChannelModules = isDevelopment
     CollaborationModule,
     OrganizationModule,
     ApiRegistryModule,
+    GlobalKeywordModule,
     ...botChannelModules,
   ],
   controllers: [HealthController],

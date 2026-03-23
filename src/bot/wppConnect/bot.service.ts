@@ -4,7 +4,6 @@ import {
   OnModuleInit,
   OnModuleDestroy,
 } from '@nestjs/common';
-import * as wppconnect from '@wppconnect-team/wppconnect';
 import { ConversationService } from '../../conversation/conversation.service';
 import { StateMachineEngine } from '../state-machine.engine';
 import { HandlerService } from './handler.service';
@@ -50,11 +49,14 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Iniciando sessão WPPConnect: ${this.sessao}`);
 
     try {
+      // Import dinâmico do WPPConnect para economizar memória em produção
+      const wppconnect = await import('@wppconnect-team/wppconnect');
+
       this.client = await wppconnect.create({
         session: this.sessao,
         logQR: true,
         autoClose: 0,
-        catchQR: (base64Qr: string, asciiQR: string) => {
+        catchQR: (_base64Qr: string, asciiQR: string) => {
           this.logger.log('Escaneie o QR Code para conectar');
           console.log(asciiQR);
         },
@@ -150,13 +152,13 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const chatId = message.chatId || message.from;
     const nome = message.sender?.pushname || message.sender?.name || null;
 
-    let corpo: string;
+    let corpo = '';
     if (message.type === 'list_response') {
-      corpo = (message.selectedRowId || '').trim().toLowerCase();
+      corpo = (message.selectedRowId || '').trim();
     } else if (message.type === 'buttons_response') {
-      corpo = (message.selectedButtonId || '').trim().toLowerCase();
+      corpo = (message.selectedButtonId || '').trim();
     } else {
-      corpo = (message.body || message.content || '').trim().toLowerCase();
+      corpo = (message.body || message.content || '').trim();
     }
 
     await this.engine.process(message, chatId, corpo, nome, this.handler);

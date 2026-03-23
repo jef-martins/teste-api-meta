@@ -37,12 +37,24 @@ export class BotMetaService {
       nome = value.contacts[0].profile?.name || null;
     }
 
-    const from = messageItem.from; // número puro, ex: "5514999999999"
-    const phone_id = value.metadata?.phone_number_id;
+    const from = messageItem.from;
+    const phoneId = value.metadata?.phone_number_id;
 
     // Configura o HandlerMetaService com os dados desta requisição
-    this.handler.phone_id = phone_id || null;
-    this.handler.access_token = process.env.VERIFY_TOKEN || null;
+    this.handler.phone_id = phoneId || null;
+
+    // META_ACCESS_TOKEN é o token Bearer para enviar mensagens.
+    // Fallback para VERIFY_TOKEN para compatibilidade com configurações antigas
+    // onde o mesmo token era usado para ambos os propósitos.
+    const accessToken =
+      process.env.META_ACCESS_TOKEN || process.env.VERIFY_TOKEN || null;
+    if (!process.env.META_ACCESS_TOKEN) {
+      this.logger.warn(
+        '[Config] META_ACCESS_TOKEN não definido. Usando VERIFY_TOKEN como fallback. ' +
+          'Defina META_ACCESS_TOKEN no Render para clareza.',
+      );
+    }
+    this.handler.access_token = accessToken;
 
     // Modo de teste: responde apenas ao número do admin
     if (process.env.BOT_MODO_TESTE === 'true') {
@@ -82,7 +94,7 @@ export class BotMetaService {
     // Objeto de mensagem no formato esperado pelo StateMachineEngine e Handlers
     const mockMessage = {
       from: chatId,
-      to: `${phone_id}@meta`,
+      to: `${phoneId}@meta`,
       body: corpo,
       type: messageItem.type === 'text' ? 'chat' : messageItem.type,
       sender: {
@@ -94,16 +106,10 @@ export class BotMetaService {
 
     try {
       // Persiste a mensagem no banco de dados
-      await this.salvarNoBanco(mockMessage, from, phone_id, nome, corpo);
+      await this.salvarNoBanco(mockMessage, from, phoneId, nome, corpo);
 
       // Processa a mensagem pela máquina de estados
-      await this.engine.process(
-        mockMessage,
-        chatId,
-        corpo.toLowerCase(), // Engine usa lowercase para comparar transições
-        nome,
-        this.handler as any,
-      );
+      await this.engine.process(mockMessage, chatId, corpo, nome, this.handler as any);
     } catch (err: any) {
       this.logger.error(`Erro ao processar mensagem via Meta: ${err.message}`);
     }
@@ -117,7 +123,13 @@ export class BotMetaService {
     corpo: string,
   ) {
     try {
-      await this.conversationService.salvarMensagem(nome, message, from, to, corpo);
+      await this.conversationService.salvarMensagem(
+        nome,
+        message,
+        from,
+        to,
+        corpo,
+      );
     } catch (err: any) {
       this.logger.error(`Falha ao salvar mensagem no banco: ${err.message}`);
     }

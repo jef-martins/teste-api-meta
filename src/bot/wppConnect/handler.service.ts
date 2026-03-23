@@ -19,6 +19,108 @@ export class HandlerService {
 
   constructor(private estadoRepo: EstadoRepository) {}
 
+  private parseConfig(config: any) {
+    if (typeof config === 'string') {
+      try {
+        return JSON.parse(config);
+      } catch {
+        return {};
+      }
+    }
+    return config && typeof config === 'object' ? config : {};
+  }
+
+  private normalizarItensInterativos(
+    bruto: any,
+    campo: 'opcoes' | 'botoes',
+  ): Array<{ entrada: string; label: string; descricao: string }> {
+    let itens = bruto;
+
+    if (typeof itens === 'string') {
+      try {
+        itens = JSON.parse(itens);
+      } catch {
+        itens = [];
+      }
+    }
+
+    if (itens && typeof itens === 'object' && !Array.isArray(itens)) {
+      if (Array.isArray(itens[campo])) {
+        itens = itens[campo];
+      } else if (Array.isArray(itens.rows)) {
+        itens = itens.rows;
+      } else if (Array.isArray(itens.buttons)) {
+        itens = itens.buttons;
+      } else if (
+        'entrada' in itens ||
+        'label' in itens ||
+        'id' in itens ||
+        'title' in itens ||
+        'text' in itens
+      ) {
+        itens = [itens];
+      } else {
+        itens = Object.values(itens);
+      }
+    }
+
+    if (!Array.isArray(itens)) {
+      return [];
+    }
+
+    return itens
+      .map((item) => {
+        if (typeof item === 'string' || typeof item === 'number') {
+          const valor = String(item).trim();
+          return valor
+            ? { entrada: valor, label: valor, descricao: '' }
+            : null;
+        }
+
+        if (!item || typeof item !== 'object') {
+          return null;
+        }
+
+        const entrada = String(
+          item.entrada ??
+            item.id ??
+            item.rowId ??
+            item.value ??
+            item.payload ??
+            item.label ??
+            item.title ??
+            item.text ??
+            '',
+        ).trim();
+        const label = String(
+          item.label ??
+            item.title ??
+            item.text ??
+            item.entrada ??
+            item.id ??
+            item.value ??
+            item.payload ??
+            '',
+        ).trim();
+
+        if (!entrada && !label) {
+          return null;
+        }
+
+        return {
+          entrada: entrada || label,
+          label: label || entrada,
+          descricao: String(item.descricao ?? item.description ?? '').trim(),
+        };
+      })
+      .filter(
+        (
+          item,
+        ): item is { entrada: string; label: string; descricao: string } =>
+          !!item,
+      );
+  }
+
   // ─── Helper: send response and save to DB ────────────────────────────────
 
   private async enviarResposta(message: any, texto: string) {
@@ -44,10 +146,11 @@ export class HandlerService {
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
-    const mensagens = config.mensagens ?? [];
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
 
+    const mensagens = config.mensagens ?? [];
     const dadosChat = engine.obterDados(chatId);
     for (const texto of mensagens) {
       const textoInterpolado = engine.interpolar(texto, dadosChat);
@@ -207,9 +310,9 @@ export class HandlerService {
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    let config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
-    if (typeof config === 'string') config = JSON.parse(config);
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
 
     if (corpo) {
       const proximo = await this.estadoRepo.buscarProximoEstado(
@@ -239,8 +342,13 @@ export class HandlerService {
     }
 
     const destino = message.from;
-    const opcoes = config.opcoes ?? [];
+    const opcoes = this.normalizarItensInterativos(config.opcoes ?? [], 'opcoes');
     const titulo = config.titulo ?? 'Menu';
+
+    if (!opcoes.length) {
+      await this.enviarResposta(message, titulo);
+      return;
+    }
 
     const timeout = new Promise<never>((_, reject) =>
       setTimeout(
@@ -286,8 +394,9 @@ export class HandlerService {
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
 
     if (corpo) {
       const proximo = await this.estadoRepo.buscarProximoEstado(
@@ -312,6 +421,16 @@ export class HandlerService {
       }
     }
 
+    const botoes = this.normalizarItensInterativos(
+      config.botoes ?? [],
+      'botoes',
+    );
+
+    if (!botoes.length) {
+      await this.enviarResposta(message, config.titulo ?? 'Escolha uma opção:');
+      return;
+    }
+
     try {
       await this.client.sendText(
         message.from,
@@ -320,7 +439,7 @@ export class HandlerService {
           useTemplateButtons: true,
           title: config.cabecalho ?? undefined,
           footer: config.rodape ?? undefined,
-          buttons: (config.botoes ?? []).map((b: any) => ({
+          buttons: botoes.slice(0, 3).map((b: any) => ({
             id: b.entrada,
             text: b.label,
           })),
@@ -328,7 +447,7 @@ export class HandlerService {
       );
     } catch (err: any) {
       this.logger.error(`Erro ao enviar botões: ${err.message}`);
-      const linhas = (config.botoes ?? []).map((b: any) => b.label).join('\n');
+      const linhas = botoes.map((b: any) => b.label).join('\n');
       await this.enviarResposta(message, `${config.titulo ?? ''}\n\n${linhas}`);
     }
   }

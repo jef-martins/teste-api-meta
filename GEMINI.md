@@ -21,3 +21,6 @@ Para garantir a eficiência e focar apenas no código-fonte original, siga estas
 
 4. **Arquivos Temporários**:
    - Ignore pastas como `node_modules`, `tmp`, ou arquivos de log temporários.
+
+5. **Sempre me responda em portugues do brasil.**
+   - Sempre que for me responder, faça em portugues do brasil.

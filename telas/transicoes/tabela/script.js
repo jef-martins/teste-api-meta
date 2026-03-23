@@ -1,5 +1,40 @@
-const API = 'http://localhost:3000/admin';
+const API = '/api/admin';
 let estadosCache = [];
+let MODO_PADRAO = false;
+
+async function verificarModo() {
+  try {
+    const r = await fetch(API + '/modo');
+    if (!r.ok) return;
+    const dados = await r.json();
+    MODO_PADRAO = dados.modoPadrao === true;
+    const banner = document.getElementById('banner-modo');
+    if (banner) {
+      if (MODO_PADRAO) {
+        banner.style.display = 'flex';
+        banner.innerHTML = `
+          <span>⚠️ <strong>Modo Padrão (Memória)</strong> — BOT_STATE_MACHINE_PADRAO=true. Banco de dados não conectado.
+          As alterações feitas aqui ficarão <strong>ativas enquanto o servidor estiver rodando</strong>, mas serão perdidas ao reiniciar.</span>`;
+      } else {
+        banner.style.display = 'none';
+      }
+    }
+  } catch (e) {
+    console.warn('Não foi possível verificar o modo de operação:', e);
+  }
+}
+
+/** Normaliza a resposta da API para sempre ter estado_origem e estado_destino */
+function normalizarTransicao(t) {
+  return {
+    id: t.id,
+    estado_origem: t.estado_origem ?? t.estadoOrigem,
+    entrada: t.entrada,
+    estado_destino: t.estado_destino ?? t.estadoDestino,
+    ativo: t.ativo,
+  };
+}
+
 
 function toast(msg, err = false) {
   const el = document.getElementById('toast');
@@ -26,7 +61,8 @@ async function carregarEstados() {
 }
 
 async function carregarTransicoes() {
-  const dados = await api('GET', '/transicoes');
+  const rawDados = await api('GET', '/transicoes');
+  const dados = Array.isArray(rawDados) ? rawDados.map(normalizarTransicao) : [];
   const tb = document.getElementById('body-transicoes');
 
   if (!dados.length) {
@@ -110,5 +146,6 @@ async function excluirTransicao(id) {
 }
 
 // Inicialização
+verificarModo();
 carregarEstados();
 carregarTransicoes();
