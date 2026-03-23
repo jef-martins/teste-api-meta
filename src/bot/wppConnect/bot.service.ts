@@ -129,9 +129,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           .split('@')[0]
           .replace(/\D/g, '');
 
+
         const isAdmin =
           numeroRemetente === numeroAdmin ||
           (lidAdmin && numeroRemetente === lidAdmin);
+
+        console.log(isAdmin ? 'true' : 'false')
         if (!isAdmin) return;
       }
 
@@ -156,9 +159,22 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     let corpo = '';
     if (message.type === 'list_response') {
-      corpo = (message.selectedRowId || '').trim().toLowerCase();
-    } else if (message.type === 'buttons_response') {
-      corpo = (message.selectedButtonId || '').trim().toLowerCase();
+      corpo = (
+        message.listResponse?.singleSelectReply?.selectedRowId ||
+        message.selectedRowId ||
+        message.body ||
+        message.content ||
+        ''
+      ).trim().toLowerCase();
+    } else if (message.type === 'buttons_response' || message.type === 'template_button_reply') {
+      corpo = (
+        message.buttonsResponse?.selectedButtonId ||
+        message.templateButtonReplyMessage?.selectedId ||
+        message.selectedButtonId ||
+        message.body ||
+        message.content ||
+        ''
+      ).trim().toLowerCase();
     } else {
       corpo = (message.body || message.content || '').trim();
     }
