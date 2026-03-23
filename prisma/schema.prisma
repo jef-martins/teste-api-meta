@@ -74,10 +74,11 @@ model BotEstadoConfig {
   flowId    String?  @map("flow_id")
   criadoEm  DateTime @default(now()) @map("criado_em") @db.Timestamptz()
 
-  fluxo             BotFluxo?            @relation(fields: [flowId], references: [id], onDelete: Cascade)
-  transicoesOrigem  BotEstadoTransicao[] @relation("TransicaoOrigem")
-  transicoesDestino BotEstadoTransicao[] @relation("TransicaoDestino")
-  usuarios          BotEstadoUsuario[]
+  fluxo                  BotFluxo?            @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  transicoesOrigem         BotEstadoTransicao[] @relation("TransicaoOrigem")
+  transicoesDestino        BotEstadoTransicao[] @relation("TransicaoDestino")
+  usuarios                 BotEstadoUsuario[]
+  keywordsGlobaisDestino   BotKeywordGlobal[]
 
   @@map("bot_estado_config")
 }
@@ -97,6 +98,21 @@ model BotEstadoTransicao {
 
   @@unique([estadoOrigem, entrada])
   @@map("bot_estado_transicao")
+}
+
+model BotKeywordGlobal {
+  id            String   @id @default(uuid())
+  keyword       String   @unique @db.VarChar(150)
+  estadoDestino String   @map("estado_destino") @db.VarChar(100)
+  ativo         Boolean  @default(true)
+  criadoEm      DateTime @default(now()) @map("criado_em") @db.Timestamptz()
+  atualizadoEm  DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz()
+
+  destino BotEstadoConfig @relation(fields: [estadoDestino], references: [estado], onDelete: Restrict)
+
+  @@index([estadoDestino])
+  @@index([ativo])
+  @@map("bot_keyword_global")
 }
 
 // ── Estado atual de cada usuário do bot ────────────────────────────────────

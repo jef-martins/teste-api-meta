@@ -10,12 +10,13 @@ import { AdminModule } from './admin/admin.module';
 import { CollaborationModule } from './collaboration/collaboration.module';
 import { BotModule } from './bot/wppConnect/bot.module';
 import { OrganizationModule } from './organization/organization.module';
-import { ApiRegistryModule } from './api-registry/api-registry.module'; 
+import { ApiRegistryModule } from './api-registry/api-registry.module';
 import { HealthController } from './health.controller';
 import { BotMetaModule } from './bot/meta/bot-meta.module';
+import { GlobalKeywordModule } from './global-keyword/global-keyword.module';
 
 /**
- * Estratégia de canal por ambiente: 
+ * Estratégia de canal por ambiente:
  *
  *  NODE_ENV=development  → WPPConnect ativo  | Meta webhook DESATIVADO
  *  NODE_ENV=production   → WPPConnect inativo | Meta webhook ATIVO
@@ -27,8 +28,8 @@ import { BotMetaModule } from './bot/meta/bot-meta.module';
 const isDevelopment = process.env.NODE_ENV === 'development';
 
 const botChannelModules = isDevelopment
-  ? [BotModule]            // development: apenas WPPConnect
-  : [BotModule, BotMetaModule]; // production: Meta ativo (WPPConnect se desativa internamente)
+  ? [BotModule]
+  : [BotModule, BotMetaModule];
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ const botChannelModules = isDevelopment
     CollaborationModule,
     OrganizationModule,
     ApiRegistryModule,
+    GlobalKeywordModule,
     ...botChannelModules,
   ],
   controllers: [HealthController],

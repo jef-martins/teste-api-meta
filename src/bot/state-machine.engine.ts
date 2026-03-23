@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EstadoRepository } from './estado.repository';
+import { GlobalKeywordService } from '../global-keyword/global-keyword.service';
 
 @Injectable()
 export class StateMachineEngine {
@@ -17,7 +18,10 @@ export class StateMachineEngine {
 
   private estadosAvisados = new Set<string>();
 
-  constructor(private estadoRepo: EstadoRepository) {}
+  constructor(
+    private estadoRepo: EstadoRepository,
+    private globalKeywordService: GlobalKeywordService,
+  ) {}
 
   interpolar(texto: string, variaveis: Record<string, any> = {}): string {
     // Normaliza {{expr}} -> {expr} para suportar ambos os formatos
@@ -64,10 +68,13 @@ export class StateMachineEngine {
   async process(
     message: any,
     chatId: string,
-    entrada: string,
+    entradaOriginal: string,
     nome: string | null,
     actionDelegate: any,
   ) {
+    const entradaBruta = typeof entradaOriginal === 'string' ? entradaOriginal.trim() : '';
+    const entradaNormalizada = entradaBruta.toLowerCase();
+
     const estadoSalvo = await this.estadoRepo.obterEstadoUsuario(chatId);
     const estadoPadrao = await this.estadoRepo.obterEstadoInicial();
     this.estadosUsuarios.set(chatId, estadoSalvo ?? estadoPadrao);
@@ -77,6 +84,43 @@ export class StateMachineEngine {
       this.estadosAvisados.add(chatId);
     }
 
+    this.mensagemAtual = entradaNormalizada;
+    this.nomeAtual = nome;
+
+    const keywordGlobal = await this.globalKeywordService.buscarKeywordAtiva(
+      entradaBruta,
+    );
+    if (keywordGlobal) {
+      const configDestino = await this.estadoRepo.obterConfigEstado(
+        keywordGlobal.estadoDestino,
+      );
+
+      if (!configDestino) {
+        this.logger.warn(
+          `[${chatId}] keyword global "${keywordGlobal.keyword}" aponta para estado inválido/inativo: ${keywordGlobal.estadoDestino}`,
+        );
+      } else {
+        this.logger.log(
+          `[${chatId}] keyword global "${keywordGlobal.keyword}" → ${keywordGlobal.estadoDestino}`,
+        );
+        await this.avancarEstado(
+          chatId,
+          keywordGlobal.estadoDestino,
+          entradaBruta,
+          nome,
+        );
+
+        if (typeof actionDelegate[configDestino.handler] === 'function') {
+          await actionDelegate[configDestino.handler](message, chatId, '', this);
+        } else {
+          this.logger.error(
+            `Handler "${configDestino.handler}" não existe no Delegate!`,
+          );
+        }
+        return;
+      }
+    }
+
     const estadoAtual = this.estadosUsuarios.get(chatId)!;
     const config = await this.estadoRepo.obterConfigEstado(estadoAtual);
 
@@ -84,25 +128,23 @@ export class StateMachineEngine {
       this.logger.warn(
         `Estado "${estadoAtual}" não encontrado/ativo. Reiniciando para ${estadoPadrao}.`,
       );
-      await this.avancarEstado(chatId, estadoPadrao, entrada, nome);
+      await this.avancarEstado(chatId, estadoPadrao, entradaBruta, nome);
       return;
     }
 
     this.logger.log(
       `[${chatId}] estado=${estadoAtual} → handler=${config.handler}`,
     );
-    this.mensagemAtual = entrada;
-    this.nomeAtual = nome;
 
     // aguardarEntrada flag
-    if (config.config?.aguardarEntrada && entrada) {
+    if (config.config?.aguardarEntrada && entradaNormalizada) {
       this.logger.log(
-        `[${chatId}] estado aguarda entrada → buscando transição para "${entrada}"`,
+        `[${chatId}] estado aguarda entrada → buscando transição para "${entradaNormalizada}"`,
       );
       await this.transitarPorEntrada(
         chatId,
         estadoAtual,
-        entrada,
+        entradaNormalizada,
         message,
         true,
         nome,
@@ -112,7 +154,7 @@ export class StateMachineEngine {
     }
 
     if (typeof actionDelegate[config.handler] === 'function') {
-      await actionDelegate[config.handler](message, chatId, entrada, this);
+      await actionDelegate[config.handler](message, chatId, entradaNormalizada, this);
     } else {
       this.logger.error(`Handler "${config.handler}" não existe no Delegate!`);
     }
