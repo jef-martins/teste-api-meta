@@ -20,7 +20,7 @@ import { ConversationModule } from '../../conversation/conversation.module';
  *  BOT_STATE_MACHINE_PADRAO=false (ou ausente)
  *    → Usa o banco de dados (tabelas bot_estado_config/bot_estado_transicao)
  *      como fonte de verdade para os fluxos configurados no painel.
- */ 
+ */
 
 const isDefaultMode = process.env.BOT_STATE_MACHINE_PADRAO === 'true';
 

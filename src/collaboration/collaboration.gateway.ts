@@ -47,7 +47,7 @@ export class CollaborationGateway
     this.logger.log(`Client conectado: ${client.id}`);
   }
 
-  async handleDisconnect(client: Socket) {
+  handleDisconnect(client: Socket) {
     const flowId = this.clientRooms.get(client.id);
     if (flowId !== undefined) {
       this.collaborationService.removeConnection(flowId, client.id);
@@ -71,13 +71,13 @@ export class CollaborationGateway
 
     const previousRoom = this.clientRooms.get(client.id);
     if (previousRoom !== undefined) {
-      client.leave(String(previousRoom));
+      await client.leave(String(previousRoom));
       this.collaborationService.removeConnection(previousRoom, client.id);
     }
 
     try {
       const room = await this.collaborationService.getOrCreateRoom(flowId);
-      client.join(String(flowId));
+      await client.join(String(flowId));
       this.clientRooms.set(client.id, flowId);
       this.collaborationService.addConnection(flowId, client.id);
 

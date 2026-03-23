@@ -72,24 +72,31 @@ export class StateMachineEngine {
     nome: string | null,
     actionDelegate: any,
   ) {
-    const entradaBruta = typeof entradaOriginal === 'string' ? entradaOriginal.trim() : '';
+    const entradaBruta =
+      typeof entradaOriginal === 'string' ? entradaOriginal.trim() : '';
     const entradaNormalizada = entradaBruta.toLowerCase();
 
-    const estadoSalvo = await this.estadoRepo.obterEstadoUsuario(chatId);
     const estadoPadrao = await this.estadoRepo.obterEstadoInicial();
-    this.estadosUsuarios.set(chatId, estadoSalvo ?? estadoPadrao);
 
-    if (estadoSalvo && !this.estadosAvisados.has(chatId)) {
-      this.logger.log(`[${chatId}] estado restaurado do banco: ${estadoSalvo}`);
-      this.estadosAvisados.add(chatId);
+    let estadoAtualUsuario = this.estadosUsuarios.get(chatId);
+    if (!estadoAtualUsuario) {
+      const estadoSalvo = await this.estadoRepo.obterEstadoUsuario(chatId);
+      estadoAtualUsuario = estadoSalvo ?? estadoPadrao;
+      this.estadosUsuarios.set(chatId, estadoAtualUsuario);
+
+      if (estadoSalvo && !this.estadosAvisados.has(chatId)) {
+        this.logger.log(
+          `[${chatId}] estado restaurado do banco: ${estadoSalvo}`,
+        );
+        this.estadosAvisados.add(chatId);
+      }
     }
 
     this.mensagemAtual = entradaNormalizada;
     this.nomeAtual = nome;
 
-    const keywordGlobal = await this.globalKeywordService.buscarKeywordAtiva(
-      entradaBruta,
-    );
+    const keywordGlobal =
+      await this.globalKeywordService.buscarKeywordAtiva(entradaBruta);
     if (keywordGlobal) {
       const configDestino = await this.estadoRepo.obterConfigEstado(
         keywordGlobal.estadoDestino,
@@ -111,7 +118,12 @@ export class StateMachineEngine {
         );
 
         if (typeof actionDelegate[configDestino.handler] === 'function') {
-          await actionDelegate[configDestino.handler](message, chatId, '', this);
+          await actionDelegate[configDestino.handler](
+            message,
+            chatId,
+            '',
+            this,
+          );
         } else {
           this.logger.error(
             `Handler "${configDestino.handler}" não existe no Delegate!`,
@@ -138,25 +150,8 @@ export class StateMachineEngine {
     this.mensagemAtual = entradaBruta;
     this.nomeAtual = nome;
 
-    // aguardarEntrada flag
-    if (config.config?.aguardarEntrada && entradaNormalizada) {
-      this.logger.log(
-        `[${chatId}] estado aguarda entrada → buscando transição para "${entradaNormalizada}"`,
-      );
-      await this.transitarPorEntrada(
-        chatId,
-        estadoAtual,
-        entradaNormalizada,
-        message,
-        true,
-        nome,
-        actionDelegate,
-        false, // <--- Aqui: Não aceita curinga (*) para evitar pular estados como AGUARDANDO_CEP
-      );
-      return;
-    }
-
-    // Se houver entrada, sempre tenta transitar primeiro (global para todos os estados)
+    // Se houver entrada, tenta transição EXATA primeiro (ex: "cancelar", "menu")
+    // Não usamos wildcard aqui para não roubar a entrada de estados que capturam dados (ex: CEP, CPF)
     if (entradaNormalizada) {
       const proximo = await this.transitarPorEntrada(
         chatId,
@@ -166,10 +161,10 @@ export class StateMachineEngine {
         true,
         nome,
         actionDelegate,
-        false, // <--- Aqui: Não aceita curinga (*) para evitar pular estados como AGUARDANDO_CEP
+        false, // acceptWildcard = false
       );
 
-      // Se transitou, encerra o processamento desta mensagem
+      // Se encontrou rota exata, encerra o processamento
       if (proximo) return;
     }
 
@@ -196,18 +191,19 @@ export class StateMachineEngine {
     this.estadosUsuarios.set(chatId, proximo);
     this.logger.log(`[${chatId}] transição: ${anterior} → ${proximo}`);
 
-    // Fire-and-forget persistence
-    this.estadoRepo
-      .salvarEstadoUsuario(chatId, proximo, nome ?? this.nomeAtual)
-      .catch(() => {});
-    this.estadoRepo
-      .registrarTransicao(
+    await Promise.allSettled([
+      this.estadoRepo.salvarEstadoUsuario(
+        chatId,
+        proximo,
+        nome ?? this.nomeAtual,
+      ),
+      this.estadoRepo.registrarTransicao(
         chatId,
         anterior,
         proximo,
         gatilho ?? this.mensagemAtual,
-      )
-      .catch(() => {});
+      ),
+    ]);
   }
 
   async transitarPorEntrada(

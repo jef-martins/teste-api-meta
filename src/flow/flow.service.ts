@@ -142,8 +142,7 @@ export class FlowService {
       },
     });
 
-    const { estados, transicoes, variaveis } =
-      this.converter.flowToStateMachine(flowJson);
+    const { estados, transicoes } = this.converter.flowToStateMachine(flowJson);
     const { estadosPrefixados, transicoesAtualizadas } = this.aplicarPrefixo(
       fluxo.id,
       estados,

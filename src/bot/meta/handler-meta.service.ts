@@ -82,9 +82,7 @@ export class HandlerMetaService {
       .map((item) => {
         if (typeof item === 'string' || typeof item === 'number') {
           const valor = String(item).trim();
-          return valor
-            ? { entrada: valor, label: valor, descricao: '' }
-            : null;
+          return valor ? { entrada: valor, label: valor, descricao: '' } : null;
         }
 
         if (!item || typeof item !== 'object') {
@@ -124,9 +122,7 @@ export class HandlerMetaService {
         };
       })
       .filter(
-        (
-          item,
-        ): item is { entrada: string; label: string; descricao: string } =>
+        (item): item is { entrada: string; label: string; descricao: string } =>
           !!item,
       );
   }
@@ -198,6 +194,20 @@ export class HandlerMetaService {
       (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
     );
 
+    // Como o motor já filtrou transições exatas, se houver corpo, tentamos a transição curinga (*)
+    if (corpo) {
+      const proximo = await engine.transitarPorEntrada(
+        chatId,
+        estadoAtual,
+        corpo,
+        message,
+        true,
+        null,
+        this as any,
+      );
+      if (proximo) return;
+    }
+
     const mensagens: string[] = config.mensagens ?? [];
     const dadosChat = engine.obterDados(chatId);
     for (const texto of mensagens) {
@@ -255,7 +265,10 @@ export class HandlerMetaService {
     }
 
     let proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, corpo);
-    if (!proximo && (config.transicaoAutomatica || config.transicao_automatica)) {
+    if (
+      !proximo &&
+      (config.transicaoAutomatica || config.transicao_automatica)
+    ) {
       proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
     }
 
@@ -570,10 +583,7 @@ export class HandlerMetaService {
         `[${chatId}] Fallback para texto em _handlerBotoes: ${err.message}`,
       );
       const linhas = botoes.map((b: any) => b.label).join('\n');
-      await this.enviarResposta(
-        message,
-        `${config.titulo ?? ''}\n\n${linhas}`,
-      );
+      await this.enviarResposta(message, `${config.titulo ?? ''}\n\n${linhas}`);
     }
   }
 

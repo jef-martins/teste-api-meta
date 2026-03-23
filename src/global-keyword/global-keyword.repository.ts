@@ -29,8 +29,13 @@ export class GlobalKeywordRepository {
     });
   }
 
-  async criar(data: { keyword: string; estadoDestino: string; ativo: boolean }) {
-    if (!this.prisma.isConnected) throw new Error('Banco de dados indisponível');
+  async criar(data: {
+    keyword: string;
+    estadoDestino: string;
+    ativo: boolean;
+  }) {
+    if (!this.prisma.isConnected)
+      throw new Error('Banco de dados indisponível');
     return this.prisma.botKeywordGlobal.create({
       data,
     });
@@ -40,7 +45,8 @@ export class GlobalKeywordRepository {
     id: string,
     data: { keyword: string; estadoDestino: string; ativo: boolean },
   ) {
-    if (!this.prisma.isConnected) throw new Error('Banco de dados indisponível');
+    if (!this.prisma.isConnected)
+      throw new Error('Banco de dados indisponível');
     return this.prisma.botKeywordGlobal.update({
       where: { id },
       data,
@@ -48,7 +54,8 @@ export class GlobalKeywordRepository {
   }
 
   async atualizarAtivo(id: string, ativo: boolean) {
-    if (!this.prisma.isConnected) throw new Error('Banco de dados indisponível');
+    if (!this.prisma.isConnected)
+      throw new Error('Banco de dados indisponível');
     return this.prisma.botKeywordGlobal.update({
       where: { id },
       data: { ativo },
@@ -56,7 +63,8 @@ export class GlobalKeywordRepository {
   }
 
   async excluir(id: string) {
-    if (!this.prisma.isConnected) throw new Error('Banco de dados indisponível');
+    if (!this.prisma.isConnected)
+      throw new Error('Banco de dados indisponível');
     return this.prisma.botKeywordGlobal.delete({ where: { id } });
   }
 }

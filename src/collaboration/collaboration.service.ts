@@ -77,7 +77,9 @@ export class CollaborationService implements OnModuleDestroy {
 
     if (room.connections.size === 0) {
       room.cleanupTimer = setTimeout(() => {
-        this.cleanupRoom(flowId);
+        this.cleanupRoom(flowId).catch((err) => {
+          this.logger.error(`Erro ao limpar room ${flowId}:`, err);
+        });
       }, ROOM_CLEANUP_TIMEOUT_MS);
     }
   }
@@ -107,9 +109,11 @@ export class CollaborationService implements OnModuleDestroy {
   private schedulePersist(flowId: string, room: Room) {
     if (room.persistTimer) return;
 
-    room.persistTimer = setTimeout(async () => {
+    room.persistTimer = setTimeout(() => {
       room.persistTimer = null;
-      await this.persistUpdates(flowId, room);
+      this.persistUpdates(flowId, room).catch((err) => {
+        this.logger.error(`Erro ao persistir updates da room ${flowId}:`, err);
+      });
     }, PERSIST_DEBOUNCE_MS);
   }
 

@@ -58,7 +58,10 @@ export class BotMetaService {
 
     // Modo de teste: responde apenas ao número do admin
     if (process.env.BOT_MODO_TESTE === 'true') {
-      const numeroAdmin = (process.env.BOT_NUMERO_ADMIN || '').replace(/\D/g, '');
+      const numeroAdmin = (process.env.BOT_NUMERO_ADMIN || '').replace(
+        /\D/g,
+        '',
+      );
       const numeroRemetente = from.replace(/\D/g, '');
       const isAdmin = numeroRemetente === numeroAdmin;
       if (!isAdmin) {
@@ -67,7 +70,9 @@ export class BotMetaService {
       }
     }
 
-    this.logger.log(`Mensagem recebida via Meta [${messageItem.type}] de ${from}`);
+    this.logger.log(
+      `Mensagem recebida via Meta [${messageItem.type}] de ${from}`,
+    );
 
     // Normaliza o corpo da mensagem conforme o tipo
     let corpo = '';
@@ -109,7 +114,13 @@ export class BotMetaService {
       await this.salvarNoBanco(mockMessage, from, phoneId, nome, corpo);
 
       // Processa a mensagem pela máquina de estados
-      await this.engine.process(mockMessage, chatId, corpo, nome, this.handler as any);
+      await this.engine.process(
+        mockMessage,
+        chatId,
+        corpo,
+        nome,
+        this.handler as any,
+      );
     } catch (err: any) {
       this.logger.error(`Erro ao processar mensagem via Meta: ${err.message}`);
     }

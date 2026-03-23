@@ -30,7 +30,6 @@ export interface TransicaoDefault {
 // ─── Definição dos Estados ────────────────────────────────────────────────────
 
 export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
-
   // 1. Estado inicial — solicita aceite LGPD via botões
   INICIO: {
     handler: '_handlerBotoes',
@@ -52,9 +51,9 @@ export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
     config: {
       mensagens: [
         '❌ Entendemos. Para sua segurança e conformidade com a LGPD, não podemos prosseguir sem o seu aceite.\n\n' +
-        'Caso mude de ideia, envie qualquer mensagem para reiniciar o atendimento.',
+          'Caso mude de ideia, envie qualquer mensagem para reiniciar o atendimento.',
       ],
-      transicaoAutomatica: true,
+      transicaoAutomatica: false,
     },
   },
 
@@ -103,8 +102,9 @@ export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
       url: 'http://api2.telecontrol.com.br/institucional-dev/postoMaisProximo/cep/{valor}/limit/3',
       headers: {
         'Access-Application-Key':
-          process.env.TOKEN_BRASLAR || '64b37f479af4007c883406f0b535c432e22c888e',
-        'api_env': 'HOMOLOGATION',
+          process.env.TOKEN_BRASLAR ||
+          '64b37f479af4007c883406f0b535c432e22c888e',
+        api_env: 'HOMOLOGATION',
         'Content-Type': 'application/json',
       },
       // response é um array direto — extrai o array inteiro
@@ -129,13 +129,13 @@ export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
     handler: '_handlerRequisicao',
     descricao: 'Consulta protocolo de atendimento',
     config: {
-      mensagemPedir:
-        'Por favor, digite o número do seu *Protocolo*:',
+      mensagemPedir: 'Por favor, digite o número do seu *Protocolo*:',
       metodo: 'GET',
       url: 'http://backend2.telecontrol.com.br/homologation-api-callcenter/callcenter/{valor}?ultima_obs_sac=true',
       headers: {
         'Access-Application-Key':
-          process.env.TOKEN_BRASLAR || '64b37f479af4007c883406f0b535c432e22c888e',
+          process.env.TOKEN_BRASLAR ||
+          '64b37f479af4007c883406f0b535c432e22c888e',
         'Access-Env': 'HOMOLOGATION',
         'Content-Type': 'application/json',
       },
@@ -168,11 +168,11 @@ export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
       url: 'http://backend2.telecontrol.com.br/os/ordem/os/{valor}',
       headers: {
         'Access-Application-Key':
-          process.env.TOKEN_BRASLAR || '64b37f479af4007c883406f0b535c432e22c888e',
+          process.env.TOKEN_BRASLAR ||
+          '64b37f479af4007c883406f0b535c432e22c888e',
         'Access-Env': 'HOMOLOGATION',
         'Content-Type': 'application/json',
       },
-      // response = { os: [ { consumidor_nome, descricao, status_os, ... } ] }
       campoResposta: 'os',
       mensagemSucesso:
         '🛠 *Detalhes da OS {valor}:*\n\n' +
@@ -197,7 +197,7 @@ export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
     config: {
       mensagens: [
         'Atendimento finalizado. Obrigado por entrar em contato! 👋\n\n' +
-        'Envie qualquer mensagem para iniciar um novo atendimento.',
+          'Envie qualquer mensagem para iniciar um novo atendimento.',
       ],
       transicaoAutomatica: false,
     },
@@ -233,13 +233,9 @@ export const DEFAULT_TRANSICOES: Record<string, TransicaoDefault[]> = {
     { entrada: '*', estadoDestino: 'MENU_PRINCIPAL' },
   ],
 
-  AGUARDANDO_PROTOCOLO: [
-    { entrada: '*', estadoDestino: 'MENU_PRINCIPAL' },
-  ],
+  AGUARDANDO_PROTOCOLO: [{ entrada: '*', estadoDestino: 'MENU_PRINCIPAL' }],
 
-  AGUARDANDO_OS: [
-    { entrada: '*', estadoDestino: 'MENU_PRINCIPAL' },
-  ],
+  AGUARDANDO_OS: [{ entrada: '*', estadoDestino: 'MENU_PRINCIPAL' }],
 
   ENCERRADO: [
     // após despedida, retorna ao início para novo atendimento
