@@ -1,6 +1,41 @@
-const API = 'http://localhost:3000/admin';
+const API = '/api/admin';
 let estadosCache = [];
 let transicoesCache = [];
+let MODO_PADRAO = false;
+
+async function verificarModo() {
+  try {
+    const r = await fetch(API + '/modo');
+    if (!r.ok) return;
+    const dados = await r.json();
+    MODO_PADRAO = dados.modoPadrao === true;
+    const banner = document.getElementById('banner-modo');
+    if (banner) {
+      if (MODO_PADRAO) {
+        banner.style.display = 'flex';
+        banner.innerHTML = `
+          <span>⚠️ <strong>Modo Padrão (Memória)</strong> — BOT_STATE_MACHINE_PADRAO=true. Banco de dados não conectado.
+          As alterações feitas aqui ficarão <strong>ativas enquanto o servidor estiver rodando</strong>, mas serão perdidas ao reiniciar.</span>`;
+      } else {
+        banner.style.display = 'none';
+      }
+    }
+  } catch (e) {
+    console.warn('Não foi possível verificar o modo de operação:', e);
+  }
+}
+
+/** Normaliza para sempre ter estado_origem e estado_destino */
+function normalizarTransicao(t) {
+  return {
+    id: t.id,
+    estado_origem: t.estado_origem ?? t.estadoOrigem,
+    entrada: t.entrada,
+    estado_destino: t.estado_destino ?? t.estadoDestino,
+    ativo: t.ativo,
+  };
+}
+
 
 mermaid.initialize({
   startOnLoad: false,
@@ -26,7 +61,8 @@ async function api(method, path) {
 
 async function carregarDadosERenderizar() {
   estadosCache = await api('GET', '/estados');
-  transicoesCache = await api('GET', '/transicoes');
+  const rawTransicoes = await api('GET', '/transicoes');
+  transicoesCache = Array.isArray(rawTransicoes) ? rawTransicoes.map(normalizarTransicao) : [];
   
   const container = document.getElementById('mermaid-container');
   if (estadosCache.length === 0) {
@@ -92,4 +128,5 @@ async function carregarDadosERenderizar() {
 }
 
 // Inicialização
+verificarModo();
 carregarDadosERenderizar();
