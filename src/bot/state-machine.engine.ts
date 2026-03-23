@@ -21,7 +21,7 @@ export class StateMachineEngine {
   constructor(
     private estadoRepo: EstadoRepository,
     private globalKeywordService: GlobalKeywordService,
-  ) {}
+  ) { }
 
   interpolar(texto: string, variaveis: Record<string, any> = {}): string {
     // Normaliza {{expr}} -> {expr} para suportar ambos os formatos
@@ -164,79 +164,98 @@ export class StateMachineEngine {
     // Se houver entrada, tenta transição EXATA primeiro (ex: "cancelar", "menu")
     // Não usamos wildcard aqui para não roubar a entrada de estados que capturam dados (ex: CEP, CPF)
     if (entradaNormalizada) {
-      const proximo = await this.transitarPorEntrada(
-        chatId,
-        estadoAtual,
-        entradaNormalizada,
-        message,
-        true,
-        nome,
-        actionDelegate,
-        false, // acceptWildcard = false
-      );
+      // aguardarEntrada flag
+      if (config.config?.aguardarEntrada && entrada) {
+        this.logger.log(
+          `[${chatId}] estado aguarda entrada → buscando transição para "${entrada}"`,
+        );
+        const proximo = await this.transitarPorEntrada(
+          chatId,
+          estadoAtual,
+          entradaNormalizada,
+          message,
+          true,
+          nome,
+          actionDelegate,
+          false, // acceptWildcard = false
+        );
 
-      // Se encontrou rota exata, encerra o processamento
-      if (proximo) return;
-    }
+        // Se encontrou rota exata, encerra o processamento
+        if (proximo) return;
 
-    // Se não transitou (ou não houve entrada), executa o handler do estado atual
-    if (typeof actionDelegate[config.handler] === 'function') {
-      await actionDelegate[config.handler](
-        message,
-        chatId,
-        entradaNormalizada,
-        this,
-      );
-    } else {
-      this.logger.error(`Handler "${config.handler}" não existe no Delegate!`);
+        // Nenhuma transição encontrada (ex: usuário enviou msg no estado END do fluxo principal).
+        // Reinicia o fluxo a partir do estado inicial.
+        this.logger.log(
+          `[${chatId}] sem transição no estado "${estadoAtual}" → reiniciando fluxo a partir de "${estadoPadrao}"`,
+        );
+        this.estadosAvisados.delete(chatId);
+        await this.avancarEstado(chatId, estadoPadrao, entrada, nome);
+        const configInicial = await this.estadoRepo.obterConfigEstado(estadoPadrao);
+        if (configInicial && typeof actionDelegate[configInicial.handler] === 'function') {
+          await actionDelegate[configInicial.handler](message, chatId, '', this);
+        }
+
+        return;
+      }
+
+      // Se não transitou (ou não houve entrada), executa o handler do estado atual
+      if (typeof actionDelegate[config.handler] === 'function') {
+        await actionDelegate[config.handler](
+          message,
+          chatId,
+          entradaNormalizada,
+          this,
+        );
+      } else {
+        this.logger.error(`Handler "${config.handler}" não existe no Delegate!`);
+      }
     }
-  }
 
   async avancarEstado(
-    chatId: string,
-    proximo: string,
-    gatilho?: string | null,
-    nome?: string | null,
-  ) {
-    const anterior = this.estadosUsuarios.get(chatId) ?? 'NOVO';
-    this.estadosUsuarios.set(chatId, proximo);
-    this.logger.log(`[${chatId}] transição: ${anterior} → ${proximo}`);
+      chatId: string,
+      proximo: string,
+      gatilho ?: string | null,
+      nome ?: string | null,
+    ) {
+      const anterior = this.estadosUsuarios.get(chatId) ?? 'NOVO';
+      this.estadosUsuarios.set(chatId, proximo);
+      this.logger.log(`[${chatId}] transição: ${anterior} → ${proximo}`);
 
-    await Promise.allSettled([
-      this.estadoRepo.salvarEstadoUsuario(
-        chatId,
-        proximo,
-        nome ?? this.nomeAtual,
-      ),
-      this.estadoRepo.registrarTransicao(
-        chatId,
-        anterior,
-        proximo,
-        gatilho ?? this.mensagemAtual,
-      ),
-    ]);
-  }
+      await Promise.allSettled([
+        this.estadoRepo.salvarEstadoUsuario(
+          chatId,
+          proximo,
+          nome ?? this.nomeAtual,
+        ),
+        this.estadoRepo.registrarTransicao(
+          chatId,
+          anterior,
+          proximo,
+          gatilho ?? this.mensagemAtual,
+        ),
+      ]);
+    }
 
   async transitarPorEntrada(
-    chatId: string,
-    estadoAtual: string,
-    entrada: string,
-    message: any,
-    executarHandler = true,
-    nome: string | null = null,
-    actionDelegate?: any,
-    acceptWildcard = true,
-  ): Promise<string | null> {
-    const proximo = await this.estadoRepo.buscarProximoEstado(
-      estadoAtual,
-      entrada,
-      acceptWildcard,
-    );
-    if (!proximo) return null;
+      chatId: string,
+      estadoAtual: string,
+      entrada: string,
+      message: any,
+      executarHandler = true,
+      nome: string | null = null,
+      actionDelegate ?: any,
+      acceptWildcard = true,
+    ): Promise < string | null > {
+      const proximo = await this.estadoRepo.buscarProximoEstado(
+        estadoAtual,
+        entrada,
+        acceptWildcard,
+      );
+      if(!proximo) return null;
 
-    await this.avancarEstado(chatId, proximo, this.mensagemAtual, nome);
+      await this.avancarEstado(chatId, proximo, this.mensagemAtual, nome);
 
-    if (executarHandler && actionDelegate) {
+      if(executarHandler && actionDelegate) {
       const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
       if (
         configProximo &&

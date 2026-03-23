@@ -216,6 +216,18 @@ export class HandlerService {
 
     if (config.transicaoAutomatica || config.transicao_automatica) {
       await engine.transitarPorEntrada(chatId, estadoAtual, '*', message, true, null, this);
+      return;
+    }
+
+    // Nós que não têm transicaoAutomatica (ex: END dentro de um componente personalizado)
+    // mas possuem uma transição '*' de saída devem avançar automaticamente quando
+    // chamados via auto-transição (corpo vazio). Isso evita que o bot fique aguardando
+    // input do usuário ao sair de um componente que não tem "Aguardar resposta".
+    if (!corpo) {
+      const proximoAuto = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+      if (proximoAuto) {
+        await this.avancarEExecutar(proximoAuto, message, chatId, '', engine, '[auto-exit]');
+      }
     }
   }
 
