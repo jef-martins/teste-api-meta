@@ -150,6 +150,20 @@ export class HandlerService {
       (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
     );
 
+    // Como o motor já filtrou transições exatas, se houver corpo, tentamos a transição curinga (*)
+    if (corpo) {
+      const proximo = await engine.transitarPorEntrada(
+        chatId,
+        estadoAtual,
+        corpo,
+        message,
+        true,
+        null,
+        this,
+      );
+      if (proximo) return;
+    }
+
     const mensagens = config.mensagens ?? [];
     const dadosChat = engine.obterDados(chatId);
     for (const texto of mensagens) {

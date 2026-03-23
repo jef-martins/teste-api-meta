@@ -143,14 +143,9 @@ export class StateMachineEngine {
     this.mensagemAtual = entradaBruta;
     this.nomeAtual = nome;
 
-    const aguardaEntrada = config.config?.aguardarEntrada === true;
-
-    // Se houver entrada, sempre tenta transitar primeiro (global para todos os estados)
+    // Se houver entrada, tenta transição EXATA primeiro (ex: "cancelar", "menu")
+    // Não usamos wildcard aqui para não roubar a entrada de estados que capturam dados (ex: CEP, CPF)
     if (entradaNormalizada) {
-      // Se o estado AGUARDA entrada (ex: pedir CEP), não aceitamos fallback curinga (*) 
-      // para evitar pular a captura do dado. Apenas transições exatas (ex: "cancelar") são aceitas.
-      const acceptWildcard = !aguardaEntrada;
-
       const proximo = await this.transitarPorEntrada(
         chatId,
         estadoAtual,
@@ -159,10 +154,10 @@ export class StateMachineEngine {
         true,
         nome,
         actionDelegate,
-        acceptWildcard,
+        false, // acceptWildcard = false
       );
 
-      // Se transitou (encontrou rota exata ou curinga permitido), encerra o processamento desta mensagem
+      // Se encontrou rota exata, encerra o processamento
       if (proximo) return;
     }
 
