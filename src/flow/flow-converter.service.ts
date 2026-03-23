@@ -213,6 +213,40 @@ export class FlowConverterService {
       case 'decision':
         return this.decisionNodeToHandler(props);
 
+      case 'buttons': {
+        const botoes = (props.botoes || []).map((b: any) => ({
+          entrada: b.entrada || b.label || '',
+          label: b.label || b.entrada || '',
+        }));
+        return {
+          handler: '_handlerBotoes',
+          config: {
+            titulo: props.titulo || props.label || '',
+            ...(props.cabecalho ? { cabecalho: props.cabecalho } : {}),
+            ...(props.rodape ? { rodape: props.rodape } : {}),
+            botoes,
+          },
+        };
+      }
+
+      case 'listMenu': {
+        const opcoes = (props.opcoes || []).map((o: any) => ({
+          entrada: o.entrada || o.label || '',
+          label: o.label || o.entrada || '',
+          ...(o.descricao ? { descricao: o.descricao } : {}),
+        }));
+        return {
+          handler: '_handlerLista',
+          config: {
+            titulo: props.titulo || props.label || '',
+            botaoTexto: props.botaoTexto || 'Ver opções',
+            secaoTitulo: props.secaoTitulo || 'Opções',
+            ...(props.rodape ? { rodape: props.rodape } : {}),
+            opcoes,
+          },
+        };
+      }
+
       case 'action':
         return this.actionNodeToHandler(props, subs);
 
@@ -425,6 +459,30 @@ export class FlowConverterService {
       return conn.label || '*';
     }
 
+    if (sourceNode.type === 'buttons') {
+      if (conn.label?.trim()) return conn.label.trim();
+      if (conn.sourcePort === 'output-default') return '*';
+      const portMatch = conn.sourcePort?.match(/^output-(\d+)$/);
+      if (portMatch) {
+        const idx = parseInt(portMatch[1], 10);
+        const botoes = sourceNode.properties?.botoes || [];
+        return botoes[idx]?.entrada || botoes[idx]?.label || String(idx + 1);
+      }
+      return conn.label || '*';
+    }
+
+    if (sourceNode.type === 'listMenu') {
+      if (conn.label?.trim()) return conn.label.trim();
+      if (conn.sourcePort === 'output-default') return '*';
+      const portMatch = conn.sourcePort?.match(/^output-(\d+)$/);
+      if (portMatch) {
+        const idx = parseInt(portMatch[1], 10);
+        const opcoes = sourceNode.properties?.opcoes || [];
+        return opcoes[idx]?.entrada || opcoes[idx]?.label || String(idx + 1);
+      }
+      return conn.label || '*';
+    }
+
     return '*';
   }
 
@@ -505,9 +563,10 @@ export class FlowConverterService {
         return 'message';
       case '_handlerCapturar':
         return 'message';
-      case '_handlerLista':
       case '_handlerBotoes':
-        return 'decision';
+        return 'buttons';
+      case '_handlerLista':
+        return 'listMenu';
       case '_handlerRequisicao':
         return 'action';
       case '_handlerSetVariable':
@@ -536,6 +595,38 @@ export class FlowConverterService {
           label: estadoName || 'End',
           mensagemFim: config.mensagens?.[0] || '',
         };
+
+      case 'buttons': {
+        const botoes = (config.botoes || []).map((b: any, i: number) => ({
+          id: `btn-${Date.now()}-${i}`,
+          label: b.label || b.entrada || '',
+          entrada: b.entrada || b.label || '',
+        }));
+        return {
+          label: estadoName || 'Botões',
+          titulo: config.titulo || '',
+          cabecalho: config.cabecalho || '',
+          rodape: config.rodape || '',
+          botoes,
+        };
+      }
+
+      case 'listMenu': {
+        const opcoes = (config.opcoes || []).map((o: any, i: number) => ({
+          id: `opt-${Date.now()}-${i}`,
+          label: o.label || o.entrada || '',
+          entrada: o.entrada || o.label || '',
+          descricao: o.descricao || '',
+        }));
+        return {
+          label: estadoName || 'Menu de Lista',
+          titulo: config.titulo || '',
+          botaoTexto: config.botaoTexto || 'Ver opções',
+          secaoTitulo: config.secaoTitulo || 'Opções',
+          rodape: config.rodape || '',
+          opcoes,
+        };
+      }
 
       case 'message': {
         if (handler === '_handlerCapturar') {
@@ -589,6 +680,7 @@ export class FlowConverterService {
         }));
         return { label: config.titulo || estadoName || 'Decision', conditions };
       }
+
 
       case 'action': {
         // setVariable handler → reconstruct setVariable sub-component
@@ -665,7 +757,10 @@ export class FlowConverterService {
     sourceNode: any,
     todasTransicoes: any[],
   ): string {
-    if (!sourceNode || sourceNode.type !== 'decision') return 'output';
+    const isMultiOutput =
+      ['decision', 'buttons', 'listMenu'].includes(sourceNode?.type);
+
+    if (!sourceNode || !isMultiOutput) return 'output';
     if (transicao.entrada === '*') return 'output-default';
 
     const transicoesDoEstado = todasTransicoes

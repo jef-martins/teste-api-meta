@@ -17,7 +17,7 @@ export class HandlerService {
   /** Set by BotService after WPPConnect initialization */
   client: any = null;
 
-  constructor(private estadoRepo: EstadoRepository) {}
+  constructor(private estadoRepo: EstadoRepository) { }
 
   private parseConfig(config: any) {
     if (typeof config === 'string') {
@@ -81,24 +81,24 @@ export class HandlerService {
 
         const entrada = String(
           item.entrada ??
-            item.id ??
-            item.rowId ??
-            item.value ??
-            item.payload ??
-            item.label ??
-            item.title ??
-            item.text ??
-            '',
+          item.id ??
+          item.rowId ??
+          item.value ??
+          item.payload ??
+          item.label ??
+          item.title ??
+          item.text ??
+          '',
         ).trim();
         const label = String(
           item.label ??
-            item.title ??
-            item.text ??
-            item.entrada ??
-            item.id ??
-            item.value ??
-            item.payload ??
-            '',
+          item.title ??
+          item.text ??
+          item.entrada ??
+          item.id ??
+          item.value ??
+          item.payload ??
+          '',
         ).trim();
 
         if (!entrada && !label) {
@@ -364,15 +364,36 @@ export class HandlerService {
     );
 
     if (corpo) {
-      const proximo = await this.estadoRepo.buscarProximoEstado(
+      let proximo = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
         corpo,
       );
+
+      // Fallback: match by option label (for clients that return label text instead of rowId)
+      if (!proximo) {
+        const opcoes: any[] = config.opcoes ?? [];
+        const match = opcoes.find(
+          (o: any) => (o.label || '').toLowerCase() === corpo.toLowerCase(),
+        );
+        if (match) {
+          proximo = await this.estadoRepo.buscarProximoEstado(
+            estadoAtual,
+            match.entrada,
+          );
+        }
+      }
+
       if (proximo) {
         return await this.avancarEExecutar(proximo, message, chatId, '', engine, corpo);
-      } else {
-        return await this.enviarResposta(message, config.mensagemInvalida ?? '⚠️ Opção inválida.');
       }
+
+      // Fallback: try the default/padrão (*) transition
+      const proximoPadrao = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+      if (proximoPadrao) {
+        return await this.avancarEExecutar(proximoPadrao, message, chatId, '', engine, corpo);
+      }
+
+      return await this.enviarResposta(message, config.mensagemInvalida ?? '⚠️ Opção inválida.');
     }
 
     const destino = message.from;
@@ -436,12 +457,34 @@ export class HandlerService {
     );
 
     if (corpo) {
-      const proximo = await this.estadoRepo.buscarProximoEstado(
+      let proximo = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
         corpo,
       );
+
+      // Fallback: match by button label (for text replies of buttons)
+      if (!proximo) {
+        const botoes: any[] = config.botoes ?? [];
+        const match = botoes.find(
+          (b: any) => (b.label || '').toLowerCase() === corpo.toLowerCase(),
+        );
+        if (match) {
+          proximo = await this.estadoRepo.buscarProximoEstado(
+            estadoAtual,
+            match.entrada,
+          );
+        }
+      }
+
       if (proximo) {
         await this.avancarEExecutar(proximo, message, chatId, '', engine, corpo);
+        return;
+      }
+
+      // Fallback: try the default/padrão (*) transition
+      const proximoPadrao = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+      if (proximoPadrao) {
+        await this.avancarEExecutar(proximoPadrao, message, chatId, '', engine, corpo);
         return;
       }
     }
@@ -457,22 +500,17 @@ export class HandlerService {
     }
 
     try {
+      const linhas = (config.botoes ?? []).map((b: any) => `*${b.entrada}* - ${b.label}`).join('\n');
+      const rodape = config.rodape ? `\n\n_${config.rodape}_` : '';
+      const cabecalho = config.cabecalho ? `*${config.cabecalho}*\n\n` : '';
+
       await this.client.sendText(
         message.from,
-        config.titulo ?? 'Escolha uma opção:',
-        {
-          useTemplateButtons: true,
-          title: config.cabecalho ?? undefined,
-          footer: config.rodape ?? undefined,
-          buttons: botoes.slice(0, 3).map((b: any) => ({
-            id: b.entrada,
-            text: b.label,
-          })),
-        },
+        `${cabecalho}${config.titulo ?? 'Escolha uma opção:'}\n\n${linhas}${rodape}`
       );
     } catch (err: any) {
       this.logger.error(`Erro ao enviar botões: ${err.message}`);
-      const linhas = botoes.map((b: any) => b.label).join('\n');
+      const linhas = (config.botoes ?? []).map((b: any) => `*${b.entrada}* - ${b.label}`).join('\n');
       await this.enviarResposta(message, `${config.titulo ?? ''}\n\n${linhas}`);
     }
   }
@@ -627,6 +665,8 @@ export class HandlerService {
         resposta = await res.json();
       }
 
+      resposta = JSON.stringify(resposta);
+
       // Salva a resposta completa na variável nomeada (acessível em estados seguintes)
       const nomeVariavel = config.variavelResposta || config.campoResposta;
       if (nomeVariavel) {
@@ -670,7 +710,7 @@ export class HandlerService {
                 ...objLimpo,
               };
               return engine.interpolar(
-                config.mensagemSucesso ?? '✅ {resposta}',
+                config.mensagemSucesso ?? '✅ \n {resposta}',
                 vars,
               );
             });
@@ -692,7 +732,7 @@ export class HandlerService {
             variaveis = { ...variaveis, ...this.limparHtml(valorExtraido) };
           }
           const msgSucesso = engine.interpolar(
-            config.mensagemSucesso ?? '✅ Resposta: {resposta}',
+            config.mensagemSucesso ?? '✅ Resposta:  \n {resposta}',
             variaveis,
           );
           await this.enviarResposta(message, msgSucesso);
