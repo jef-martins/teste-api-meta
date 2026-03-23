@@ -88,7 +88,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
   private async enviarMensagemDeInicializacao() {
     const numero = process.env.BOT_NUMERO_ADMIN || '5514998089672@c.us';
-    const texto = '🚀 Bot online e operante via WPPConnect!';
+    const texto = '🚀 Bot online e operante via NestJS + WPPConnect!';
 
     try {
       await this.client.sendText(
@@ -120,25 +120,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
       // Test mode: only respond to admin
       if (process.env.BOT_MODO_TESTE === 'true') {
-        const numeroAdmin = (process.env.BOT_NUMERO_ADMIN || '').replace(/\D/g, '');
-        const lidAdmin = (process.env.BOT_LID_ADMIN || '').replace(/\D/g, '');
-
-        // Coleta todos os identificadores disponíveis — WPPConnect pode retornar
-        // LID (ex: 212880154751044@lid) ou número (ex: 5514998084367@c.us) dependendo
-        // da versão. Verificar todos os candidatos garante compatibilidade.
-        const candidatos: string[] = [
-          message.from,
-          message.chatId,
-          message.author,
-          message.sender?.id?.user,
-          message.sender?.id?._serialized,
-        ]
-          .filter(Boolean)
-          .map((v: string) => v.split('@')[0].replace(/\D/g, ''));
-
-        const isAdmin = candidatos.some(
-          (c) => c === numeroAdmin || (lidAdmin && c === lidAdmin),
+        const numeroAdmin = (process.env.BOT_NUMERO_ADMIN || '').replace(
+          /\D/g,
+          '',
         );
+        const lidAdmin = (process.env.BOT_LID_ADMIN || '').replace(/\D/g, '');
+        const numeroRemetente = (message.from || '')
+          .split('@')[0]
+          .replace(/\D/g, '');
+
+        const isAdmin =
+          numeroRemetente === numeroAdmin ||
+          (lidAdmin && numeroRemetente === lidAdmin);
         if (!isAdmin) return;
       }
 
@@ -163,22 +156,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     let corpo = '';
     if (message.type === 'list_response') {
-      corpo = (
-        message.listResponse?.singleSelectReply?.selectedRowId ||
-        message.selectedRowId ||
-        message.body ||
-        message.content ||
-        ''
-      ).trim().toLowerCase();
-    } else if (message.type === 'buttons_response' || message.type === 'template_button_reply') {
-      corpo = (
-        message.buttonsResponse?.selectedButtonId ||
-        message.templateButtonReplyMessage?.selectedId ||
-        message.selectedButtonId ||
-        message.body ||
-        message.content ||
-        ''
-      ).trim().toLowerCase();
+      corpo = (message.selectedRowId || '').trim().toLowerCase();
+    } else if (message.type === 'buttons_response') {
+      corpo = (message.selectedButtonId || '').trim().toLowerCase();
     } else {
       corpo = (message.body || message.content || '').trim();
     }
