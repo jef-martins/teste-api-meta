@@ -52,6 +52,7 @@ export class DefaultEstadoRepository {
   async buscarProximoEstado(
     estadoAtual: string,
     entrada: string,
+    acceptWildcard = true,
   ): Promise<string | null> {
     const transicoes = DEFAULT_TRANSICOES[estadoAtual] ?? [];
     const transicoesAtivas = transicoes.filter((t) => t.ativo !== false);
@@ -61,7 +62,7 @@ export class DefaultEstadoRepository {
     if (exactMatch) return exactMatch.estadoDestino;
 
     // 2. Wildcard fallback
-    if (entrada !== '*') {
+    if (acceptWildcard && entrada !== '*') {
       const wildcard = transicoesAtivas.find((t) => t.entrada === '*');
       if (wildcard) return wildcard.estadoDestino;
     }

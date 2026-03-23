@@ -75,13 +75,18 @@ export class StateMachineEngine {
     const entradaBruta = typeof entradaOriginal === 'string' ? entradaOriginal.trim() : '';
     const entradaNormalizada = entradaBruta.toLowerCase();
 
-    const estadoSalvo = await this.estadoRepo.obterEstadoUsuario(chatId);
     const estadoPadrao = await this.estadoRepo.obterEstadoInicial();
-    this.estadosUsuarios.set(chatId, estadoSalvo ?? estadoPadrao);
 
-    if (estadoSalvo && !this.estadosAvisados.has(chatId)) {
-      this.logger.log(`[${chatId}] estado restaurado do banco: ${estadoSalvo}`);
-      this.estadosAvisados.add(chatId);
+    let estadoAtualUsuario = this.estadosUsuarios.get(chatId);
+    if (!estadoAtualUsuario) {
+      const estadoSalvo = await this.estadoRepo.obterEstadoUsuario(chatId);
+      estadoAtualUsuario = estadoSalvo ?? estadoPadrao;
+      this.estadosUsuarios.set(chatId, estadoAtualUsuario);
+
+      if (estadoSalvo && !this.estadosAvisados.has(chatId)) {
+        this.logger.log(`[${chatId}] estado restaurado do banco: ${estadoSalvo}`);
+        this.estadosAvisados.add(chatId);
+      }
     }
 
     this.mensagemAtual = entradaNormalizada;
@@ -138,26 +143,14 @@ export class StateMachineEngine {
     this.mensagemAtual = entradaBruta;
     this.nomeAtual = nome;
 
-    // aguardarEntrada flag
-    if (config.config?.aguardarEntrada && entradaNormalizada) {
-      this.logger.log(
-        `[${chatId}] estado aguarda entrada → buscando transição para "${entradaNormalizada}"`,
-      );
-      await this.transitarPorEntrada(
-        chatId,
-        estadoAtual,
-        entradaNormalizada,
-        message,
-        true,
-        nome,
-        actionDelegate,
-        false, // <--- Aqui: Não aceita curinga (*) para evitar pular estados como AGUARDANDO_CEP
-      );
-      return;
-    }
+    const aguardaEntrada = config.config?.aguardarEntrada === true;
 
     // Se houver entrada, sempre tenta transitar primeiro (global para todos os estados)
     if (entradaNormalizada) {
+      // Se o estado AGUARDA entrada (ex: pedir CEP), não aceitamos fallback curinga (*) 
+      // para evitar pular a captura do dado. Apenas transições exatas (ex: "cancelar") são aceitas.
+      const acceptWildcard = !aguardaEntrada;
+
       const proximo = await this.transitarPorEntrada(
         chatId,
         estadoAtual,
@@ -166,10 +159,10 @@ export class StateMachineEngine {
         true,
         nome,
         actionDelegate,
-        false, // <--- Aqui: Não aceita curinga (*) para evitar pular estados como AGUARDANDO_CEP
+        acceptWildcard,
       );
 
-      // Se transitou, encerra o processamento desta mensagem
+      // Se transitou (encontrou rota exata ou curinga permitido), encerra o processamento desta mensagem
       if (proximo) return;
     }
 
@@ -196,18 +189,15 @@ export class StateMachineEngine {
     this.estadosUsuarios.set(chatId, proximo);
     this.logger.log(`[${chatId}] transição: ${anterior} → ${proximo}`);
 
-    // Fire-and-forget persistence
-    this.estadoRepo
-      .salvarEstadoUsuario(chatId, proximo, nome ?? this.nomeAtual)
-      .catch(() => {});
-    this.estadoRepo
-      .registrarTransicao(
+    await Promise.allSettled([
+      this.estadoRepo.salvarEstadoUsuario(chatId, proximo, nome ?? this.nomeAtual),
+      this.estadoRepo.registrarTransicao(
         chatId,
         anterior,
         proximo,
         gatilho ?? this.mensagemAtual,
-      )
-      .catch(() => {});
+      ),
+    ]);
   }
 
   async transitarPorEntrada(
