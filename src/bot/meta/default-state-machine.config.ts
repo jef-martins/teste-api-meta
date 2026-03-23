@@ -199,7 +199,7 @@ export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
         'Atendimento finalizado. Obrigado por entrar em contato! 👋\n\n' +
         'Envie qualquer mensagem para iniciar um novo atendimento.',
       ],
-      transicaoAutomatica: true,
+      transicaoAutomatica: false,
     },
   },
 };

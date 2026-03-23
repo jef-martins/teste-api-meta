@@ -197,8 +197,8 @@ export class HandlerMetaService {
     const config = this.parseConfig(
       (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
     );
-    const mensagens: string[] = config.mensagens ?? [];
 
+    const mensagens: string[] = config.mensagens ?? [];
     const dadosChat = engine.obterDados(chatId);
     for (const texto of mensagens) {
       const textoInterpolado = engine.interpolar(texto, dadosChat);

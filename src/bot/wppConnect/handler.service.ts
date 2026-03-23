@@ -146,10 +146,11 @@ export class HandlerService {
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
-    const mensagens = config.mensagens ?? [];
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
 
+    const mensagens = config.mensagens ?? [];
     const dadosChat = engine.obterDados(chatId);
     for (const texto of mensagens) {
       const textoInterpolado = engine.interpolar(texto, dadosChat);

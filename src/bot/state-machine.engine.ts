@@ -136,12 +136,9 @@ export class StateMachineEngine {
       `[${chatId}] estado=${estadoAtual} → handler=${config.handler}`,
     );
 
-    // aguardarEntrada flag
-    if (config.config?.aguardarEntrada && entradaNormalizada) {
-      this.logger.log(
-        `[${chatId}] estado aguarda entrada → buscando transição para "${entradaNormalizada}"`,
-      );
-      await this.transitarPorEntrada(
+    // Se houver entrada, sempre tenta transitar primeiro (global para todos os estados)
+    if (entradaNormalizada) {
+      const proximo = await this.transitarPorEntrada(
         chatId,
         estadoAtual,
         entradaNormalizada,
@@ -150,11 +147,19 @@ export class StateMachineEngine {
         nome,
         actionDelegate,
       );
-      return;
+
+      // Se transitou, encerra o processamento desta mensagem
+      if (proximo) return;
     }
 
+    // Se não transitou (ou não houve entrada), executa o handler do estado atual
     if (typeof actionDelegate[config.handler] === 'function') {
-      await actionDelegate[config.handler](message, chatId, entradaNormalizada, this);
+      await actionDelegate[config.handler](
+        message,
+        chatId,
+        entradaNormalizada,
+        this,
+      );
     } else {
       this.logger.error(`Handler "${config.handler}" não existe no Delegate!`);
     }
