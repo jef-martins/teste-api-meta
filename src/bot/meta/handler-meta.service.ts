@@ -292,7 +292,34 @@ export class HandlerMetaService {
     }
 
     // Monta o payload de lista interativa
-    const opcoes = config.opcoes ?? [];
+    let opcoes = config.opcoes ?? [];
+    if (typeof opcoes === 'string') {
+      try {
+        opcoes = JSON.parse(opcoes);
+      } catch {
+        opcoes = [];
+      }
+    }
+    if (!Array.isArray(opcoes)) {
+      if (
+        opcoes &&
+        typeof opcoes === 'object' &&
+        ('entrada' in opcoes || 'label' in opcoes)
+      ) {
+        opcoes = [opcoes];
+      } else {
+        opcoes =
+          opcoes && typeof opcoes === 'object'
+            ? Object.values(opcoes).filter(
+                (op): op is Record<string, any> =>
+                  !!op && typeof op === 'object',
+              )
+            : [];
+      }
+      this.logger.warn(
+        `[${chatId}] Config de lista recebida com formato inesperado; normalizando "opcoes".`,
+      );
+    }
     const titulo = (config.titulo ?? 'Menu').substring(0, 1024);
     const destino = message.from.replace(/@(meta|c\.us)$/, '');
 
@@ -310,9 +337,12 @@ export class HandlerMetaService {
             {
               title: (config.secaoTitulo ?? 'Opções').substring(0, 24),
               rows: opcoes.slice(0, 10).map((op: any) => ({
-                id: String(op.entrada).substring(0, 200),
-                title: op.label.substring(0, 24),
-                description: (op.descricao || '').substring(0, 72),
+                id: String(op.entrada ?? op.label ?? '').substring(0, 200),
+                title: String(op.label ?? op.entrada ?? 'Opção').substring(
+                  0,
+                  24,
+                ),
+                description: String(op.descricao ?? '').substring(0, 72),
               })),
             },
           ],
@@ -331,7 +361,12 @@ export class HandlerMetaService {
         `[${chatId}] Fallback para texto em _handlerLista: ${err.message}`,
       );
       const linhas = opcoes
-        .map((o: any) => `*${o.entrada}* - ${o.label}`)
+        .map(
+          (o: any) =>
+            `*${String(o.entrada ?? o.label ?? '')}* - ${String(
+              o.label ?? o.entrada ?? 'Opção',
+            )}`,
+        )
         .join('\n');
       await this.enviarResposta(message, `${titulo}\n\n${linhas}`);
     }
@@ -379,7 +414,36 @@ export class HandlerMetaService {
       }
     }
 
-    const botoes = config.botoes ?? [];
+    // Monta o payload de botões (máx 3)
+    let botoes = config.botoes ?? [];
+    if (typeof botoes === 'string') {
+      try {
+        botoes = JSON.parse(botoes);
+      } catch {
+        botoes = [];
+      }
+    }
+
+    if (!Array.isArray(botoes)) {
+      if (
+        botoes &&
+        typeof botoes === 'object' &&
+        ('entrada' in botoes || 'label' in botoes)
+      ) {
+        botoes = [botoes];
+      } else {
+        botoes =
+          botoes && typeof botoes === 'object'
+            ? Object.values(botoes).filter(
+                (b): b is Record<string, any> => !!b && typeof b === 'object',
+              )
+            : [];
+      }
+      this.logger.warn(
+        `[${chatId}] _handlerBotoes: Config de botões recebida com formato inesperado; normalizando.`,
+      );
+    }
+
     const botoesLimitados = botoes.slice(0, 3);
 
     if (botoes.length > 3) {
