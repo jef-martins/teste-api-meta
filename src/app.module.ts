@@ -10,7 +10,7 @@ import { AdminModule } from './admin/admin.module';
 import { CollaborationModule } from './collaboration/collaboration.module';
 import { BotModule } from './bot/wppConnect/bot.module';
 import { OrganizationModule } from './organization/organization.module';
-import { ApiRegistryModule } from './api-registry/api-registry.module'; 
+import { ApiRegistryModule } from './api-registry/api-registry.module';
 import { HealthController } from './health.controller';
 import { BotMetaModule } from './bot/meta/bot-meta.module';
 import { GlobalKeywordModule } from './global-keyword/global-keyword.module';
@@ -28,7 +28,7 @@ import { GlobalKeywordModule } from './global-keyword/global-keyword.module';
 const isDevelopment = process.env.NODE_ENV === 'development';
 
 const botChannelModules = isDevelopment
-  ? [BotModule]            // development: apenas WPPConnect
+  ? [BotModule] // development: apenas WPPConnect
   : [BotModule, BotMetaModule]; // production: Meta ativo (WPPConnect se desativa internamente)
 
 @Module({

@@ -84,4 +84,7 @@ async function bootstrap() {
   );
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('[API] Erro ao iniciar a aplicação:', err);
+  process.exit(1);
+});

@@ -82,9 +82,7 @@ export class HandlerMetaService {
       .map((item) => {
         if (typeof item === 'string' || typeof item === 'number') {
           const valor = String(item).trim();
-          return valor
-            ? { entrada: valor, label: valor, descricao: '' }
-            : null;
+          return valor ? { entrada: valor, label: valor, descricao: '' } : null;
         }
 
         if (!item || typeof item !== 'object') {
@@ -124,9 +122,7 @@ export class HandlerMetaService {
         };
       })
       .filter(
-        (
-          item,
-        ): item is { entrada: string; label: string; descricao: string } =>
+        (item): item is { entrada: string; label: string; descricao: string } =>
           !!item,
       );
   }
@@ -269,7 +265,10 @@ export class HandlerMetaService {
     }
 
     let proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, corpo);
-    if (!proximo && (config.transicaoAutomatica || config.transicao_automatica)) {
+    if (
+      !proximo &&
+      (config.transicaoAutomatica || config.transicao_automatica)
+    ) {
       proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
     }
 
@@ -584,10 +583,7 @@ export class HandlerMetaService {
         `[${chatId}] Fallback para texto em _handlerBotoes: ${err.message}`,
       );
       const linhas = botoes.map((b: any) => b.label).join('\n');
-      await this.enviarResposta(
-        message,
-        `${config.titulo ?? ''}\n\n${linhas}`,
-      );
+      await this.enviarResposta(message, `${config.titulo ?? ''}\n\n${linhas}`);
     }
   }
 

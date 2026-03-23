@@ -151,7 +151,13 @@ export class AdminService {
 
   async listarTransicoes() {
     if (this.isDefaultMode()) {
-      const transicoes: Array<{ id: string | undefined; estado_origem: string; entrada: string; estado_destino: string; ativo: boolean }> = [];
+      const transicoes: Array<{
+        id: string | undefined;
+        estado_origem: string;
+        entrada: string;
+        estado_destino: string;
+        ativo: boolean;
+      }> = [];
       for (const [estadoOrigem, lista] of Object.entries(DEFAULT_TRANSICOES)) {
         for (const t of lista) {
           transicoes.push({

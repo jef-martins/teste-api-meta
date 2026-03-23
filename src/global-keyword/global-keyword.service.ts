@@ -96,7 +96,9 @@ export class GlobalKeywordService {
   }
 
   private buscarMemoriaPorKeyword(keyword: string) {
-    return this.keywordsMemoria.find((item) => item.keyword === keyword) ?? null;
+    return (
+      this.keywordsMemoria.find((item) => item.keyword === keyword) ?? null
+    );
   }
 
   async listar() {
@@ -137,7 +139,11 @@ export class GlobalKeywordService {
       throw new ConflictException('Já existe uma keyword com esse valor.');
     }
 
-    const criado = await this.repository.criar({ keyword, estadoDestino, ativo });
+    const criado = await this.repository.criar({
+      keyword,
+      estadoDestino,
+      ativo,
+    });
     return this.serializar(criado);
   }
 

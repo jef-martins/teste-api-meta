@@ -26,7 +26,7 @@ export class DefaultEstadoRepository {
    * Retorna a configuração de um estado da máquina padrão.
    * Equivalente a bot_estado_config no banco de dados.
    */
-  async obterConfigEstado(estado: string): Promise<{
+  obterConfigEstado(estado: string): Promise<{
     handler: string;
     descricao: string;
     config: any;
@@ -36,20 +36,20 @@ export class DefaultEstadoRepository {
       this.logger.warn(
         `[DefaultRepo] Estado "${estado}" não existe na máquina padrão ou está inativo.`,
       );
-      return null;
+      return Promise.resolve(null);
     }
-    return {
+    return Promise.resolve({
       handler: cfg.handler,
       descricao: cfg.descricao,
       config: cfg.config,
-    };
+    });
   }
 
   /**
    * Retorna o próximo estado com base no estado atual e na entrada do usuário.
    * Busca correspondência exata primeiro; depois wildcard '*'.
    */
-  async buscarProximoEstado(
+  buscarProximoEstado(
     estadoAtual: string,
     entrada: string,
     acceptWildcard = true,
@@ -59,30 +59,30 @@ export class DefaultEstadoRepository {
 
     // 1. Correspondência exata
     const exactMatch = transicoesAtivas.find((t) => t.entrada === entrada);
-    if (exactMatch) return exactMatch.estadoDestino;
+    if (exactMatch) return Promise.resolve(exactMatch.estadoDestino);
 
     // 2. Wildcard fallback
     if (acceptWildcard && entrada !== '*') {
       const wildcard = transicoesAtivas.find((t) => t.entrada === '*');
-      if (wildcard) return wildcard.estadoDestino;
+      if (wildcard) return Promise.resolve(wildcard.estadoDestino);
     }
 
-    return null;
+    return Promise.resolve(null);
   }
 
   /**
    * Retorna o estado atual do usuário da memória.
    * Retorna null se for a primeira interação do usuário.
    */
-  async obterEstadoUsuario(chatId: string): Promise<string | null> {
-    return this.userStates.get(chatId) ?? null;
+  obterEstadoUsuario(chatId: string): Promise<string | null> {
+    return Promise.resolve(this.userStates.get(chatId) ?? null);
   }
 
   /**
    * Salva o estado atual do usuário na memória.
    * O parâmetro `nome` é aceito para compatibilidade de interface mas não usado.
    */
-  async salvarEstadoUsuario(
+  salvarEstadoUsuario(
     chatId: string,
     estado: string,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -90,13 +90,14 @@ export class DefaultEstadoRepository {
   ): Promise<void> {
     this.userStates.set(chatId, estado);
     this.logger.debug(`[DefaultRepo] ${chatId} → ${estado}`);
+    return Promise.resolve();
   }
 
   /**
    * No-op: o modo padrão não registra histórico de transições.
    * Mantido para compatibilidade de interface com EstadoRepository.
    */
-  async registrarTransicao(
+  registrarTransicao(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _chatId: string,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -106,14 +107,14 @@ export class DefaultEstadoRepository {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _mensagemGatilho?: string | null,
   ): Promise<void> {
-    // Nenhuma ação necessária no modo default
+    return Promise.resolve();
   }
 
   /**
    * Retorna sempre 'INICIO' como estado inicial do fluxo padrão.
    */
-  async obterEstadoInicial(): Promise<string> {
-    return 'INICIO';
+  obterEstadoInicial(): Promise<string> {
+    return Promise.resolve('INICIO');
   }
 
   /**
@@ -131,4 +132,3 @@ export class DefaultEstadoRepository {
     this.logger.log(`[DefaultRepo] Sessão resetada para ${chatId}`);
   }
 }
- 

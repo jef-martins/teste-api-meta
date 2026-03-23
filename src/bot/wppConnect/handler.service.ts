@@ -72,9 +72,7 @@ export class HandlerService {
       .map((item) => {
         if (typeof item === 'string' || typeof item === 'number') {
           const valor = String(item).trim();
-          return valor
-            ? { entrada: valor, label: valor, descricao: '' }
-            : null;
+          return valor ? { entrada: valor, label: valor, descricao: '' } : null;
         }
 
         if (!item || typeof item !== 'object') {
@@ -114,9 +112,7 @@ export class HandlerService {
         };
       })
       .filter(
-        (
-          item,
-        ): item is { entrada: string; label: string; descricao: string } =>
+        (item): item is { entrada: string; label: string; descricao: string } =>
           !!item,
       );
   }
@@ -356,7 +352,10 @@ export class HandlerService {
     }
 
     const destino = message.from;
-    const opcoes = this.normalizarItensInterativos(config.opcoes ?? [], 'opcoes');
+    const opcoes = this.normalizarItensInterativos(
+      config.opcoes ?? [],
+      'opcoes',
+    );
     const titulo = config.titulo ?? 'Menu';
 
     if (!opcoes.length) {

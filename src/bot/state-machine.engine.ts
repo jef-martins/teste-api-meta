@@ -72,7 +72,8 @@ export class StateMachineEngine {
     nome: string | null,
     actionDelegate: any,
   ) {
-    const entradaBruta = typeof entradaOriginal === 'string' ? entradaOriginal.trim() : '';
+    const entradaBruta =
+      typeof entradaOriginal === 'string' ? entradaOriginal.trim() : '';
     const entradaNormalizada = entradaBruta.toLowerCase();
 
     const estadoPadrao = await this.estadoRepo.obterEstadoInicial();
@@ -84,7 +85,9 @@ export class StateMachineEngine {
       this.estadosUsuarios.set(chatId, estadoAtualUsuario);
 
       if (estadoSalvo && !this.estadosAvisados.has(chatId)) {
-        this.logger.log(`[${chatId}] estado restaurado do banco: ${estadoSalvo}`);
+        this.logger.log(
+          `[${chatId}] estado restaurado do banco: ${estadoSalvo}`,
+        );
         this.estadosAvisados.add(chatId);
       }
     }
@@ -92,9 +95,8 @@ export class StateMachineEngine {
     this.mensagemAtual = entradaNormalizada;
     this.nomeAtual = nome;
 
-    const keywordGlobal = await this.globalKeywordService.buscarKeywordAtiva(
-      entradaBruta,
-    );
+    const keywordGlobal =
+      await this.globalKeywordService.buscarKeywordAtiva(entradaBruta);
     if (keywordGlobal) {
       const configDestino = await this.estadoRepo.obterConfigEstado(
         keywordGlobal.estadoDestino,
@@ -116,7 +118,12 @@ export class StateMachineEngine {
         );
 
         if (typeof actionDelegate[configDestino.handler] === 'function') {
-          await actionDelegate[configDestino.handler](message, chatId, '', this);
+          await actionDelegate[configDestino.handler](
+            message,
+            chatId,
+            '',
+            this,
+          );
         } else {
           this.logger.error(
             `Handler "${configDestino.handler}" não existe no Delegate!`,
@@ -185,7 +192,11 @@ export class StateMachineEngine {
     this.logger.log(`[${chatId}] transição: ${anterior} → ${proximo}`);
 
     await Promise.allSettled([
-      this.estadoRepo.salvarEstadoUsuario(chatId, proximo, nome ?? this.nomeAtual),
+      this.estadoRepo.salvarEstadoUsuario(
+        chatId,
+        proximo,
+        nome ?? this.nomeAtual,
+      ),
       this.estadoRepo.registrarTransicao(
         chatId,
         anterior,

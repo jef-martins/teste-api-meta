@@ -23,9 +23,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.sessao = process.env.BOT_SESSAO || 'sessao-bot-wpp';
   }
 
-  async onModuleInit() {
+  onModuleInit() {
     if (process.env.NODE_ENV === 'production') {
-      this.logger.log('Desativando WPPConnect no ambiente de produção (usando a Meta API).');
+      this.logger.log(
+        'Desativando WPPConnect no ambiente de produção (usando a Meta API).',
+      );
       return;
     }
     this.iniciar().catch((err) => {

@@ -1,4 +1,12 @@
-import { Controller, Get, Logger, Post, Req, Res, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Logger,
+  Post,
+  Req,
+  Res,
+  HttpStatus,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { BotMetaService } from './bot-meta.service';
 
@@ -25,7 +33,11 @@ export class BotMetaController {
       this.logger.log('[Webhook] Verificação do webhook pela Meta: SUCESSO');
       res.status(HttpStatus.OK).send(challenge);
     } else {
-      this.logger.warn(`[Webhook] Verificação falhou — token recebido: "${token}" | esperado: "${verifyToken}"`);
+      const safeToken =
+        typeof token === 'string' ? token : JSON.stringify(token);
+      this.logger.warn(
+        `[Webhook] Verificação falhou — token recebido: "${safeToken}" | esperado: "${verifyToken}"`,
+      );
       res.status(HttpStatus.FORBIDDEN).end();
     }
   }
@@ -42,7 +54,9 @@ export class BotMetaController {
     // A Meta exige resposta 200 em até 20s, respondemos imediatamente
     res.status(HttpStatus.OK).end();
 
-    this.logger.log(`[Webhook] POST recebido — object: ${body?.object ?? 'N/A'}`);
+    this.logger.log(
+      `[Webhook] POST recebido — object: ${body?.object ?? 'N/A'}`,
+    );
 
     if (body.object === 'whatsapp_business_account') {
       if (
@@ -54,21 +68,28 @@ export class BotMetaController {
         const value = body.entry[0].changes[0].value;
         const messages = value.messages;
 
-        this.logger.log(`[Webhook] ${messages.length} mensagem(ns) recebida(s) para processar.`);
+        this.logger.log(
+          `[Webhook] ${messages.length} mensagem(ns) recebida(s) para processar.`,
+        );
 
         for (const message of messages) {
           try {
             await this.metaService.processarMensagem(message, value);
           } catch (error: any) {
-            this.logger.error(`[Webhook] Erro ao processar mensagem: ${error.message}`);
+            this.logger.error(
+              `[Webhook] Erro ao processar mensagem: ${error.message}`,
+            );
           }
         }
       } else {
-        this.logger.debug(`[Webhook] Evento recebido sem mensagens (ex: status de entrega). Ignorando.`);
+        this.logger.debug(
+          `[Webhook] Evento recebido sem mensagens (ex: status de entrega). Ignorando.`,
+        );
       }
     } else {
-      this.logger.warn(`[Webhook] Objeto desconhecido recebido: ${JSON.stringify(body).substring(0, 200)}`);
+      this.logger.warn(
+        `[Webhook] Objeto desconhecido recebido: ${JSON.stringify(body).substring(0, 200)}`,
+      );
     }
   }
 }
- 

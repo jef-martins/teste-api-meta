@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
@@ -13,7 +18,7 @@ export class PrismaService
     if (!process.env.DATABASE_URL) {
       this.logger.warn(
         '[DB] DATABASE_URL não definida. O banco de dados está DESATIVADO. ' +
-        'Funcionalidades que dependem do banco não estarão disponíveis.',
+          'Funcionalidades que dependem do banco não estarão disponíveis.',
       );
       return;
     }
