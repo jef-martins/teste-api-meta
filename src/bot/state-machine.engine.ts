@@ -146,6 +146,7 @@ export class StateMachineEngine {
         true,
         nome,
         actionDelegate,
+        false, // <--- Aqui: Não aceita curinga (*) para evitar pular estados como AGUARDANDO_CEP
       );
 
       // Se transitou, encerra o processamento desta mensagem
@@ -197,10 +198,12 @@ export class StateMachineEngine {
     executarHandler = true,
     nome: string | null = null,
     actionDelegate?: any,
+    acceptWildcard = true,
   ): Promise<string | null> {
     const proximo = await this.estadoRepo.buscarProximoEstado(
       estadoAtual,
       entrada,
+      acceptWildcard,
     );
     if (!proximo) return null;
 

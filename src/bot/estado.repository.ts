@@ -28,6 +28,7 @@ export class EstadoRepository {
   async buscarProximoEstado(
     estadoAtual: string,
     entrada: string,
+    acceptWildcard = true,
   ): Promise<string | null> {
     try {
       // Exact match first
@@ -38,7 +39,7 @@ export class EstadoRepository {
       if (row) return row.estadoDestino;
 
       // Wildcard fallback
-      if (entrada !== '*') {
+      if (acceptWildcard && entrada !== '*') {
         row = await this.prisma.botEstadoTransicao.findFirst({
           where: { estadoOrigem: estadoAtual, entrada: '*', ativo: true },
           select: { estadoDestino: true },
