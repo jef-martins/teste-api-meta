@@ -10,8 +10,32 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const expressApp = app.getHttpAdapter().getInstance();
+  const trustProxyEnv = process.env.TRUST_PROXY;
+  const trustProxy =
+    trustProxyEnv === undefined
+      ? 1
+      : Number.isNaN(Number(trustProxyEnv))
+        ? trustProxyEnv
+        : Number(trustProxyEnv);
+  const authRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    message: { erro: 'Muitas tentativas. Tente novamente em 15 minutos.' },
+  });
+  const apiRateLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 100,
+    message: {
+      erro: 'Limite de requisições atingido. Tente novamente em 1 minuto.',
+    },
+    skip: (req) =>
+      req.path.startsWith('/webhook-meta') ||
+      req.originalUrl.startsWith('/api/webhook-meta'),
+  });
 
-  app.set('trust proxy', 1);
+  app.set('trust proxy', trustProxy);
+  expressApp.set('trust proxy', trustProxy);
 
   app.enableShutdownHooks();
 
@@ -26,26 +50,10 @@ async function bootstrap() {
   });
 
   // Rate limiting (same as Express backend)
-  app.use(
-    '/api/auth',
-    rateLimit({
-      windowMs: 15 * 60 * 1000,
-      max: 20,
-      message: { erro: 'Muitas tentativas. Tente novamente em 15 minutos.' },
-    }),
-  );
+  app.use('/api/auth', authRateLimiter);
 
   // Rate limiting em /api — EXCLUI o webhook da Meta para ele nunca ser bloqueado
-  app.use('/api', (req: any, res: any, next: any) => {
-    if (req.path.startsWith('/webhook-meta')) return next();
-    return rateLimit({
-      windowMs: 1 * 60 * 1000,
-      max: 100,
-      message: {
-        erro: 'Limite de requisições atingido. Tente novamente em 1 minuto.',
-      },
-    })(req, res, next);
-  });
+  app.use('/api', apiRateLimiter);
 
   app.useWebSocketAdapter(new IoAdapter(app));
   app.setGlobalPrefix('api', { exclude: ['health'] });

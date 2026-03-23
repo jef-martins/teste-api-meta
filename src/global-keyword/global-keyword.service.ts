@@ -62,7 +62,7 @@ export class GlobalKeywordService {
       throw new BadRequestException('Estado de destino é obrigatório.');
     }
 
-    if (this.isDefaultMode()) {
+    if (this.isDefaultMode() || !this.prisma.isConnected) {
       const estado = DEFAULT_ESTADOS[estadoDestino];
       if (!estado || estado.ativo === false) {
         throw new BadRequestException('Estado de destino inválido ou inativo.');

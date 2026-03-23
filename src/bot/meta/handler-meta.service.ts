@@ -25,6 +25,112 @@ export class HandlerMetaService {
 
   constructor(private estadoRepo: EstadoRepository) {}
 
+  private parseConfig(config: any) {
+    if (typeof config === 'string') {
+      try {
+        return JSON.parse(config);
+      } catch {
+        return {};
+      }
+    }
+    return config && typeof config === 'object' ? config : {};
+  }
+
+  private normalizarItensInterativos(
+    bruto: any,
+    chatId: string,
+    campo: 'opcoes' | 'botoes',
+  ): Array<{ entrada: string; label: string; descricao: string }> {
+    let itens = bruto;
+
+    if (typeof itens === 'string') {
+      try {
+        itens = JSON.parse(itens);
+      } catch {
+        itens = [];
+      }
+    }
+
+    if (itens && typeof itens === 'object' && !Array.isArray(itens)) {
+      if (Array.isArray(itens[campo])) {
+        itens = itens[campo];
+      } else if (Array.isArray(itens.rows)) {
+        itens = itens.rows;
+      } else if (Array.isArray(itens.buttons)) {
+        itens = itens.buttons;
+      } else if (
+        'entrada' in itens ||
+        'label' in itens ||
+        'id' in itens ||
+        'title' in itens ||
+        'text' in itens
+      ) {
+        itens = [itens];
+      } else {
+        itens = Object.values(itens);
+      }
+      this.logger.warn(
+        `[${chatId}] Config de ${campo} recebida com formato inesperado; normalizando.`,
+      );
+    }
+
+    if (!Array.isArray(itens)) {
+      return [];
+    }
+
+    return itens
+      .map((item) => {
+        if (typeof item === 'string' || typeof item === 'number') {
+          const valor = String(item).trim();
+          return valor
+            ? { entrada: valor, label: valor, descricao: '' }
+            : null;
+        }
+
+        if (!item || typeof item !== 'object') {
+          return null;
+        }
+
+        const entrada = String(
+          item.entrada ??
+            item.id ??
+            item.rowId ??
+            item.value ??
+            item.payload ??
+            item.label ??
+            item.title ??
+            item.text ??
+            '',
+        ).trim();
+        const label = String(
+          item.label ??
+            item.title ??
+            item.text ??
+            item.entrada ??
+            item.id ??
+            item.value ??
+            item.payload ??
+            '',
+        ).trim();
+
+        if (!entrada && !label) {
+          return null;
+        }
+
+        return {
+          entrada: entrada || label,
+          label: label || entrada,
+          descricao: String(item.descricao ?? item.description ?? '').trim(),
+        };
+      })
+      .filter(
+        (
+          item,
+        ): item is { entrada: string; label: string; descricao: string } =>
+          !!item,
+      );
+  }
+
   // ─── Método privado: chama a Graph API da Meta ────────────────────────────
 
   private async chamadaMetaAPI(payload: any): Promise<void> {
@@ -88,8 +194,9 @@ export class HandlerMetaService {
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
     const mensagens: string[] = config.mensagens ?? [];
 
     const dadosChat = engine.obterDados(chatId);
@@ -259,9 +366,9 @@ export class HandlerMetaService {
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    let config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
-    if (typeof config === 'string') config = JSON.parse(config);
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
 
     // Se o usuário já enviou uma seleção, processa a transição
     if (corpo) {
@@ -292,35 +399,20 @@ export class HandlerMetaService {
     }
 
     // Monta o payload de lista interativa
-    let opcoes = config.opcoes ?? [];
-    if (typeof opcoes === 'string') {
-      try {
-        opcoes = JSON.parse(opcoes);
-      } catch {
-        opcoes = [];
-      }
-    }
-    if (!Array.isArray(opcoes)) {
-      if (
-        opcoes &&
-        typeof opcoes === 'object' &&
-        ('entrada' in opcoes || 'label' in opcoes)
-      ) {
-        opcoes = [opcoes];
-      } else {
-        opcoes =
-          opcoes && typeof opcoes === 'object'
-            ? Object.values(opcoes).filter(
-                (op): op is Record<string, any> =>
-                  !!op && typeof op === 'object',
-              )
-            : [];
-      }
-      this.logger.warn(
-        `[${chatId}] Config de lista recebida com formato inesperado; normalizando "opcoes".`,
-      );
-    }
+    const opcoes = this.normalizarItensInterativos(
+      config.opcoes ?? [],
+      chatId,
+      'opcoes',
+    );
     const titulo = (config.titulo ?? 'Menu').substring(0, 1024);
+
+    if (!opcoes.length) {
+      this.logger.warn(
+        `[${chatId}] _handlerLista sem opções válidas; enviando fallback em texto.`,
+      );
+      await this.enviarResposta(message, titulo);
+      return;
+    }
     const destino = message.from.replace(/@(meta|c\.us)$/, '');
 
     const payload: any = {
@@ -387,8 +479,9 @@ export class HandlerMetaService {
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
 
     // Se o usuário já clicou em um botão, processa a transição
     if (corpo) {
@@ -415,36 +508,20 @@ export class HandlerMetaService {
     }
 
     // Monta o payload de botões (máx 3)
-    let botoes = config.botoes ?? [];
-    if (typeof botoes === 'string') {
-      try {
-        botoes = JSON.parse(botoes);
-      } catch {
-        botoes = [];
-      }
-    }
-
-    if (!Array.isArray(botoes)) {
-      if (
-        botoes &&
-        typeof botoes === 'object' &&
-        ('entrada' in botoes || 'label' in botoes)
-      ) {
-        botoes = [botoes];
-      } else {
-        botoes =
-          botoes && typeof botoes === 'object'
-            ? Object.values(botoes).filter(
-                (b): b is Record<string, any> => !!b && typeof b === 'object',
-              )
-            : [];
-      }
-      this.logger.warn(
-        `[${chatId}] _handlerBotoes: Config de botões recebida com formato inesperado; normalizando.`,
-      );
-    }
-
+    const botoes = this.normalizarItensInterativos(
+      config.botoes ?? [],
+      chatId,
+      'botoes',
+    );
     const botoesLimitados = botoes.slice(0, 3);
+
+    if (!botoesLimitados.length) {
+      this.logger.warn(
+        `[${chatId}] _handlerBotoes sem botões válidos; enviando fallback em texto.`,
+      );
+      await this.enviarResposta(message, config.titulo ?? 'Escolha uma opção:');
+      return;
+    }
 
     if (botoes.length > 3) {
       this.logger.warn(
