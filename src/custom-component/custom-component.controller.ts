@@ -27,6 +27,11 @@ export class CustomComponentController {
     return this.service.listar(req.user.id, this.getSubOrgId(headers));
   }
 
+  @Get(':id')
+  obter(@Param('id') id: string, @Req() req: any) {
+    return this.service.obter(id, req.user.id);
+  }
+
   @Post()
   criar(
     @Req() req: any,

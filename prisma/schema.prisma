@@ -332,6 +332,21 @@ model ComponentePersonalizado {
   atualizadoEm     DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz()
 
   subOrganizacao SubOrganizacao? @relation(fields: [subOrganizacaoId], references: [id], onDelete: SetNull)
+  yjsUpdates     YjsComponentUpdate[]
 
   @@map("componente_personalizado")
+}
+
+// ── Yjs Updates para Componentes Personalizados ─────────────────────────
+
+model YjsComponentUpdate {
+  id          String   @id @default(uuid())
+  componentId String   @map("component_id")
+  update      Bytes
+  criadoEm    DateTime @default(now()) @map("criado_em") @db.Timestamptz()
+
+  componente ComponentePersonalizado @relation(fields: [componentId], references: [id], onDelete: Cascade)
+
+  @@index([componentId])
+  @@map("yjs_component_updates")
 }

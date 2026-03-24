@@ -37,6 +37,15 @@ export class CustomComponentService {
     });
   }
 
+  async obter(id: string, usuarioId: string) {
+    const comp = await this.prisma.componentePersonalizado.findUnique({
+      where: { id },
+    });
+    if (!comp) throw new NotFoundException('Componente não encontrado');
+    await this.verificarAcessoSubOrg(usuarioId, comp.subOrganizacaoId);
+    return comp;
+  }
+
   async criar(
     usuarioId: string,
     subOrgId: string | null,
