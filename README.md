@@ -1,77 +1,114 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Telebots — Back-End (NestJS)
 
-  <p align="center">Um framework progressivo para <a href="http://nodejs.org" target="_blank">Node.js</a> para a construção de aplicações eficientes e escaláveis do lado do servidor.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="Versão NPM" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Licença do Pacote" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="Downloads NPM" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-</p>
+API REST + WebSocket para o projeto Telebots. Construída com NestJS, Prisma (PostgreSQL) e Socket.IO com suporte a colaboração em tempo real via Yjs.
 
-## Descrição
+## Pré-requisitos (sem Docker)
 
-Repositório base para o framework [Nest](https://github.com/nestjs/nest) utilizando TypeScript.
+- **Node.js** >= 20
+- **npm** >= 9
+- **PostgreSQL** >= 15 rodando na porta `5433`
 
-## Configuração do Projeto
+## Variáveis de ambiente
+
+Copie o arquivo de exemplo e ajuste conforme necessário:
 
 ```bash
-$ npm install
+cp .env.example .env
 ```
 
-## Compilação e Execução
+As principais variáveis:
+
+| Variável | Descrição | Padrão |
+|---|---|---|
+| `DATABASE_URL` | URL de conexão do Prisma | `postgresql://postgres:postgres@localhost:5433/postgres?schema=public` |
+| `PORT` | Porta da API | `3000` |
+| `JWT_SECRET` | Secret do JWT | — |
+| `FRONTEND_URL` | URL do frontend (CORS) | `http://localhost:5173` |
+| `BOT_NUMERO_ADMIN` | Número admin do bot WhatsApp | — |
+| `BOT_SESSAO` | Nome da sessão WPP | `sessao-bot-wpp` |
+
+## Rodar sem Docker
 
 ```bash
-# desenvolvimento
-$ npm run start
+# Instalar dependências
+npm install
 
-# modo de observação (watch mode)
-$ npm run start:dev
+# Gerar cliente Prisma e rodar migrations
+npx prisma migrate dev
 
-# modo de produção
-$ npm run start:prod
+# Desenvolvimento (watch mode)
+npm run start:dev
+
+# Produção
+npm run build
+npm run start:prod
 ```
 
-## Executar Testes
+## 🐳 Rodar com Docker (isolado)
+
+O back-end possui seus próprios arquivos Docker e pode ser executado de forma completamente independente, incluindo o banco de dados PostgreSQL.
+
+### Desenvolvimento (hot-reload)
+
+O código-fonte é montado como volume: qualquer alteração no `src/` é refletida instantaneamente sem precisar rebuildar a imagem.
 
 ```bash
-# testes unitários
-$ npm run test
-
-# testes e2e (ponta a ponta)
-$ npm run test:e2e
-
-# cobertura de testes (coverage)
-$ npm run test:cov
+# Na pasta telebots-backend-nestjs/
+docker compose -f docker-compose.dev.yml up --build
 ```
 
-## Deploy
+- API disponível em: `http://localhost:3000`
+- Banco de dados em: `localhost:5433`
 
-Quando você estiver pronto para implantar sua aplicação NestJS em produção, existem alguns passos importantes que você pode seguir para garantir que ela funcione da maneira mais eficiente possível. Confira a [documentação de deploy](https://docs.nestjs.com/deployment) para mais informações.
-
-Se você está procurando uma plataforma baseada em nuvem para hospedar sua aplicação, confira o [Mau](https://mau.nestjs.com), nossa plataforma oficial para deploy de aplicações NestJS na AWS. O Mau torna a implantação direta e rápida:
+### Produção
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Na pasta telebots-backend-nestjs/
+docker compose up -d --build
 ```
 
-## Recursos
+- API disponível em: `http://localhost:3000`
 
-Confira alguns recursos que podem ser úteis ao trabalhar com o NestJS:
+### Parar os containers
 
-- Visite a [Documentação do NestJS](https://docs.nestjs.com) para aprender mais sobre o framework.
-- Para dúvidas e suporte, visite nosso [canal no Discord](https://discord.gg/G7Qnnhy).
-- Para se aprofundar e obter mais experiência prática, confira nossos [cursos de vídeo oficiais](https://courses.nestjs.com/).
-- Visualize o gráfico da sua aplicação e interaja com ela em tempo real usando o [NestJS Devtools](https://devtools.nestjs.com).
-- Precisa de ajuda com seu projeto (meio período ou tempo integral)? Confira nosso [suporte empresarial oficial](https://enterprise.nestjs.com).
-- Siga-nos no [X](https://x.com/nestframework) e [LinkedIn](https://linkedin.com/company/nestjs) para atualizações.
+```bash
+docker compose down                                  # produção
+docker compose -f docker-compose.dev.yml down        # desenvolvimento
+```
 
-## Suporte
+### Variáveis customizadas via `.env`
 
-O Nest é um projeto de código aberto licenciado sob a MIT. Ele pode crescer graças aos patrocinadores e ao apoio dos incríveis apoiadores. Se você quiser se juntar a eles, por favor [leia mais aqui](https://docs.nestjs.com/support).
+O compose lê o arquivo `.env` da pasta automaticamente. As seguintes variáveis também podem sobrescrever os defaults do compose:
 
-## Licença
+| Variável | Default |
+|---|---|
+| `DB_USER` | `postgres` |
+| `DB_PASSWORD` | `postgres` |
+| `DB_NAME` | `postgres` |
+| `DB_PORT` | `5433` |
+| `PORT` | `3000` |
 
-O Nest possui [licença MIT](https://github.com/nestjs/nest/blob/master/LICENSE).
+---
+
+## Scripts disponíveis
+
+```bash
+npm run start        # Iniciar
+npm run start:dev    # Watch mode
+npm run start:prod   # Produção (requer build)
+npm run build        # Compilar TypeScript
+npm run lint         # ESLint com auto-fix
+npm run format       # Prettier
+```
+
+## Testes
+
+```bash
+npm run test         # Unit tests
+npm run test:e2e     # E2E tests
+npm run test:cov     # Coverage
+```
+
+## License
+
+MIT
