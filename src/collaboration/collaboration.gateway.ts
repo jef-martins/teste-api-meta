@@ -25,7 +25,15 @@ const WsEvent = {
   Update: 'update',
   AwarenessUpdate: 'awareness-update',
   AwarenessQuery: 'awareness-query',
+  PresenceUpdate: 'presence-update',
+  PresenceQuery: 'presence-query',
 } as const;
+
+interface PresenceInfo {
+  clientId: string;
+  user: { id: string; nome: string; email?: string };
+  location: { type: 'flow' | 'component'; id: string; name: string } | null;
+}
 
 @WebSocketGateway({
   namespace: '/collaboration',
@@ -41,6 +49,7 @@ export class CollaborationGateway
 
   private readonly logger = new Logger(CollaborationGateway.name);
   private clientRooms = new Map<string, { id: string; type: 'flow' | 'component' }>(); // clientId → room info
+  private clientPresence = new Map<string, PresenceInfo>(); // clientId → global presence
 
   constructor(private collaborationService: CollaborationService) { }
 
@@ -60,6 +69,16 @@ export class CollaborationGateway
         removed: true,
       });
     }
+
+    // Broadcast global presence removal
+    if (this.clientPresence.has(client.id)) {
+      this.clientPresence.delete(client.id);
+      this.server.emit(WsEvent.PresenceUpdate, {
+        clientId: client.id,
+        removed: true,
+      });
+    }
+
     this.logger.log(`Client desconectado: ${client.id}`);
   }
 
@@ -207,6 +226,29 @@ export class CollaborationGateway
     client.to(roomKey).emit(WsEvent.AwarenessQuery, {
       clientId: client.id,
     });
+  }
+
+  @SubscribeMessage(WsEvent.PresenceUpdate)
+  handlePresenceUpdate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { user: any; location: any },
+  ) {
+    const presence: PresenceInfo = {
+      clientId: client.id,
+      user: data.user,
+      location: data.location || null,
+    };
+    this.clientPresence.set(client.id, presence);
+
+    // Broadcast to ALL connected clients (including sender for confirmation)
+    this.server.emit(WsEvent.PresenceUpdate, presence);
+  }
+
+  @SubscribeMessage(WsEvent.PresenceQuery)
+  handlePresenceQuery(@ConnectedSocket() client: Socket) {
+    // Send full presence list to the requesting client
+    const allPresence = Array.from(this.clientPresence.values());
+    client.emit(WsEvent.PresenceQuery, allPresence);
   }
 
   private getClientRoomKey(clientId: string): string | null {

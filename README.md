@@ -53,7 +53,7 @@ O back-end possui seus próprios arquivos Docker e pode ser executado de forma c
 O código-fonte é montado como volume: qualquer alteração no `src/` é refletida instantaneamente sem precisar rebuildar a imagem.
 
 ```bash
-# Na pasta telebots-backend-nestjs/
+# Na pasta telebots-back
 docker compose -f docker-compose.dev.yml up --build
 ```
 
@@ -63,7 +63,7 @@ docker compose -f docker-compose.dev.yml up --build
 ### Produção
 
 ```bash
-# Na pasta telebots-backend-nestjs/
+# Na pasta telebots-back
 docker compose up -d --build
 ```
 
