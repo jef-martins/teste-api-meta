@@ -34,6 +34,7 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+      - /app/tokens
     depends_on:
       db:
         condition: service_healthy
