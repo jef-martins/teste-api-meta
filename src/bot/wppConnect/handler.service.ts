@@ -17,7 +17,7 @@ export class HandlerService {
   /** Set by BotService after WPPConnect initialization */
   client: any = null;
 
-  constructor(private estadoRepo: EstadoRepository) {}
+  constructor(private estadoRepo: EstadoRepository) { }
 
   private parseConfig(config: any) {
     if (typeof config === 'string') {
@@ -81,24 +81,24 @@ export class HandlerService {
 
         const entrada = String(
           item.entrada ??
-            item.id ??
-            item.rowId ??
-            item.value ??
-            item.payload ??
-            item.label ??
-            item.title ??
-            item.text ??
-            '',
+          item.id ??
+          item.rowId ??
+          item.value ??
+          item.payload ??
+          item.label ??
+          item.title ??
+          item.text ??
+          '',
         ).trim();
         const label = String(
           item.label ??
-            item.title ??
-            item.text ??
-            item.entrada ??
-            item.id ??
-            item.value ??
-            item.payload ??
-            '',
+          item.title ??
+          item.text ??
+          item.entrada ??
+          item.id ??
+          item.value ??
+          item.payload ??
+          '',
         ).trim();
 
         if (!entrada && !label) {
@@ -115,6 +115,38 @@ export class HandlerService {
         (item): item is { entrada: string; label: string; descricao: string } =>
           !!item,
       );
+  }
+
+  // ─── Helper: advance to next state and execute its handler ──────────────
+
+  private async avancarEExecutar(
+    proximo: string,
+    message: any,
+    chatId: string,
+    corpo: string,
+    engine: StateMachineEngine,
+    gatilho?: string,
+  ) {
+    await engine.avancarEstado(chatId, proximo, gatilho ?? corpo);
+    const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
+    if (
+      configProximo &&
+      typeof (this as any)[configProximo.handler] === 'function'
+    ) {
+      await (this as any)[configProximo.handler](message, chatId, '', engine);
+    }
+  }
+
+  // ─── Helper: strip HTML tags from object values ──────────────────────────
+
+  private limparHtml(obj: any): any {
+    if (typeof obj !== 'object' || obj === null) return obj;
+    return Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => [
+        k,
+        typeof v === 'string' ? v.replace(/<[^>]+>/g, ' ').trim() : v,
+      ]),
+    );
   }
 
   // ─── Helper: send response and save to DB ────────────────────────────────
@@ -167,16 +199,35 @@ export class HandlerService {
       await this.enviarResposta(message, textoInterpolado);
     }
 
-    if (config.transicaoAutomatica || config.transicao_automatica) {
-      await engine.transitarPorEntrada(
-        chatId,
-        estadoAtual,
-        '*',
-        message,
-        true,
-        null,
-        this,
+    // Processar assignments de setVariable (sub-componentes inline)
+    const assignments = config.assignments ?? [];
+    if (assignments.length > 0) {
+      const dadosAtuais = engine.obterDados(chatId);
+      for (const assignment of assignments) {
+        const key = assignment.key;
+        const rawValue = assignment.value ?? '';
+        const interpolado = engine.interpolar(String(rawValue), dadosAtuais);
+        engine.salvarDado(chatId, key, interpolado);
+      }
+      this.logger.log(
+        `[${chatId}] mensagem+setVariable: ${assignments.map((a: any) => a.key).join(', ')}`,
       );
+    }
+
+    if (config.transicaoAutomatica || config.transicao_automatica) {
+      await engine.transitarPorEntrada(chatId, estadoAtual, '*', message, true, null, this);
+      return;
+    }
+
+    // Nós que não têm transicaoAutomatica (ex: END dentro de um componente personalizado)
+    // mas possuem uma transição '*' de saída devem avançar automaticamente quando
+    // chamados via auto-transição (corpo vazio). Isso evita que o bot fique aguardando
+    // input do usuário ao sair de um componente que não tem "Aguardar resposta".
+    if (!corpo) {
+      const proximoAuto = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+      if (proximoAuto) {
+        await this.avancarEExecutar(proximoAuto, message, chatId, '', engine, '[auto-exit]');
+      }
     }
   }
 
@@ -207,7 +258,9 @@ export class HandlerService {
     // Simple mode
     if (!corpo) {
       if (config.mensagemPedir) {
-        await this.enviarResposta(message, config.mensagemPedir);
+        const dadosChat = engine.obterDados(chatId);
+        const textoInterpolado = engine.interpolar(config.mensagemPedir, dadosChat);
+        await this.enviarResposta(message, textoInterpolado);
       }
       return;
     }
@@ -230,6 +283,18 @@ export class HandlerService {
     const chave = config.campoSalvar || config.campoEnviar;
     if (chave) engine.salvarDado(chatId, chave, corpo);
 
+    // Processar assignments de setVariable (se houver junto com waitForResponse)
+    const captureAssignments = config.assignments ?? [];
+    if (captureAssignments.length > 0) {
+      const dadosAtuais = engine.obterDados(chatId);
+      for (const assignment of captureAssignments) {
+        const key = assignment.key;
+        const rawValue = assignment.value ?? '';
+        const interpolado = engine.interpolar(String(rawValue), dadosAtuais);
+        engine.salvarDado(chatId, key, interpolado);
+      }
+    }
+
     if (config.mensagemConfirmacao) {
       const texto = engine.interpolar(config.mensagemConfirmacao, {
         valor: corpo,
@@ -237,15 +302,7 @@ export class HandlerService {
       await this.enviarResposta(message, texto);
     }
 
-    await engine.avancarEstado(chatId, proximo, corpo);
-
-    const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-    if (
-      configProximo &&
-      typeof (this as any)[configProximo.handler] === 'function'
-    ) {
-      await (this as any)[configProximo.handler](message, chatId, '', engine);
-    }
+    await this.avancarEExecutar(proximo, message, chatId, corpo, engine);
   }
 
   private async _handlerCapturarMulti(
@@ -263,7 +320,8 @@ export class HandlerService {
     if (!proximoCampo) return;
 
     if (!corpo) {
-      await this.enviarResposta(message, proximoCampo.mensagemPedir);
+      const textoInterpolado = engine.interpolar(proximoCampo.mensagemPedir, dados);
+      await this.enviarResposta(message, textoInterpolado);
       return;
     }
 
@@ -301,14 +359,7 @@ export class HandlerService {
     const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
     if (!proximo) return;
 
-    await engine.avancarEstado(chatId, proximo, '[multi-captura concluída]');
-    const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-    if (
-      configProximo &&
-      typeof (this as any)[configProximo.handler] === 'function'
-    ) {
-      await (this as any)[configProximo.handler](message, chatId, '', engine);
-    }
+    await this.avancarEExecutar(proximo, message, chatId, corpo, engine, '[multi-captura concluída]');
   }
 
   // ─── _handlerLista ───────────────────────────────────────────────────────
@@ -325,30 +376,36 @@ export class HandlerService {
     );
 
     if (corpo) {
-      const proximo = await this.estadoRepo.buscarProximoEstado(
+      let proximo = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
         corpo,
       );
-      if (proximo) {
-        await engine.avancarEstado(chatId, proximo, corpo);
-        const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (
-          configProximo &&
-          typeof (this as any)[configProximo.handler] === 'function'
-        ) {
-          return await (this as any)[configProximo.handler](
-            message,
-            chatId,
-            '',
-            engine,
+
+      // Fallback: match by option label (for clients that return label text instead of rowId)
+      if (!proximo) {
+        const opcoes: any[] = config.opcoes ?? [];
+        const match = opcoes.find(
+          (o: any) => (o.label || '').toLowerCase() === corpo.toLowerCase(),
+        );
+        if (match) {
+          proximo = await this.estadoRepo.buscarProximoEstado(
+            estadoAtual,
+            match.entrada,
           );
         }
-      } else {
-        return await this.enviarResposta(
-          message,
-          config.mensagemInvalida ?? '⚠️ Opção inválida.',
-        );
       }
+
+      if (proximo) {
+        return await this.avancarEExecutar(proximo, message, chatId, '', engine, corpo);
+      }
+
+      // Fallback: try the default/padrão (*) transition
+      const proximoPadrao = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+      if (proximoPadrao) {
+        return await this.avancarEExecutar(proximoPadrao, message, chatId, '', engine, corpo);
+      }
+
+      return await this.enviarResposta(message, config.mensagemInvalida ?? '⚠️ Opção inválida.');
     }
 
     const destino = message.from;
@@ -412,24 +469,34 @@ export class HandlerService {
     );
 
     if (corpo) {
-      const proximo = await this.estadoRepo.buscarProximoEstado(
+      let proximo = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
         corpo,
       );
-      if (proximo) {
-        await engine.avancarEstado(chatId, proximo, corpo);
-        const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (
-          configProximo &&
-          typeof (this as any)[configProximo.handler] === 'function'
-        ) {
-          await (this as any)[configProximo.handler](
-            message,
-            chatId,
-            '',
-            engine,
+
+      // Fallback: match by button label (for text replies of buttons)
+      if (!proximo) {
+        const botoes: any[] = config.botoes ?? [];
+        const match = botoes.find(
+          (b: any) => (b.label || '').toLowerCase() === corpo.toLowerCase(),
+        );
+        if (match) {
+          proximo = await this.estadoRepo.buscarProximoEstado(
+            estadoAtual,
+            match.entrada,
           );
         }
+      }
+
+      if (proximo) {
+        await this.avancarEExecutar(proximo, message, chatId, '', engine, corpo);
+        return;
+      }
+
+      // Fallback: try the default/padrão (*) transition
+      const proximoPadrao = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+      if (proximoPadrao) {
+        await this.avancarEExecutar(proximoPadrao, message, chatId, '', engine, corpo);
         return;
       }
     }
@@ -445,22 +512,17 @@ export class HandlerService {
     }
 
     try {
+      const linhas = (config.botoes ?? []).map((b: any) => `*${b.entrada}* - ${b.label}`).join('\n');
+      const rodape = config.rodape ? `\n\n_${config.rodape}_` : '';
+      const cabecalho = config.cabecalho ? `*${config.cabecalho}*\n\n` : '';
+
       await this.client.sendText(
         message.from,
-        config.titulo ?? 'Escolha uma opção:',
-        {
-          useTemplateButtons: true,
-          title: config.cabecalho ?? undefined,
-          footer: config.rodape ?? undefined,
-          buttons: botoes.slice(0, 3).map((b: any) => ({
-            id: b.entrada,
-            text: b.label,
-          })),
-        },
+        `${cabecalho}${config.titulo ?? 'Escolha uma opção:'}\n\n${linhas}${rodape}`
       );
     } catch (err: any) {
       this.logger.error(`Erro ao enviar botões: ${err.message}`);
-      const linhas = botoes.map((b: any) => b.label).join('\n');
+      const linhas = (config.botoes ?? []).map((b: any) => `*${b.entrada}* - ${b.label}`).join('\n');
       await this.enviarResposta(message, `${config.titulo ?? ''}\n\n${linhas}`);
     }
   }
@@ -474,7 +536,7 @@ export class HandlerService {
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config =
+    let config =
       (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
 
     const dadosMemoria = engine.obterDados(chatId);
@@ -524,6 +586,21 @@ export class HandlerService {
     }
 
     let valorParaTransicao = '*';
+
+    // Resolver apiRoute registrada (apiId + routeId) em runtime
+    if (config.apiId && config.routeId) {
+      const rota = await this.estadoRepo.obterRotaApi(config.apiId, config.routeId);
+      if (!rota) {
+        await this.enviarResposta(message, config.mensagemErro ?? '❌ Rota de API não encontrada.');
+        return;
+      }
+      config = {
+        ...config,
+        url: rota.url,
+        metodo: rota.metodo,
+        headers: rota.headers,
+      };
+    }
 
     try {
       const metodo = (config.metodo ?? 'GET').toUpperCase();
@@ -600,6 +677,14 @@ export class HandlerService {
         resposta = await res.json();
       }
 
+      resposta = JSON.stringify(resposta);
+
+      // Salva a resposta completa na variável nomeada (acessível em estados seguintes)
+      const nomeVariavel = config.variavelResposta || config.campoResposta;
+      if (nomeVariavel) {
+        engine.salvarDado(chatId, nomeVariavel, resposta);
+      }
+
       if (statusHttp !== 200) {
         await this.enviarResposta(
           message,
@@ -629,12 +714,7 @@ export class HandlerService {
           } else {
             const separador = config.separador ?? '➖➖➖➖➖';
             const partes = valorExtraido.map((item: any) => {
-              const objLimpo = Object.fromEntries(
-                Object.entries(item).map(([k, v]) => [
-                  k,
-                  typeof v === 'string' ? v.replace(/<[^>]+>/g, ' ').trim() : v,
-                ]),
-              );
+              const objLimpo = this.limparHtml(item);
               const vars = {
                 resposta: item,
                 valor: corpo,
@@ -642,7 +722,7 @@ export class HandlerService {
                 ...objLimpo,
               };
               return engine.interpolar(
-                config.mensagemSucesso ?? '✅ {resposta}',
+                config.mensagemSucesso ?? '✅ \n {resposta}',
                 vars,
               );
             });
@@ -661,16 +741,10 @@ export class HandlerService {
             ...dadosMemoria,
           };
           if (typeof valorExtraido === 'object' && valorExtraido !== null) {
-            const objLimpo = Object.fromEntries(
-              Object.entries(valorExtraido).map(([k, v]) => [
-                k,
-                typeof v === 'string' ? v.replace(/<[^>]+>/g, ' ').trim() : v,
-              ]),
-            );
-            variaveis = { ...variaveis, ...objLimpo };
+            variaveis = { ...variaveis, ...this.limparHtml(valorExtraido) };
           }
           const msgSucesso = engine.interpolar(
-            config.mensagemSucesso ?? '✅ Resposta: {resposta}',
+            config.mensagemSucesso ?? '✅ Resposta:  \n {resposta}',
             variaveis,
           );
           await this.enviarResposta(message, msgSucesso);
@@ -692,28 +766,48 @@ export class HandlerService {
     }
 
     if (config.transicaoAutomatica || config.transicao_automatica) {
-      let proximo = await this.estadoRepo.buscarProximoEstado(
-        estadoAtual,
-        valorParaTransicao,
-      );
+      let proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, valorParaTransicao);
       if (!proximo && valorParaTransicao !== '*') {
         proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
       }
       if (proximo) {
-        await engine.avancarEstado(chatId, proximo, corpo);
-        const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (
-          configProximo &&
-          typeof (this as any)[configProximo.handler] === 'function'
-        ) {
-          await (this as any)[configProximo.handler](
-            message,
-            chatId,
-            '',
-            engine,
-          );
-        }
+        await this.avancarEExecutar(proximo, message, chatId, '', engine, corpo);
       }
+    }
+  }
+
+  // ─── _handlerSetVariable ────────────────────────────────────────────────
+
+  async _handlerSetVariable(
+    message: any,
+    chatId: string,
+    corpo: string,
+    engine: StateMachineEngine,
+  ) {
+    const estadoAtual = engine.estadosUsuarios.get(chatId)!;
+    const config =
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
+
+    const assignments = config.assignments ?? [];
+    const dadosChat = engine.obterDados(chatId);
+
+    for (const assignment of assignments) {
+      const key = assignment.key;
+      const rawValue = assignment.value ?? '';
+      const interpolado = engine.interpolar(String(rawValue), dadosChat);
+      engine.salvarDado(chatId, key, interpolado);
+    }
+
+    if (assignments.length > 0) {
+      this.logger.log(
+        `[${chatId}] setVariable: ${assignments.map((a: any) => a.key).join(', ')}`,
+      );
+    }
+
+    // Transição automática
+    const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+    if (proximo) {
+      await this.avancarEExecutar(proximo, message, chatId, '', engine, '[setVariable]');
     }
   }
 
@@ -743,14 +837,7 @@ export class HandlerService {
 
     const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
     if (proximo) {
-      await engine.avancarEstado(chatId, proximo, '[delay]');
-      const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-      if (
-        configProximo &&
-        typeof (this as any)[configProximo.handler] === 'function'
-      ) {
-        await (this as any)[configProximo.handler](message, chatId, '', engine);
-      }
+      await this.avancarEExecutar(proximo, message, chatId, '', engine, '[delay]');
     }
   }
 }

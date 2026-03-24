@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -21,14 +22,14 @@ export class OrganizationController {
 
   @Get('minhas-sub-orgs')
   minhasSubOrgs(@Req() req: any) {
-    return this.orgService.getSubOrgsAcessiveis(req.user.id);
+    return this.orgService.getSubOrgsAcessiveis(req.user.id, req.user.master);
   }
 
   // ─── Organizações ─────────────────────────────────────────────────────────
 
   @Get('organizacoes')
   listar(@Req() req: any) {
-    return this.orgService.listarOrganizacoes(req.user.id);
+    return this.orgService.listarOrganizacoes(req.user.id, req.user.master, req.user.papel);
   }
 
   @Post('organizacoes')
@@ -38,7 +39,7 @@ export class OrganizationController {
 
   @Get('organizacoes/:orgId')
   obter(@Param('orgId') orgId: string, @Req() req: any) {
-    return this.orgService.obterOrganizacao(orgId, req.user.id);
+    return this.orgService.obterOrganizacao(orgId, req.user.id, req.user.master);
   }
 
   @Put('organizacoes/:orgId')
@@ -47,19 +48,19 @@ export class OrganizationController {
     @Req() req: any,
     @Body() body: { nome?: string },
   ) {
-    return this.orgService.atualizarOrganizacao(orgId, req.user.id, body);
+    return this.orgService.atualizarOrganizacao(orgId, req.user.id, body, req.user.master);
   }
 
   @Delete('organizacoes/:orgId')
   excluir(@Param('orgId') orgId: string, @Req() req: any) {
-    return this.orgService.excluirOrganizacao(orgId, req.user.id);
+    return this.orgService.excluirOrganizacao(orgId, req.user.id, req.user.master);
   }
 
   // ─── Membros da organização ───────────────────────────────────────────────
 
   @Get('organizacoes/:orgId/membros')
   listarMembros(@Param('orgId') orgId: string, @Req() req: any) {
-    return this.orgService.listarMembros(orgId, req.user.id);
+    return this.orgService.listarMembros(orgId, req.user.id, req.user.master);
   }
 
   @Post('organizacoes/:orgId/membros')
@@ -73,6 +74,7 @@ export class OrganizationController {
       req.user.id,
       body.email,
       body.papel,
+      req.user.master,
     );
   }
 
@@ -82,14 +84,14 @@ export class OrganizationController {
     @Param('membroId') membroId: string,
     @Req() req: any,
   ) {
-    return this.orgService.removerMembro(orgId, req.user.id, membroId);
+    return this.orgService.removerMembro(orgId, req.user.id, membroId, req.user.master);
   }
 
   // ─── Sub-organizações ─────────────────────────────────────────────────────
 
   @Get('organizacoes/:orgId/sub-orgs')
   listarSubOrgs(@Param('orgId') orgId: string, @Req() req: any) {
-    return this.orgService.listarSubOrgs(orgId, req.user.id);
+    return this.orgService.listarSubOrgs(orgId, req.user.id, req.user.master);
   }
 
   @Post('organizacoes/:orgId/sub-orgs')
@@ -98,7 +100,7 @@ export class OrganizationController {
     @Req() req: any,
     @Body() body: { nome: string; slug?: string },
   ) {
-    return this.orgService.criarSubOrg(orgId, req.user.id, body);
+    return this.orgService.criarSubOrg(orgId, req.user.id, body, req.user.master);
   }
 
   @Put('organizacoes/:orgId/sub-orgs/:subOrgId')
@@ -108,7 +110,7 @@ export class OrganizationController {
     @Req() req: any,
     @Body() body: { nome?: string },
   ) {
-    return this.orgService.atualizarSubOrg(orgId, subOrgId, req.user.id, body);
+    return this.orgService.atualizarSubOrg(orgId, subOrgId, req.user.id, body, req.user.master);
   }
 
   @Delete('organizacoes/:orgId/sub-orgs/:subOrgId')
@@ -117,7 +119,7 @@ export class OrganizationController {
     @Param('subOrgId') subOrgId: string,
     @Req() req: any,
   ) {
-    return this.orgService.excluirSubOrg(orgId, subOrgId, req.user.id);
+    return this.orgService.excluirSubOrg(orgId, subOrgId, req.user.id, req.user.master);
   }
 
   @Post('organizacoes/:orgId/sub-orgs/:subOrgId/transferir')
@@ -130,6 +132,7 @@ export class OrganizationController {
       subOrgId,
       body.novaOrgId,
       req.user.id,
+      req.user.master,
     );
   }
 
@@ -148,6 +151,7 @@ export class OrganizationController {
       req.user.id,
       body.email,
       body.papel,
+      req.user.master,
     );
   }
 
@@ -163,6 +167,50 @@ export class OrganizationController {
       subOrgId,
       req.user.id,
       membroId,
+      req.user.master,
     );
+  }
+
+  @Get('organizacoes/:orgId/sub-orgs/:subOrgId/membros')
+  listarMembrosSubOrg(
+    @Param('orgId') orgId: string,
+    @Param('subOrgId') subOrgId: string,
+    @Req() req: any,
+  ) {
+    return this.orgService.listarMembrosSubOrg(orgId, subOrgId, req.user.id, req.user.master);
+  }
+
+  @Post('organizacoes/:orgId/convites')
+  criarConviteOrg(
+    @Param('orgId') orgId: string,
+    @Body() body: { email: string; papel?: string },
+    @Req() req: any,
+  ) {
+    return this.orgService.criarConviteOrg(orgId, req.user.id, body.email, body.papel, req.user.master);
+  }
+
+  @Post('organizacoes/:orgId/sub-orgs/:subOrgId/convites')
+  criarConviteSubOrg(
+    @Param('orgId') orgId: string,
+    @Param('subOrgId') subOrgId: string,
+    @Body() body: { email: string; papel?: string },
+    @Req() req: any,
+  ) {
+    return this.orgService.criarConviteSubOrg(orgId, subOrgId, req.user.id, body.email, body.papel, req.user.master);
+  }
+
+  @Get('convites/meus')
+  listarMeusConvites(@Req() req: any) {
+    return this.orgService.listarMeusConvites(req.user.id);
+  }
+
+  @Patch('convites/:id/aceitar')
+  aceitarConvite(@Param('id') id: string, @Req() req: any) {
+    return this.orgService.aceitarConvite(id, req.user.id);
+  }
+
+  @Patch('convites/:id/rejeitar')
+  rejeitarConvite(@Param('id') id: string, @Req() req: any) {
+    return this.orgService.rejeitarConvite(id, req.user.id);
   }
 }

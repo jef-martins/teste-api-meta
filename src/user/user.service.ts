@@ -18,6 +18,7 @@ export class UserService {
         email: true,
         nome: true,
         papel: true,
+        master: true,
         ativo: true,
         criadoEm: true,
         atualizadoEm: true,
@@ -26,11 +27,19 @@ export class UserService {
     });
   }
 
-  async criar(email: string, senha: string, nome?: string, papel?: string) {
+  async criar(
+    email: string,
+    senha: string,
+    nome?: string,
+    papel?: string,
+    organizacaoId?: string,
+    subOrganizacaoId?: string,
+    criadorId?: string,
+  ) {
     const senhaHash = await bcrypt.hash(senha, 10);
     try {
-      return await this.prisma.botUsuario.create({
-        data: { email, senhaHash, nome: nome || '', papel: papel || 'admin' },
+      const usuario = await this.prisma.botUsuario.create({
+        data: { email, senhaHash, nome: nome || '', papel: papel || 'user' },
         select: {
           id: true,
           email: true,
@@ -40,6 +49,44 @@ export class UserService {
           criadoEm: true,
         },
       });
+
+      if (organizacaoId) {
+        await (this.prisma.orgMembro as any).create({
+          data: { organizacaoId, usuarioId: usuario.id, papel: papel === 'admin' ? 'admin' : 'membro' },
+        });
+      }
+
+      // Usuário comum com sub-org: cria convite em vez de vínculo direto
+      if (subOrganizacaoId && papel !== 'admin' && criadorId) {
+        const subOrg = await this.prisma.subOrganizacao.findUnique({
+          where: { id: subOrganizacaoId },
+          select: { organizacaoId: true },
+        });
+        if (subOrg) {
+          const jaExiste = await this.prisma.convite.findFirst({
+            where: { subOrgId: subOrganizacaoId, email, status: 'pendente' },
+          });
+          if (!jaExiste) {
+            await this.prisma.convite.create({
+              data: {
+                tipo: 'suborg',
+                orgId: subOrg.organizacaoId,
+                subOrgId: subOrganizacaoId,
+                email,
+                papel: 'membro',
+                convidadoPorId: criadorId,
+              },
+            });
+          }
+        }
+      } else if (subOrganizacaoId && papel !== 'admin') {
+        // Fallback sem criadorId: vínculo direto
+        await (this.prisma.subOrgMembro as any).create({
+          data: { subOrganizacaoId, usuarioId: usuario.id, papel: 'membro' },
+        });
+      }
+
+      return usuario;
     } catch (err: any) {
       if (err?.code === 'P2002')
         throw new BadRequestException('Email já cadastrado');
@@ -47,11 +94,50 @@ export class UserService {
     }
   }
 
+  async listarPorAdmin(adminId: string) {
+    const orgMembros = await this.prisma.orgMembro.findMany({
+      where: { usuarioId: adminId },
+      select: { organizacaoId: true },
+    });
+    const orgIds = orgMembros.map((o) => o.organizacaoId);
+    if (!orgIds.length) return [];
+
+    const subOrgs = await this.prisma.subOrganizacao.findMany({
+      where: { organizacaoId: { in: orgIds } },
+      select: { id: true },
+    });
+    const subOrgIds = subOrgs.map((s) => s.id);
+    if (!subOrgIds.length) return [];
+
+    const membros = await this.prisma.subOrgMembro.findMany({
+      where: { subOrganizacaoId: { in: subOrgIds } },
+      select: { usuarioId: true },
+    });
+    const userIds = [...new Set(membros.map((m) => m.usuarioId))];
+    if (!userIds.length) return [];
+
+    return this.prisma.botUsuario.findMany({
+      where: { id: { in: userIds } },
+      select: {
+        id: true,
+        email: true,
+        nome: true,
+        papel: true,
+        master: true,
+        ativo: true,
+        criadoEm: true,
+        atualizadoEm: true,
+      },
+      orderBy: { criadoEm: 'desc' },
+    });
+  }
+
   async atualizar(id: string, data: UpdateUserData) {
     const updateData: UpdateUserData = {
       nome: data.nome,
       email: data.email,
       papel: data.papel,
+      master: data.master,
       ativo: data.ativo,
     };
 
@@ -63,6 +149,7 @@ export class UserService {
       nome: updateData.nome,
       email: updateData.email,
       papel: updateData.papel,
+      master: updateData.master,
       ativo: updateData.ativo,
     };
 

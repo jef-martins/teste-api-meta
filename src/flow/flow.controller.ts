@@ -31,12 +31,12 @@ export class FlowController {
   @Get()
   listar(@Headers() headers: Record<string, string>, @Req() req: any) {
     const subOrgId = this.getSubOrgId(headers);
-    return this.flowService.listar(subOrgId, req.user.id);
+    return this.flowService.listar(subOrgId, req.user.id, req.user.master);
   }
 
   @Get(':id')
   obter(@Param('id') id: string, @Req() req: any) {
-    return this.flowService.obter(id, req.user.id);
+    return this.flowService.obter(id, req.user.id, req.user.master);
   }
 
   @Post()
@@ -46,31 +46,34 @@ export class FlowController {
     @Req() req: any,
   ) {
     const subOrgId = this.getSubOrgId(headers);
-    // Se subOrgId informado, verificar acesso
     if (subOrgId) {
       const temAcesso = await this.orgService.verificarAcessoSubOrg(
         req.user.id,
         subOrgId,
+        req.user.master,
       );
       if (!temAcesso) {
         throw new ForbiddenException('Sem acesso a esta sub-organização');
       }
     }
-    return this.flowService.criar({ ...body, subOrganizacaoId: subOrgId });
+    return this.flowService.criar(
+      { ...body, subOrganizacaoId: subOrgId },
+      req.user.id,
+    );
   }
 
   @Put(':id')
   atualizar(@Param('id') id: string, @Body() body: any, @Req() req: any) {
-    return this.flowService.atualizar(id, body, req.user.id);
+    return this.flowService.atualizar(id, body, req.user.id, req.user.master);
   }
 
   @Delete(':id')
   excluir(@Param('id') id: string, @Req() req: any) {
-    return this.flowService.excluir(id, req.user.id);
+    return this.flowService.excluir(id, req.user.id, req.user.master);
   }
 
   @Post(':id/ativar')
   ativar(@Param('id') id: string, @Req() req: any) {
-    return this.flowService.ativar(id, req.user.id);
+    return this.flowService.ativar(id, req.user.id, req.user.master);
   }
 }

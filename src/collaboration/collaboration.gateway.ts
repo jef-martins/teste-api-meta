@@ -16,14 +16,24 @@ import { WsAuthGuard } from '../auth/ws-auth.guard';
 // WebSocket event names
 const WsEvent = {
   JoinFlow: 'join-flow',
+  JoinComponent: 'join-component',
   FlowJoined: 'flow-joined',
+  ComponentJoined: 'component-joined',
   FlowError: 'flow-error',
   SyncStep1: 'sync-step-1',
   SyncStep2: 'sync-step-2',
   Update: 'update',
   AwarenessUpdate: 'awareness-update',
   AwarenessQuery: 'awareness-query',
+  PresenceUpdate: 'presence-update',
+  PresenceQuery: 'presence-query',
 } as const;
+
+interface PresenceInfo {
+  clientId: string;
+  user: { id: string; nome: string; email?: string };
+  location: { type: 'flow' | 'component'; id: string; name: string } | null;
+}
 
 @WebSocketGateway({
   namespace: '/collaboration',
@@ -33,32 +43,48 @@ const WsEvent = {
   },
 })
 export class CollaborationGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
-{
+  implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server!: Server;
 
   private readonly logger = new Logger(CollaborationGateway.name);
-  private clientRooms = new Map<string, string>(); // clientId → flowId
+  private clientRooms = new Map<string, { id: string; type: 'flow' | 'component' }>(); // clientId → room info
+  private clientPresence = new Map<string, PresenceInfo>(); // clientId → global presence
 
-  constructor(private collaborationService: CollaborationService) {}
+  constructor(private collaborationService: CollaborationService) { }
 
   handleConnection(client: Socket) {
     this.logger.log(`Client conectado: ${client.id}`);
   }
 
-  handleDisconnect(client: Socket) {
-    const flowId = this.clientRooms.get(client.id);
-    if (flowId !== undefined) {
-      this.collaborationService.removeConnection(flowId, client.id);
+  async handleDisconnect(client: Socket) {
+    const roomInfo = this.clientRooms.get(client.id);
+    if (roomInfo !== undefined) {
+      const roomKey = this.roomKey(roomInfo);
+      this.collaborationService.removeConnection(roomKey, client.id);
       this.clientRooms.delete(client.id);
 
-      client.to(String(flowId)).emit(WsEvent.AwarenessUpdate, {
+      client.to(roomKey).emit(WsEvent.AwarenessUpdate, {
         clientId: client.id,
         removed: true,
       });
     }
+
+    // Broadcast global presence removal
+    if (this.clientPresence.has(client.id)) {
+      this.clientPresence.delete(client.id);
+      this.server.emit(WsEvent.PresenceUpdate, {
+        clientId: client.id,
+        removed: true,
+      });
+    }
+
     this.logger.log(`Client desconectado: ${client.id}`);
+  }
+
+  /** Build a unique room key to avoid collisions between flow and component IDs */
+  private roomKey(info: { id: string; type: 'flow' | 'component' }): string {
+    return info.type === 'component' ? `component:${info.id}` : info.id;
   }
 
   @UseGuards(WsAuthGuard)
@@ -68,22 +94,17 @@ export class CollaborationGateway
     @MessageBody() data: { flowId: string },
   ) {
     const { flowId } = data;
-
-    const previousRoom = this.clientRooms.get(client.id);
-    if (previousRoom !== undefined) {
-      await client.leave(String(previousRoom));
-      this.collaborationService.removeConnection(previousRoom, client.id);
-    }
+    await this.leaveCurrentRoom(client);
 
     try {
       const room = await this.collaborationService.getOrCreateRoom(flowId);
-      await client.join(String(flowId));
-      this.clientRooms.set(client.id, flowId);
+      client.join(flowId);
+      this.clientRooms.set(client.id, { id: flowId, type: 'flow' });
       this.collaborationService.addConnection(flowId, client.id);
 
       const stateVector = Y.encodeStateVector(room.doc);
       client.emit(WsEvent.FlowJoined, { flowId });
-      client.emit(WsEvent.SyncStep1, { stateVector: Array.from(stateVector) });
+      client.emit(WsEvent.SyncStep1, stateVector);
 
       this.logger.log(`Client ${client.id} entrou no fluxo ${flowId}`);
     } catch (error) {
@@ -92,50 +113,95 @@ export class CollaborationGateway
     }
   }
 
+  @UseGuards(WsAuthGuard)
+  @SubscribeMessage(WsEvent.JoinComponent)
+  async handleJoinComponent(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { componentId: string },
+  ) {
+    const { componentId } = data;
+    await this.leaveCurrentRoom(client);
+
+    const roomKey = this.roomKey({ id: componentId, type: 'component' });
+
+    try {
+      const room = await this.collaborationService.getOrCreateComponentRoom(componentId);
+      client.join(roomKey);
+      this.clientRooms.set(client.id, { id: componentId, type: 'component' });
+      this.collaborationService.addConnection(roomKey, client.id);
+
+      const stateVector = Y.encodeStateVector(room.doc);
+      client.emit(WsEvent.ComponentJoined, { componentId });
+      client.emit(WsEvent.SyncStep1, stateVector);
+
+      this.logger.log(`Client ${client.id} entrou no componente ${componentId}`);
+    } catch (error) {
+      this.logger.error(`Falha ao entrar no componente ${componentId}`, error);
+      client.emit(WsEvent.FlowError, { message: 'Falha ao entrar no componente' });
+    }
+  }
+
+  private async leaveCurrentRoom(client: Socket) {
+    const prev = this.clientRooms.get(client.id);
+    if (prev !== undefined) {
+      const prevKey = this.roomKey(prev);
+      client.leave(prevKey);
+      this.collaborationService.removeConnection(prevKey, client.id);
+    }
+  }
+
+  /** Convert incoming data to Uint8Array (supports both binary and legacy JSON array) */
+  private toUint8Array(data: any): Uint8Array {
+    if (data instanceof Buffer || data instanceof Uint8Array) return new Uint8Array(data);
+    if (data?.update) return this.toUint8Array(data.update);
+    if (data?.stateVector) return this.toUint8Array(data.stateVector);
+    if (Array.isArray(data)) return new Uint8Array(data);
+    return new Uint8Array(data);
+  }
+
   @SubscribeMessage(WsEvent.SyncStep1)
   handleSyncStep1(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { stateVector: number[] },
+    @MessageBody() data: any,
   ) {
-    const flowId = this.clientRooms.get(client.id);
-    if (flowId === undefined) return;
+    const roomKey = this.getClientRoomKey(client.id);
+    if (!roomKey) return;
 
-    const remoteStateVector = new Uint8Array(data.stateVector);
+    const remoteStateVector = this.toUint8Array(data);
     const diff = this.collaborationService.getStateDiff(
-      flowId,
+      roomKey,
       remoteStateVector,
     );
 
     if (diff) {
-      client.emit(WsEvent.SyncStep2, { update: Array.from(diff) });
+      client.emit(WsEvent.SyncStep2, diff);
     }
   }
 
   @SubscribeMessage(WsEvent.SyncStep2)
   handleSyncStep2(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { update: number[] },
+    @MessageBody() data: any,
   ) {
-    const flowId = this.clientRooms.get(client.id);
-    if (flowId === undefined) return;
+    const roomKey = this.getClientRoomKey(client.id);
+    if (!roomKey) return;
 
-    const update = new Uint8Array(data.update);
-    this.collaborationService.applyUpdate(flowId, update);
+    const update = this.toUint8Array(data);
+    this.collaborationService.applyUpdate(roomKey, update);
   }
 
   @SubscribeMessage(WsEvent.Update)
   handleUpdate(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { update: number[] },
+    @MessageBody() data: any,
   ) {
-    const flowId = this.clientRooms.get(client.id);
-    if (flowId === undefined) return;
+    const roomKey = this.getClientRoomKey(client.id);
+    if (!roomKey) return;
 
-    const update = new Uint8Array(data.update);
-    this.collaborationService.applyUpdate(flowId, update);
+    const update = this.toUint8Array(data);
+    this.collaborationService.applyUpdate(roomKey, update);
 
-    // Broadcast to other clients in the same flow
-    client.to(String(flowId)).emit(WsEvent.Update, { update: data.update });
+    client.to(roomKey).emit(WsEvent.Update, update);
   }
 
   @SubscribeMessage(WsEvent.AwarenessUpdate)
@@ -143,10 +209,10 @@ export class CollaborationGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: any,
   ) {
-    const flowId = this.clientRooms.get(client.id);
-    if (flowId === undefined) return;
+    const roomKey = this.getClientRoomKey(client.id);
+    if (!roomKey) return;
 
-    client.to(String(flowId)).emit(WsEvent.AwarenessUpdate, {
+    client.to(roomKey).emit(WsEvent.AwarenessUpdate, {
       clientId: client.id,
       ...data,
     });
@@ -154,11 +220,39 @@ export class CollaborationGateway
 
   @SubscribeMessage(WsEvent.AwarenessQuery)
   handleAwarenessQuery(@ConnectedSocket() client: Socket) {
-    const flowId = this.clientRooms.get(client.id);
-    if (flowId === undefined) return;
+    const roomKey = this.getClientRoomKey(client.id);
+    if (!roomKey) return;
 
-    client.to(String(flowId)).emit(WsEvent.AwarenessQuery, {
+    client.to(roomKey).emit(WsEvent.AwarenessQuery, {
       clientId: client.id,
     });
+  }
+
+  @SubscribeMessage(WsEvent.PresenceUpdate)
+  handlePresenceUpdate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { user: any; location: any },
+  ) {
+    const presence: PresenceInfo = {
+      clientId: client.id,
+      user: data.user,
+      location: data.location || null,
+    };
+    this.clientPresence.set(client.id, presence);
+
+    // Broadcast to ALL connected clients (including sender for confirmation)
+    this.server.emit(WsEvent.PresenceUpdate, presence);
+  }
+
+  @SubscribeMessage(WsEvent.PresenceQuery)
+  handlePresenceQuery(@ConnectedSocket() client: Socket) {
+    // Send full presence list to the requesting client
+    const allPresence = Array.from(this.clientPresence.values());
+    client.emit(WsEvent.PresenceQuery, allPresence);
+  }
+
+  private getClientRoomKey(clientId: string): string | null {
+    const info = this.clientRooms.get(clientId);
+    return info ? this.roomKey(info) : null;
   }
 }

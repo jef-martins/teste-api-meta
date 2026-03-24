@@ -25,11 +25,11 @@ export class AuthController {
   }
 
   @Post('login')
-  async login(@Body() body: { email: string; senha: string }) {
+  async login(@Body() body: { email: string; senha: string }, @Req() req: any) {
     if (!body.email || !body.senha) {
       throw new BadRequestException('Email e senha são obrigatórios');
     }
-    return this.authService.login(body.email, body.senha);
+    return this.authService.login(body.email, body.senha, req.ip);
   }
 
   @Post('setup')

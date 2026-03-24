@@ -15,12 +15,14 @@ model BotUsuario {
   senhaHash    String   @map("senha_hash") @db.VarChar(255)
   nome         String?  @db.VarChar(100)
   papel        String   @default("admin") @db.VarChar(20)
+  master       Boolean  @default(false)
   ativo        Boolean  @default(true)
   criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz()
   atualizadoEm DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz()
 
   orgsComoMembro    OrgMembro[]
   subOrgsComoMembro SubOrgMembro[]
+  convitesEnviados  Convite[] @relation("ConvitesEnviados")
 
   @@map("bot_usuario")
 }
@@ -33,10 +35,12 @@ model BotFluxo {
   descricao        String?  @db.Text
   versao           Int      @default(1)
   ativo            Boolean  @default(false)
-  flowJson         Json?    @map("flow_json")
-  subOrganizacaoId String?  @map("sub_organizacao_id")
-  criadoEm         DateTime @default(now()) @map("criado_em") @db.Timestamptz()
-  atualizadoEm     DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz()
+  flowJson              Json?    @map("flow_json")
+  subOrganizacaoId      String?  @map("sub_organizacao_id")
+  ultimoModificadoPorId String?  @map("ultimo_modificado_por_id")
+  ultimoModificadorNome String?  @map("ultimo_modificador_nome") @db.VarChar(100)
+  criadoEm              DateTime @default(now()) @map("criado_em") @db.Timestamptz()
+  atualizadoEm          DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz()
 
   subOrganizacao SubOrganizacao?  @relation(fields: [subOrganizacaoId], references: [id])
   estados        BotEstadoConfig[]
@@ -63,13 +67,13 @@ model BotFluxoVariavel {
 // ── Configuração de estados (máquina de estados) ───────────────────────────
 
 model BotEstadoConfig {
-  estado    String   @id @db.VarChar(100)
-  handler   String   @db.VarChar(100)
+  estado    String   @id @db.VarChar(255)
+  handler   String   @db.VarChar(255)
   descricao String?  @db.Text
   ativo     Boolean  @default(true)
   config    Json     @default("{}")
-  nodeId    String?  @map("node_id") @db.VarChar(50)
-  nodeType  String?  @map("node_type") @db.VarChar(20)
+  nodeId    String?  @map("node_id") @db.VarChar(255)
+  nodeType  String?  @map("node_type") @db.VarChar(50)
   position  Json?    @default("{\"x\": 0, \"y\": 0}")
   flowId    String?  @map("flow_id")
   criadoEm  DateTime @default(now()) @map("criado_em") @db.Timestamptz()
@@ -87,9 +91,9 @@ model BotEstadoConfig {
 
 model BotEstadoTransicao {
   id            String   @id @default(uuid())
-  estadoOrigem  String   @map("estado_origem") @db.VarChar(100)
-  entrada       String   @default("*") @db.VarChar(100)
-  estadoDestino String   @map("estado_destino") @db.VarChar(100)
+  estadoOrigem  String   @map("estado_origem") @db.VarChar(255)
+  entrada       String   @default("*") @db.VarChar(255)
+  estadoDestino String   @map("estado_destino") @db.VarChar(255)
   ativo         Boolean  @default(true)
   criadoEm      DateTime @default(now()) @map("criado_em") @db.Timestamptz()
 
@@ -120,7 +124,7 @@ model BotKeywordGlobal {
 model BotEstadoUsuario {
   chatId       String   @id @map("chat_id") @db.VarChar(100)
   nome         String?  @db.VarChar(255)
-  estadoAtual  String   @default("NOVO") @map("estado_atual") @db.VarChar(100)
+  estadoAtual  String   @default("NOVO") @map("estado_atual") @db.VarChar(255)
   contexto     Json     @default("{}")
   criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz()
   atualizadoEm DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz()
@@ -135,8 +139,8 @@ model BotEstadoUsuario {
 model BotEstadoHistorico {
   id              String   @id @default(uuid())
   chatId          String   @map("chat_id") @db.VarChar(100)
-  estadoAnterior  String   @map("estado_anterior") @db.VarChar(100)
-  estadoNovo      String   @map("estado_novo") @db.VarChar(100)
+  estadoAnterior  String   @map("estado_anterior") @db.VarChar(255)
+  estadoNovo      String   @map("estado_novo") @db.VarChar(255)
   mensagemGatilho String?  @map("mensagem_gatilho") @db.Text
   config          Json     @default("{}")
   criadoEm        DateTime @default(now()) @map("criado_em") @db.Timestamptz()
@@ -187,6 +191,7 @@ model Organizacao {
   subOrganizacoes SubOrganizacao[]
   membros         OrgMembro[]
   apis            ApiRegistrada[]
+  convites        Convite[]
 
   @@map("organizacao")
 }
@@ -200,10 +205,12 @@ model SubOrganizacao {
   criadoEm        DateTime @default(now()) @map("criado_em") @db.Timestamptz()
   atualizadoEm    DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz()
 
-  organizacao   Organizacao      @relation(fields: [organizacaoId], references: [id], onDelete: Cascade)
-  membros       SubOrgMembro[]
-  fluxos        BotFluxo[]
-  apiTokens     ApiSubOrgToken[]
+  organizacao              Organizacao               @relation(fields: [organizacaoId], references: [id], onDelete: Cascade)
+  membros                  SubOrgMembro[]
+  fluxos                   BotFluxo[]
+  apiTokens                ApiSubOrgToken[]
+  componentesPersonalizados ComponentePersonalizado[]
+  convites                 Convite[]
 
   @@unique([organizacaoId, slug])
   @@map("sub_organizacao")
@@ -287,4 +294,59 @@ model ApiSubOrgToken {
 
   @@unique([apiId, subOrganizacaoId])
   @@map("api_sub_org_token")
+}
+
+// ── Convites ───────────────────────────────────────────────────────────────
+
+model Convite {
+  id             String   @id @default(uuid())
+  tipo           String   @db.VarChar(10)  // 'org' | 'suborg'
+  orgId          String?  @map("org_id")
+  subOrgId       String?  @map("sub_org_id")
+  email          String   @db.VarChar(255)
+  papel          String   @default("membro") @db.VarChar(20)
+  status         String   @default("pendente") @db.VarChar(20)
+  convidadoPorId String   @map("convidado_por_id")
+  criadoEm       DateTime @default(now()) @map("criado_em") @db.Timestamptz()
+
+  org          Organizacao?    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  subOrg       SubOrganizacao? @relation(fields: [subOrgId], references: [id], onDelete: Cascade)
+  convidadoPor BotUsuario      @relation("ConvitesEnviados", fields: [convidadoPorId], references: [id])
+
+  @@index([email])
+  @@index([orgId])
+  @@index([subOrgId])
+  @@map("convite")
+}
+
+// ── Componentes Personalizados ────────────────────────────────────────────
+
+model ComponentePersonalizado {
+  id               String   @id @default(uuid())
+  nome             String   @db.VarChar(100)
+  descricao        String?  @db.Text
+  icone            String?  @default("package") @db.VarChar(50)
+  nodesJson        Json     @map("nodes_json")
+  subOrganizacaoId String?  @map("sub_organizacao_id")
+  criadoEm         DateTime @default(now()) @map("criado_em") @db.Timestamptz()
+  atualizadoEm     DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz()
+
+  subOrganizacao SubOrganizacao? @relation(fields: [subOrganizacaoId], references: [id], onDelete: SetNull)
+  yjsUpdates     YjsComponentUpdate[]
+
+  @@map("componente_personalizado")
+}
+
+// ── Yjs Updates para Componentes Personalizados ─────────────────────────
+
+model YjsComponentUpdate {
+  id          String   @id @default(uuid())
+  componentId String   @map("component_id")
+  update      Bytes
+  criadoEm    DateTime @default(now()) @map("criado_em") @db.Timestamptz()
+
+  componente ComponentePersonalizado @relation(fields: [componentId], references: [id], onDelete: Cascade)
+
+  @@index([componentId])
+  @@map("yjs_component_updates")
 }

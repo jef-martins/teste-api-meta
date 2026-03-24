@@ -12,7 +12,15 @@ export class OrganizationService {
 
   // ─── Sub-orgs acessíveis pelo usuário ────────────────────────────────────
 
-  async getSubOrgsAcessiveis(usuarioId: string) {
+  async getSubOrgsAcessiveis(usuarioId: string, isMaster = false) {
+    if (isMaster) {
+      return this.prisma.subOrganizacao.findMany({
+        where: { ativa: true },
+        include: {
+          organizacao: { select: { id: true, nome: true, slug: true } },
+        },
+      });
+    }
     // Via membro direto da organização (herda todas sub-orgs)
     const orgMembros = await this.prisma.orgMembro.findMany({
       where: { usuarioId },
@@ -56,33 +64,89 @@ export class OrganizationService {
   async verificarAcessoSubOrg(
     usuarioId: string,
     subOrgId: string,
+    isMaster = false,
   ): Promise<boolean> {
+    if (isMaster) return true;
     const acessiveis = await this.getSubOrgsAcessiveis(usuarioId);
     return acessiveis.some((s) => s.id === subOrgId);
   }
 
   // ─── Organizações do usuário ──────────────────────────────────────────────
 
-  async listarOrganizacoes(usuarioId: string) {
-    const membros = await this.prisma.orgMembro.findMany({
+  async listarOrganizacoes(
+    usuarioId: string,
+    isMaster = false,
+    papel = 'user',
+  ) {
+    if (isMaster) {
+      const orgs = await this.prisma.organizacao.findMany({
+        include: {
+          subOrganizacoes: {
+            where: { ativa: true },
+            select: { id: true, nome: true, slug: true },
+          },
+          _count: { select: { membros: true } },
+        },
+      });
+      return orgs.map((org) => ({ ...org, papel: 'master' }));
+    }
+
+    // Usuário admin: vê todas as orgs que pertence com todas as sub-orgs
+    if (papel === 'admin') {
+      const membros = await this.prisma.orgMembro.findMany({
+        where: { usuarioId },
+        include: {
+          organizacao: {
+            include: {
+              subOrganizacoes: {
+                where: { ativa: true },
+                select: { id: true, nome: true, slug: true },
+              },
+              _count: { select: { membros: true } },
+            },
+          },
+        },
+      });
+      return membros.map((m) => ({ ...m.organizacao, papel: m.papel }));
+    }
+
+    // Usuário comum: vê apenas as sub-orgs que pertence, agrupadas por org-pai
+    const subOrgMembros = await this.prisma.subOrgMembro.findMany({
       where: { usuarioId },
       include: {
-        organizacao: {
+        subOrganizacao: {
           include: {
-            subOrganizacoes: {
-              where: { ativa: true },
-              select: { id: true, nome: true, slug: true },
+            organizacao: {
+              include: { _count: { select: { membros: true } } },
             },
-            _count: { select: { membros: true } },
           },
         },
       },
     });
 
-    return membros.map((m) => ({
-      ...m.organizacao,
-      papel: m.papel,
-    }));
+    const resultado = new Map<string, any>();
+    for (const sm of subOrgMembros) {
+      if (!sm.subOrganizacao || !sm.subOrganizacao.ativa) continue;
+      const org = sm.subOrganizacao.organizacao;
+      const entry = resultado.get(org.id) ?? {
+        ...org,
+        papel: 'membro',
+        subOrganizacoes: [],
+      };
+      const jaAdicionada = entry.subOrganizacoes.some(
+        (s: any) => s.id === sm.subOrganizacao.id,
+      );
+      if (!jaAdicionada) {
+        entry.subOrganizacoes.push({
+          id: sm.subOrganizacao.id,
+          nome: sm.subOrganizacao.nome,
+          slug: sm.subOrganizacao.slug,
+        });
+      }
+      resultado.set(org.id, entry);
+    }
+
+    return Array.from(resultado.values());
   }
 
   async criarOrganizacao(
@@ -117,8 +181,8 @@ export class OrganizationService {
     return org;
   }
 
-  async obterOrganizacao(orgId: string, usuarioId: string) {
-    await this.verificarMembroOrg(orgId, usuarioId);
+  async obterOrganizacao(orgId: string, usuarioId: string, isMaster = false) {
+    await this.verificarMembroOrg(orgId, usuarioId, isMaster);
     return this.prisma.organizacao.findUnique({
       where: { id: orgId as any },
       include: {
@@ -136,24 +200,25 @@ export class OrganizationService {
     orgId: string,
     usuarioId: string,
     data: { nome?: string },
+    isMaster = false,
   ) {
-    await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin']);
+    await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin'], isMaster);
     return this.prisma.organizacao.update({
       where: { id: orgId as any },
       data,
     });
   }
 
-  async excluirOrganizacao(orgId: string, usuarioId: string) {
-    await this.verificarPapelOrg(orgId, usuarioId, ['dono']);
+  async excluirOrganizacao(orgId: string, usuarioId: string, isMaster = false) {
+    await this.verificarPapelOrg(orgId, usuarioId, ['dono'], isMaster);
     await this.prisma.organizacao.delete({ where: { id: orgId as any } });
     return { ok: true };
   }
 
   // ─── Membros da organização ───────────────────────────────────────────────
 
-  async listarMembros(orgId: string, usuarioId: string) {
-    await this.verificarMembroOrg(orgId, usuarioId);
+  async listarMembros(orgId: string, usuarioId: string, isMaster = false) {
+    await this.verificarMembroOrg(orgId, usuarioId, isMaster);
     return this.prisma.orgMembro.findMany({
       where: { organizacaoId: orgId },
       include: { usuario: { select: { id: true, email: true, nome: true } } },
@@ -165,8 +230,9 @@ export class OrganizationService {
     solicitanteId: string,
     emailConvidado: string,
     papel = 'membro',
+    isMaster = false,
   ) {
-    await this.verificarPapelOrg(orgId, solicitanteId, ['dono', 'admin']);
+    await this.verificarPapelOrg(orgId, solicitanteId, ['dono', 'admin'], isMaster);
 
     const usuario = await this.prisma.botUsuario.findUnique({
       where: { email: emailConvidado },
@@ -189,8 +255,8 @@ export class OrganizationService {
     });
   }
 
-  async removerMembro(orgId: string, solicitanteId: string, membroId: string) {
-    await this.verificarPapelOrg(orgId, solicitanteId, ['dono', 'admin']);
+  async removerMembro(orgId: string, solicitanteId: string, membroId: string, isMaster = false) {
+    await this.verificarPapelOrg(orgId, solicitanteId, ['dono', 'admin'], isMaster);
     await this.prisma.orgMembro.delete({
       where: {
         organizacaoId_usuarioId: {
@@ -204,8 +270,8 @@ export class OrganizationService {
 
   // ─── Sub-organizações ─────────────────────────────────────────────────────
 
-  async listarSubOrgs(orgId: string, usuarioId: string) {
-    await this.verificarMembroOrg(orgId, usuarioId);
+  async listarSubOrgs(orgId: string, usuarioId: string, isMaster = false) {
+    await this.verificarMembroOrg(orgId, usuarioId, isMaster);
     return this.prisma.subOrganizacao.findMany({
       where: { organizacaoId: orgId },
       include: {
@@ -218,8 +284,9 @@ export class OrganizationService {
     orgId: string,
     usuarioId: string,
     data: { nome: string; slug?: string },
+    isMaster = false,
   ) {
-    await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin']);
+    await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin'], isMaster);
     if (!data.nome) throw new BadRequestException('Nome é obrigatório');
 
     let slug = data.slug || this.gerarSlug(data.nome);
@@ -246,16 +313,17 @@ export class OrganizationService {
     subOrgId: string,
     usuarioId: string,
     data: { nome?: string },
+    isMaster = false,
   ) {
-    await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin']);
+    await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin'], isMaster);
     return this.prisma.subOrganizacao.update({
       where: { id: subOrgId as any },
       data,
     });
   }
 
-  async excluirSubOrg(orgId: string, subOrgId: string, usuarioId: string) {
-    await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin']);
+  async excluirSubOrg(orgId: string, subOrgId: string, usuarioId: string, isMaster = false) {
+    await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin'], isMaster);
     await this.prisma.subOrganizacao.delete({ where: { id: subOrgId as any } });
     return { ok: true };
   }
@@ -264,6 +332,7 @@ export class OrganizationService {
     subOrgId: string,
     novaOrgId: string,
     usuarioId: string,
+    isMaster = false,
   ) {
     const subOrg = await this.prisma.subOrganizacao.findUnique({
       where: { id: subOrgId as any },
@@ -273,8 +342,8 @@ export class OrganizationService {
     await this.verificarPapelOrg(subOrg.organizacaoId, usuarioId, [
       'dono',
       'admin',
-    ]);
-    await this.verificarPapelOrg(novaOrgId, usuarioId, ['dono', 'admin']);
+    ], isMaster);
+    await this.verificarPapelOrg(novaOrgId, usuarioId, ['dono', 'admin'], isMaster);
 
     const slug = subOrg.slug;
     const conflito = await this.prisma.subOrganizacao.findUnique({
@@ -296,8 +365,9 @@ export class OrganizationService {
     solicitanteId: string,
     emailConvidado: string,
     papel = 'membro',
+    isMaster = false,
   ) {
-    await this.verificarPapelOrg(orgId, solicitanteId, ['dono', 'admin']);
+    await this.verificarPapelOrg(orgId, solicitanteId, ['dono', 'admin'], isMaster);
 
     const usuario = await this.prisma.botUsuario.findUnique({
       where: { email: emailConvidado },
@@ -327,8 +397,9 @@ export class OrganizationService {
     subOrgId: string,
     solicitanteId: string,
     membroId: string,
+    isMaster = false,
   ) {
-    await this.verificarPapelOrg(orgId, solicitanteId, ['dono', 'admin']);
+    await this.verificarPapelOrg(orgId, solicitanteId, ['dono', 'admin'], isMaster);
     await this.prisma.subOrgMembro.delete({
       where: {
         subOrganizacaoId_usuarioId: {
@@ -340,9 +411,123 @@ export class OrganizationService {
     return { ok: true };
   }
 
+  // ─── Lista membros da sub-organização ─────────────────────────────────────
+  async listarMembrosSubOrg(orgId: string, subOrgId: string, usuarioId: string, isMaster = false) {
+    await this.verificarMembroOrg(orgId, usuarioId, isMaster);
+    return this.prisma.subOrgMembro.findMany({
+      where: { subOrganizacaoId: subOrgId },
+      include: { usuario: { select: { id: true, email: true, nome: true } } },
+    });
+  }
+
+  // ─── Convites ─────────────────────────────────────────────────────────────
+
+  async criarConviteOrg(orgId: string, solicitanteId: string, email: string, papel = 'membro', isMaster = false) {
+    await this.verificarPapelOrg(orgId, solicitanteId, ['dono', 'admin'], isMaster);
+
+    // Verificar se usuário já é membro
+    const usuario = await this.prisma.botUsuario.findUnique({ where: { email } });
+    if (usuario) {
+      const jaExiste = await this.prisma.orgMembro.findUnique({
+        where: { organizacaoId_usuarioId: { organizacaoId: orgId as any, usuarioId: usuario.id as any } },
+      });
+      if (jaExiste) throw new BadRequestException('Usuário já é membro desta organização');
+    }
+
+    // Verificar convite pendente duplicado
+    const convitePendente = await this.prisma.convite.findFirst({
+      where: { orgId, email, status: 'pendente', tipo: 'org' },
+    });
+    if (convitePendente) throw new BadRequestException('Já existe um convite pendente para este e-mail');
+
+    return this.prisma.convite.create({
+      data: { tipo: 'org', orgId, email, papel, convidadoPorId: solicitanteId },
+    });
+  }
+
+  async criarConviteSubOrg(orgId: string, subOrgId: string, solicitanteId: string, email: string, papel = 'membro', isMaster = false) {
+    await this.verificarPapelOrg(orgId, solicitanteId, ['dono', 'admin'], isMaster);
+
+    const usuario = await this.prisma.botUsuario.findUnique({ where: { email } });
+    if (usuario) {
+      const jaExiste = await this.prisma.subOrgMembro.findUnique({
+        where: { subOrganizacaoId_usuarioId: { subOrganizacaoId: subOrgId as any, usuarioId: usuario.id as any } },
+      });
+      if (jaExiste) throw new BadRequestException('Usuário já é membro desta sub-organização');
+    }
+
+    const convitePendente = await this.prisma.convite.findFirst({
+      where: { subOrgId, email, status: 'pendente', tipo: 'suborg' },
+    });
+    if (convitePendente) throw new BadRequestException('Já existe um convite pendente para este e-mail');
+
+    return this.prisma.convite.create({
+      data: { tipo: 'suborg', orgId, subOrgId, email, papel, convidadoPorId: solicitanteId },
+    });
+  }
+
+  async listarMeusConvites(usuarioId: string) {
+    const usuario = await this.prisma.botUsuario.findUnique({ where: { id: usuarioId } });
+    if (!usuario) throw new NotFoundException('Usuário não encontrado');
+
+    return this.prisma.convite.findMany({
+      where: { email: usuario.email, status: 'pendente' },
+      include: {
+        org: { select: { id: true, nome: true } },
+        subOrg: { select: { id: true, nome: true } },
+        convidadoPor: { select: { id: true, nome: true, email: true } },
+      },
+      orderBy: { criadoEm: 'desc' },
+    });
+  }
+
+  async aceitarConvite(conviteId: string, usuarioId: string) {
+    const convite = await this.prisma.convite.findUnique({ where: { id: conviteId } });
+    if (!convite) throw new NotFoundException('Convite não encontrado');
+
+    const usuario = await this.prisma.botUsuario.findUnique({ where: { id: usuarioId } });
+    if (!usuario || usuario.email !== convite.email) {
+      throw new ForbiddenException('Este convite não é para você');
+    }
+    if (convite.status !== 'pendente') throw new BadRequestException('Este convite já foi processado');
+
+    await this.prisma.convite.update({ where: { id: conviteId }, data: { status: 'aceito' } });
+
+    if (convite.tipo === 'org' && convite.orgId) {
+      await this.prisma.orgMembro.upsert({
+        where: { organizacaoId_usuarioId: { organizacaoId: convite.orgId, usuarioId } },
+        create: { organizacaoId: convite.orgId, usuarioId, papel: convite.papel },
+        update: {},
+      });
+    } else if (convite.tipo === 'suborg' && convite.subOrgId) {
+      await this.prisma.subOrgMembro.upsert({
+        where: { subOrganizacaoId_usuarioId: { subOrganizacaoId: convite.subOrgId, usuarioId } },
+        create: { subOrganizacaoId: convite.subOrgId, usuarioId, papel: convite.papel },
+        update: {},
+      });
+    }
+
+    return { ok: true };
+  }
+
+  async rejeitarConvite(conviteId: string, usuarioId: string) {
+    const convite = await this.prisma.convite.findUnique({ where: { id: conviteId } });
+    if (!convite) throw new NotFoundException('Convite não encontrado');
+
+    const usuario = await this.prisma.botUsuario.findUnique({ where: { id: usuarioId } });
+    if (!usuario || usuario.email !== convite.email) {
+      throw new ForbiddenException('Este convite não é para você');
+    }
+    if (convite.status !== 'pendente') throw new BadRequestException('Este convite já foi processado');
+
+    await this.prisma.convite.update({ where: { id: conviteId }, data: { status: 'rejeitado' } });
+    return { ok: true };
+  }
+
   // ─── Helpers privados ─────────────────────────────────────────────────────
 
-  private async verificarMembroOrg(orgId: string, usuarioId: string) {
+  private async verificarMembroOrg(orgId: string, usuarioId: string, isMaster = false) {
+    if (isMaster) return;
     const membro = await this.prisma.orgMembro.findUnique({
       where: { organizacaoId_usuarioId: { organizacaoId: orgId, usuarioId } },
     });
@@ -353,10 +538,16 @@ export class OrganizationService {
     orgId: string,
     usuarioId: string,
     papeisPermitidos: string[],
+    isMaster = false,
   ) {
+    if (isMaster) return;
     const membro = await this.prisma.orgMembro.findUnique({
       where: { organizacaoId_usuarioId: { organizacaoId: orgId, usuarioId } },
+      include: { usuario: { select: { papel: true } } },
     });
+    // Admin do sistema (BotUsuario.papel = 'admin') tem permissão em qualquer
+    // org da qual é membro, independentemente do papel no OrgMembro
+    if (membro && membro.usuario.papel === 'admin') return;
     if (!membro || !papeisPermitidos.includes(membro.papel)) {
       throw new ForbiddenException('Permissão insuficiente');
     }

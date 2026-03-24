@@ -8,8 +8,8 @@ import {
 @Injectable()
 export class AdminGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
-    if (request.user?.papel !== 'admin') {
+    const req = context.switchToHttp().getRequest();
+    if (!req.user?.master && req.user?.papel !== 'admin') {
       throw new ForbiddenException('Acesso restrito a administradores');
     }
     return true;

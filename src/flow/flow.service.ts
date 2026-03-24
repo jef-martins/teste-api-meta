@@ -16,6 +16,14 @@ export class FlowService {
     private orgService: OrganizationService,
   ) {}
 
+  private async obterNomeModificador(usuarioId: string): Promise<string | null> {
+    const u = await this.prisma.botUsuario.findUnique({
+      where: { id: usuarioId },
+      select: { nome: true, email: true },
+    });
+    return u?.nome || u?.email || null;
+  }
+
   private aplicarPrefixo(flowId: string, estados: any[], transicoes: any[]) {
     const prefix = `F${flowId}_`;
     const estadosPrefixados = estados.map((e: any) => ({
@@ -30,7 +38,12 @@ export class FlowService {
     return { estadosPrefixados, transicoesAtualizadas };
   }
 
-  private async verificarAcessoFluxo(fluxo: any, usuarioId: string) {
+  private async verificarAcessoFluxo(
+    fluxo: any,
+    usuarioId: string,
+    isMaster = false,
+  ) {
+    if (isMaster) return;
     if (fluxo.subOrganizacaoId) {
       const temAcesso = await this.orgService.verificarAcessoSubOrg(
         usuarioId,
@@ -42,13 +55,19 @@ export class FlowService {
     }
   }
 
-  async listar(subOrganizacaoId: string | null, usuarioId: string) {
-    const subOrgsAcessiveis =
-      await this.orgService.getSubOrgsAcessiveis(usuarioId);
+  async listar(
+    subOrganizacaoId: string | null,
+    usuarioId: string,
+    isMaster = false,
+  ) {
+    const subOrgsAcessiveis = await this.orgService.getSubOrgsAcessiveis(
+      usuarioId,
+      isMaster,
+    );
     const idsAcessiveis = subOrgsAcessiveis.map((s) => s.id);
 
     const where = subOrganizacaoId
-      ? idsAcessiveis.includes(subOrganizacaoId)
+      ? isMaster || idsAcessiveis.includes(subOrganizacaoId)
         ? { subOrganizacaoId }
         : { id: '' } // sem acesso à sub-org solicitada
       : idsAcessiveis.length > 0
@@ -66,16 +85,17 @@ export class FlowService {
         subOrganizacaoId: true,
         criadoEm: true,
         atualizadoEm: true,
+        ultimoModificadorNome: true,
       },
       orderBy: { atualizadoEm: 'desc' },
     });
   }
 
-  async obter(id: string, usuarioId: string) {
+  async obter(id: string, usuarioId: string, isMaster = false) {
     const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
     if (!fluxo) throw new NotFoundException('Fluxo não encontrado');
 
-    await this.verificarAcessoFluxo(fluxo, usuarioId);
+    await this.verificarAcessoFluxo(fluxo, usuarioId, isMaster);
 
     if (fluxo.flowJson) {
       return {
@@ -117,15 +137,20 @@ export class FlowService {
     };
   }
 
-  async criar(data: {
-    name: string;
-    description?: string;
-    nodes?: any[];
-    connections?: any[];
-    variables?: any[];
-    subOrganizacaoId?: string | null;
-  }) {
+  async criar(
+    data: {
+      name: string;
+      description?: string;
+      nodes?: any[];
+      connections?: any[];
+      variables?: any[];
+      subOrganizacaoId?: string | null;
+    },
+    usuarioId?: string,
+  ) {
     if (!data.name) throw new BadRequestException('Nome é obrigatório');
+
+    const modificadorNome = usuarioId ? await this.obterNomeModificador(usuarioId) : null;
 
     const flowJson = {
       nodes: data.nodes,
@@ -139,6 +164,8 @@ export class FlowService {
         descricao: data.description || '',
         flowJson,
         subOrganizacaoId: data.subOrganizacaoId ?? null,
+        ultimoModificadoPorId: usuarioId ?? null,
+        ultimoModificadorNome: modificadorNome,
       },
     });
 
@@ -149,8 +176,7 @@ export class FlowService {
       transicoes,
     );
 
-    await this.salvarEstados(fluxo.id, estadosPrefixados);
-    await this.salvarTransicoes(transicoesAtualizadas);
+    await this.persistirEstados(fluxo.id, estadosPrefixados, transicoesAtualizadas);
 
     if (data.variables?.length) {
       await this.salvarVariaveis(fluxo.id, data.variables);
@@ -170,13 +196,16 @@ export class FlowService {
       version?: number;
     },
     usuarioId: string,
+    isMaster = false,
   ) {
     const fluxoExistente = await this.prisma.botFluxo.findUnique({
       where: { id },
     });
     if (!fluxoExistente) throw new NotFoundException('Fluxo não encontrado');
 
-    await this.verificarAcessoFluxo(fluxoExistente, usuarioId);
+    await this.verificarAcessoFluxo(fluxoExistente, usuarioId, isMaster);
+
+    const modificadorNome = await this.obterNomeModificador(usuarioId);
 
     const flowJson = {
       nodes: data.nodes,
@@ -191,10 +220,10 @@ export class FlowService {
         descricao: data.description ?? fluxoExistente.descricao,
         flowJson,
         versao: data.version || fluxoExistente.versao + 1,
+        ultimoModificadoPorId: usuarioId,
+        ultimoModificadorNome: modificadorNome,
       },
     });
-
-    await this.limparEstados(id);
 
     const { estados, transicoes } = this.converter.flowToStateMachine(flowJson);
     const { estadosPrefixados, transicoesAtualizadas } = this.aplicarPrefixo(
@@ -203,8 +232,7 @@ export class FlowService {
       transicoes,
     );
 
-    await this.salvarEstados(id, estadosPrefixados);
-    await this.salvarTransicoes(transicoesAtualizadas);
+    await this.persistirEstados(id, estadosPrefixados, transicoesAtualizadas);
 
     if (data.variables) {
       await this.salvarVariaveis(id, data.variables);
@@ -213,11 +241,11 @@ export class FlowService {
     return { ok: true };
   }
 
-  async excluir(id: string, usuarioId: string) {
+  async excluir(id: string, usuarioId: string, isMaster = false) {
     const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
     if (!fluxo) throw new NotFoundException('Fluxo não encontrado');
 
-    await this.verificarAcessoFluxo(fluxo, usuarioId);
+    await this.verificarAcessoFluxo(fluxo, usuarioId, isMaster);
 
     // Remove user sessions pointing to this flow's states
     await this.prisma.botEstadoUsuario.deleteMany({
@@ -227,11 +255,11 @@ export class FlowService {
     return { ok: true };
   }
 
-  async ativar(id: string, usuarioId: string) {
+  async ativar(id: string, usuarioId: string, isMaster = false) {
     const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
     if (!fluxo) throw new NotFoundException('Fluxo não encontrado');
 
-    await this.verificarAcessoFluxo(fluxo, usuarioId);
+    await this.verificarAcessoFluxo(fluxo, usuarioId, isMaster);
 
     await this.prisma.$transaction(async (tx) => {
       // Deactivate all states belonging to flows
@@ -276,56 +304,81 @@ export class FlowService {
     return { ok: true, mensagem: `Fluxo "${fluxo.nome}" ativado` };
   }
 
+  // ─── Compilação pública (usada pelo CollaborationService) ─────────────────
+
+  async recompilarFluxo(flowId: string, flowJson: any) {
+    const { estados, transicoes } = this.converter.flowToStateMachine(flowJson);
+    const { estadosPrefixados, transicoesAtualizadas } = this.aplicarPrefixo(
+      flowId,
+      estados,
+      transicoes,
+    );
+    await this.persistirEstados(flowId, estadosPrefixados, transicoesAtualizadas);
+    if (flowJson.variables?.length) {
+      await this.salvarVariaveis(flowId, flowJson.variables);
+    }
+  }
+
   // ─── Helpers privados ────────────────────────────────────────────────────
 
-  private async limparEstados(flowId: string) {
-    await this.prisma.botEstadoUsuario.deleteMany({
-      where: { estado: { flowId } },
+  /**
+   * Apaga e recria os estados/transições de um fluxo dentro de uma única
+   * transação, evitando race condition entre atualizar() e recompilarFluxo().
+   */
+  private async persistirEstados(
+    flowId: string,
+    estados: any[],
+    transicoes: any[],
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Apagar usuários cujo estado pertence a este fluxo (FK constraint)
+      await tx.botEstadoUsuario.deleteMany({
+        where: { estado: { flowId } },
+      });
+      // 2. Apagar configs (cascade apaga também botEstadoTransicao)
+      await tx.botEstadoConfig.deleteMany({ where: { flowId } });
+
+      // 3. Criar novos estados
+      if (estados.length) {
+        await tx.botEstadoConfig.createMany({
+          data: estados.map((e) => ({
+            estado: e.estado,
+            handler: e.handler,
+            descricao: e.descricao || '',
+            ativo: e.ativo !== false,
+            config: e.config || {},
+            nodeId: e.node_id || null,
+            nodeType: e.node_type || null,
+            position: e.position || { x: 0, y: 0 },
+            flowId,
+          })),
+        });
+      }
+
+      // 4. Criar novas transições (estados já existem no mesmo tx)
+      if (transicoes.length) {
+        await tx.botEstadoTransicao.createMany({
+          data: transicoes.map((t) => ({
+            estadoOrigem: t.estado_origem,
+            entrada: t.entrada,
+            estadoDestino: t.estado_destino,
+            ativo: t.ativo !== false,
+          })),
+          skipDuplicates: true,
+        });
+      }
     });
-    await this.prisma.botEstadoConfig.deleteMany({ where: { flowId } });
-  }
-
-  private async salvarEstados(flowId: string, estados: any[]) {
-    for (const e of estados) {
-      await this.prisma.botEstadoConfig.create({
-        data: {
-          estado: e.estado,
-          handler: e.handler,
-          descricao: e.descricao || '',
-          ativo: e.ativo !== false,
-          config: e.config || {},
-          nodeId: e.node_id || null,
-          nodeType: e.node_type || null,
-          position: e.position || { x: 0, y: 0 },
-          flowId,
-        },
-      });
-    }
-  }
-
-  private async salvarTransicoes(transicoes: any[]) {
-    for (const t of transicoes) {
-      await this.prisma.botEstadoTransicao.create({
-        data: {
-          estadoOrigem: t.estado_origem,
-          entrada: t.entrada,
-          estadoDestino: t.estado_destino,
-          ativo: t.ativo !== false,
-        },
-      });
-    }
   }
 
   private async salvarVariaveis(flowId: string, variaveis: any[]) {
     await this.prisma.botFluxoVariavel.deleteMany({ where: { flowId } });
-    for (const v of variaveis) {
-      await this.prisma.botFluxoVariavel.create({
-        data: {
-          flowId,
-          chave: v.key || v.chave,
-          valorPadrao: v.value || v.valor_padrao || '',
-        },
-      });
-    }
+    if (!variaveis.length) return;
+    await this.prisma.botFluxoVariavel.createMany({
+      data: variaveis.map((v) => ({
+        flowId,
+        chave: v.key || v.chave,
+        valorPadrao: v.value || v.valor_padrao || '',
+      })),
+    });
   }
 }

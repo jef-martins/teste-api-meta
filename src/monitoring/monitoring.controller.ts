@@ -1,6 +1,7 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
-import { MonitoringService } from './monitoring.service';
+import { MonitoringService, SnapshotServidor } from './monitoring.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { MasterGuard } from '../auth/master.guard';
 
 @Controller()
 @UseGuards(JwtAuthGuard)
@@ -25,5 +26,17 @@ export class MonitoringController {
   @Get('dashboard')
   dashboard() {
     return this.monitoringService.dashboard();
+  }
+
+  @Get('admin/servidor')
+  @UseGuards(MasterGuard)
+  infoServidor() {
+    return this.monitoringService.infoServidor();
+  }
+
+  @Get('admin/servidor/historico')
+  @UseGuards(MasterGuard)
+  historicoServidor(): SnapshotServidor[] {
+    return this.monitoringService.historicoServidor();
   }
 }
