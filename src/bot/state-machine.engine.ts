@@ -210,6 +210,7 @@ export class StateMachineEngine {
         this.logger.error(`Handler "${config.handler}" não existe no Delegate!`);
       }
     }
+  }
 
   async avancarEstado(
       chatId: string,
