@@ -52,7 +52,7 @@ export class UserService {
       });
 
       if (organizacaoId) {
-        await (this.prisma.orgMembro as any).create({
+        await this.prisma.orgMembro.create({
           data: { organizacaoId, usuarioId: usuario.id, papel: papel === 'admin' ? 'admin' : 'membro' },
         });
       }
@@ -82,7 +82,7 @@ export class UserService {
         }
       } else if (subOrganizacaoId && papel !== 'admin') {
         // Fallback sem criadorId: vínculo direto
-        await (this.prisma.subOrgMembro as any).create({
+        await this.prisma.subOrgMembro.create({
           data: { subOrganizacaoId, usuarioId: usuario.id, papel: 'membro' },
         });
       }

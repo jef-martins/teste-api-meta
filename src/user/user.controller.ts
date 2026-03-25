@@ -14,9 +14,8 @@ import {
 import { UserService } from './user.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MasterGuard } from '../auth/master.guard';
-import { AdminGuard } from '../auth/admin.guard';
-import { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
-import { UpdateUserData } from './interfaces/update-user.interface';
+import type { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
+import type { UpdateUserData } from './interfaces/update-user.interface';
 
 @Controller('auth/usuarios')
 @UseGuards(JwtAuthGuard)

@@ -36,7 +36,8 @@ describe('UserController', () => {
     const mockUsers = [{ id: '1', nome: 'Admin' }];
     (service.listar as jest.Mock).mockResolvedValue(mockUsers);
 
-    const result = await controller.listar();
+    const req = { user: { master: true, id: 'admin-id' } } as any;
+    const result = await controller.listar(req);
     expect(result).toEqual(mockUsers);
     expect(service.listar).toHaveBeenCalled();
   });
@@ -45,27 +46,38 @@ describe('UserController', () => {
     const mockUser = { id: '1', email: 'test@test.com' };
     (service.criar as jest.Mock).mockResolvedValue(mockUser);
 
-    const result = await controller.criar({
-      email: 'test@test.com',
-      senha: '123',
-      nome: 'Test',
-      papel: 'admin',
-    });
+    const req = { user: { master: true, id: 'admin-id' } } as any;
+    const result = await controller.criar(
+      {
+        email: 'test@test.com',
+        senha: '123',
+        nome: 'Test',
+        papel: 'admin',
+      },
+      req,
+    );
     expect(result).toEqual(mockUser);
     expect(service.criar).toHaveBeenCalledWith(
       'test@test.com',
       '123',
       'Test',
       'admin',
+      undefined,
+      undefined,
+      'admin-id',
     );
   });
 
   it('deve lançar erro se faltar email na criação', () => {
+    const req = { user: { master: true, id: 'admin-id' } } as any;
     expect(() =>
-      controller.criar({
-        email: '',
-        senha: '123',
-      }),
+      controller.criar(
+        {
+          email: '',
+          senha: '123',
+        },
+        req,
+      ),
     ).toThrow(BadRequestException);
   });
 
