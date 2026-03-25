@@ -13,6 +13,8 @@ import type {
 const PERSIST_DEBOUNCE_MS = 2000;
 const RECOMPILE_DEBOUNCE_MS = 10000; // Recompile bot state less often (every 10s max)
 const ROOM_CLEANUP_TIMEOUT_MS = 30000;
+const COMPACT_THRESHOLD = 100;     // Compact after this many accumulated updates
+const COMPACT_MIN_INTERVAL_MS = 60_000; // Never compact more than once per minute
 
 interface Room {
   doc: Y.Doc;
@@ -26,6 +28,10 @@ interface Room {
   roomType: 'flow' | 'component';
   /** The actual entity ID (flowId or componentId) */
   entityId: string;
+  /** In-memory count of stored Yjs updates — avoids a DB count() on every persist */
+  storedUpdateCount: number;
+  /** Timestamp of last compaction — throttles compaction frequency */
+  lastCompactedAt: number;
 }
 
 type ComponentJsonPayload = {
@@ -41,7 +47,7 @@ export class CollaborationService implements OnModuleDestroy {
   constructor(
     private prisma: PrismaService,
     private flowService: FlowService,
-  ) {}
+  ) { }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -119,8 +125,11 @@ export class CollaborationService implements OnModuleDestroy {
       needsRecompile: false,
       roomType: 'flow',
       entityId: flowId,
+      storedUpdateCount: 0,
+      lastCompactedAt: 0,
     };
 
+    room.storedUpdateCount = await this.prisma.yjsUpdate.count({ where: { flowId } });
     await this.loadFlowState(flowId, doc);
 
     this.rooms.set(flowId, room);
@@ -150,8 +159,11 @@ export class CollaborationService implements OnModuleDestroy {
       needsRecompile: false,
       roomType: 'component',
       entityId: componentId,
+      storedUpdateCount: 0,
+      lastCompactedAt: 0,
     };
 
+    room.storedUpdateCount = await this.prisma.yjsComponentUpdate.count({ where: { componentId } });
     await this.loadComponentState(componentId, doc);
 
     this.rooms.set(roomKey, room);
@@ -234,18 +246,22 @@ export class CollaborationService implements OnModuleDestroy {
             update: Buffer.from(mergedUpdate),
           },
         });
+        room.storedUpdateCount++;
         await this.syncComponentJsonFromDoc(room.entityId, room.doc);
-        await this.compactComponentUpdatesIfNeeded(room.entityId);
-        this.logger.debug(
-          `Updates persistidos para componente ${room.entityId}`,
-        );
+        if (this.shouldCompact(room)) {
+          await this.compactComponentUpdatesIfNeeded(room.entityId, room);
+        }
+        this.logger.debug(`Updates persistidos para componente ${room.entityId}`);
       } else {
         const flowId = room.entityId;
         await this.prisma.yjsUpdate.create({
           data: { flowId, update: Buffer.from(mergedUpdate) },
         });
+        room.storedUpdateCount++;
         await this.syncFlowJsonFromDoc(flowId, room.doc);
-        await this.compactUpdatesIfNeeded(flowId);
+        if (this.shouldCompact(room)) {
+          await this.compactUpdatesIfNeeded(flowId, room);
+        }
         room.needsRecompile = true;
         this.scheduleRecompile(roomKey, room);
         this.logger.debug(`Updates persistidos para fluxo ${flowId}`);
@@ -331,15 +347,21 @@ export class CollaborationService implements OnModuleDestroy {
     }
   }
 
-  private async compactUpdatesIfNeeded(flowId: string) {
-    const count = await this.prisma.yjsUpdate.count({ where: { flowId } });
-    if (count < 50) return;
+  private shouldCompact(room: Room): boolean {
+    if (room.storedUpdateCount < COMPACT_THRESHOLD) return false;
+    const now = Date.now();
+    if (now - room.lastCompactedAt < COMPACT_MIN_INTERVAL_MS) return false;
+    return true;
+  }
 
+  private async compactUpdatesIfNeeded(flowId: string, room: Room) {
     const allUpdates = await this.prisma.yjsUpdate.findMany({
       where: { flowId },
       orderBy: { criadoEm: 'asc' },
       select: { id: true, update: true },
     });
+
+    if (allUpdates.length < 2) return;
 
     const merged = Y.mergeUpdates(
       allUpdates.map((u) => new Uint8Array(u.update)),
@@ -352,9 +374,9 @@ export class CollaborationService implements OnModuleDestroy {
       }),
     ]);
 
-    this.logger.log(
-      `Compactados ${allUpdates.length} updates em 1 para fluxo ${flowId}`,
-    );
+    room.storedUpdateCount = 1;
+    room.lastCompactedAt = Date.now();
+    this.logger.log(`Compactados ${allUpdates.length} updates em 1 para fluxo ${flowId}`);
   }
 
   private async loadFlowState(flowId: string, doc: Y.Doc) {
@@ -487,7 +509,7 @@ export class CollaborationService implements OnModuleDestroy {
     }
   }
 
-  private async compactComponentUpdatesIfNeeded(componentId: string) {
+  private async compactComponentUpdatesIfNeeded(componentId: string, room: Room) {
     const count = await this.prisma.yjsComponentUpdate.count({
       where: { componentId },
     });
@@ -498,6 +520,8 @@ export class CollaborationService implements OnModuleDestroy {
       orderBy: { criadoEm: 'asc' },
       select: { id: true, update: true },
     });
+
+    if (allUpdates.length < 2) return;
 
     const merged = Y.mergeUpdates(
       allUpdates.map((u) => new Uint8Array(u.update)),
@@ -510,9 +534,9 @@ export class CollaborationService implements OnModuleDestroy {
       }),
     ]);
 
-    this.logger.log(
-      `Compactados ${allUpdates.length} updates em 1 para componente ${componentId}`,
-    );
+    room.storedUpdateCount = 1;
+    room.lastCompactedAt = Date.now();
+    this.logger.log(`Compactados ${allUpdates.length} updates em 1 para componente ${componentId}`);
   }
 
   private async cleanupRoom(flowId: string) {
