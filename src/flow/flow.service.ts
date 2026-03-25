@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { FlowConverterService } from './flow-converter.service';
 import { OrganizationService } from '../organization/organization.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class FlowService {
@@ -14,6 +15,7 @@ export class FlowService {
     private prisma: PrismaService,
     private converter: FlowConverterService,
     private orgService: OrganizationService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   private async obterNomeModificador(usuarioId: string): Promise<string | null> {
@@ -182,6 +184,7 @@ export class FlowService {
       await this.salvarVariaveis(fluxo.id, data.variables);
     }
 
+    this.eventEmitter.emit('flow.updated');
     return { ok: true, id: fluxo.id, fluxo };
   }
 
@@ -238,6 +241,7 @@ export class FlowService {
       await this.salvarVariaveis(id, data.variables);
     }
 
+    this.eventEmitter.emit('flow.updated');
     return { ok: true };
   }
 
@@ -252,6 +256,8 @@ export class FlowService {
       where: { estado: { flowId: id } },
     });
     await this.prisma.botFluxo.delete({ where: { id } });
+    
+    this.eventEmitter.emit('flow.updated');
     return { ok: true };
   }
 
@@ -301,6 +307,7 @@ export class FlowService {
       }
     });
 
+    this.eventEmitter.emit('flow.updated');
     return { ok: true, mensagem: `Fluxo "${fluxo.nome}" ativado` };
   }
 

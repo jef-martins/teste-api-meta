@@ -16,6 +16,9 @@ import { HealthController } from './health.controller';
 import { BotMetaModule } from './bot/meta/bot-meta.module';
 import { GlobalKeywordModule } from './global-keyword/global-keyword.module';
 
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { RedisModule } from './redis/redis.module';
+
 /**
  * Estratégia de canal por ambiente:
  *
@@ -35,6 +38,8 @@ const botChannelModules = isDevelopment
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    EventEmitterModule.forRoot(),
+    RedisModule,
     PrismaModule,
     AuthModule,
     UserModule,

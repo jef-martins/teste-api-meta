@@ -1,14 +1,78 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
-export class EstadoRepository {
+export class EstadoRepository implements OnModuleInit {
   private readonly logger = new Logger(EstadoRepository.name);
 
-  constructor(private prisma: PrismaService) {}
+  // Cache de configurações de nós
+  private configCache = new Map<string, any>();
+  // Cache de transições indexado pelo estado de origem
+  private transicoesCache = new Map<string, any[]>();
+  // Cache do estado inicial
+  private estadoInicialCache: string | null = null;
+
+  constructor(
+    private prisma: PrismaService,
+    private redis: RedisService,
+  ) {}
+
+  async onModuleInit() {
+    await this.warmUpCache();
+  }
+
+  /**
+   * Carrega todas as definições ativas para a memória
+   */
+  @OnEvent('flow.updated')
+  async warmUpCache() {
+    this.logger.log('Atualizando cache de fluxos (warmUpCache)...');
+    try {
+      const [configs, transicoes, estadoInicialNode] = await Promise.all([
+        this.prisma.botEstadoConfig.findMany({ where: { ativo: true } }),
+        this.prisma.botEstadoTransicao.findMany({ where: { ativo: true } }),
+        this.prisma.botEstadoConfig.findFirst({
+          where: {
+            ativo: true,
+            nodeType: 'start',
+            fluxo: { ativo: true },
+          },
+          select: { estado: true },
+        }),
+      ]);
+
+      this.configCache.clear();
+      configs.forEach((c) => this.configCache.set(c.estado, c));
+
+      this.transicoesCache.clear();
+      transicoes.forEach((t) => {
+        const lista = this.transicoesCache.get(t.estadoOrigem) || [];
+        lista.push(t);
+        this.transicoesCache.set(t.estadoOrigem, lista);
+      });
+
+      this.estadoInicialCache = estadoInicialNode?.estado || 'NOVO';
+      
+      this.logger.log(`Cache atualizado: ${this.configCache.size} estados, ${this.transicoesCache.size} origens de transição.`);
+    } catch (err: any) {
+      this.logger.error(`Erro ao carregar cache de fluxos: ${err.message}`);
+    }
+  }
 
   async obterConfigEstado(estado: string) {
     try {
+      const cached = this.configCache.get(estado);
+      if (cached) {
+        return {
+          handler: cached.handler,
+          descricao: cached.descricao,
+          config: (cached.config as any) ?? {},
+        };
+      }
+
+      // Fallback
       const row = await this.prisma.botEstadoConfig.findFirst({
         where: { estado, ativo: true },
         select: { handler: true, descricao: true, config: true },
@@ -31,7 +95,19 @@ export class EstadoRepository {
     acceptWildcard = true,
   ): Promise<string | null> {
     try {
-      // Exact match (case-insensitive) first
+      const transicoes = this.transicoesCache.get(estadoAtual) || [];
+
+      // Exact match first in cache
+      let exactMatch = transicoes.find((t) => t.entrada === entrada);
+      if (exactMatch) return exactMatch.estadoDestino;
+
+      // Wildcard fallback in cache
+      if (acceptWildcard && entrada !== '*') {
+        let wildcardMatch = transicoes.find((t) => t.entrada === '*');
+        if (wildcardMatch) return wildcardMatch.estadoDestino;
+      }
+
+      // Fallback to database if not found in cache (e.g. cache hasn't loaded properly)
       let row = await this.prisma.botEstadoTransicao.findFirst({
         where: {
           estadoOrigem: estadoAtual,
@@ -42,7 +118,6 @@ export class EstadoRepository {
       });
       if (row) return row.estadoDestino;
 
-      // Wildcard fallback
       if (acceptWildcard && entrada !== '*') {
         row = await this.prisma.botEstadoTransicao.findFirst({
           where: { estadoOrigem: estadoAtual, entrada: '*', ativo: true },
@@ -61,6 +136,16 @@ export class EstadoRepository {
 
   async obterEstadoUsuario(chatId: string): Promise<string | null> {
     try {
+      // 1. Try Redis first
+      const sessaoRaw = await this.redis.get(`session:${chatId}`);
+      if (sessaoRaw) {
+        const sessao = JSON.parse(sessaoRaw);
+        if (sessao && sessao.estado) {
+          return sessao.estado;
+        }
+      }
+
+      // 2. Fallback to DB
       const row = await this.prisma.botEstadoUsuario.findUnique({
         where: { chatId },
         select: { estadoAtual: true },
@@ -78,23 +163,26 @@ export class EstadoRepository {
     nome?: string | null,
   ) {
     try {
-      const existe = await this.prisma.botEstadoConfig.findFirst({
-        where: { estado },
-        select: { estado: true },
-      });
-      if (!existe) {
-        this.logger.warn(
-          `Estado "${estado}" não existe em BotEstadoConfig — persistência ignorada para ${chatId}`,
+      // 1. Atualizar Redis (Expira em 7 dias se o usuário sumir = 604800 segundos)
+      await this.redis.set(
+        `session:${chatId}`,
+        JSON.stringify({ estado, nome }),
+        'EX',
+        604800,
+      );
+
+      // 2. Atualizar PG em background
+      this.prisma.botEstadoUsuario
+        .upsert({
+          where: { chatId },
+          update: { estadoAtual: estado, nome: nome || undefined },
+          create: { chatId, estadoAtual: estado, nome: nome || undefined },
+        })
+        .catch((err) =>
+          this.logger.error(`Erro ao salvar no banco em background: ${err}`),
         );
-        return;
-      }
-      await this.prisma.botEstadoUsuario.upsert({
-        where: { chatId },
-        update: { estadoAtual: estado, nome: nome || undefined },
-        create: { chatId, estadoAtual: estado, nome: nome || undefined },
-      });
     } catch (err: any) {
-      this.logger.error(`Erro ao salvar estado do usuário: ${err.message}`);
+      this.logger.error(`Erro ao salvar estado do usuário no Redis/DB: ${err.message}`);
     }
   }
 
@@ -105,6 +193,7 @@ export class EstadoRepository {
     mensagemGatilho?: string | null,
   ) {
     try {
+      // Registrar no banco (historico pode ser importante, não vale a pena por no redis apenas)
       await this.prisma.botEstadoHistorico.create({
         data: { chatId, estadoAnterior, estadoNovo, mensagemGatilho },
       });
@@ -169,6 +258,11 @@ export class EstadoRepository {
 
   async obterEstadoInicial(): Promise<string> {
     try {
+      if (this.estadoInicialCache) {
+        return this.estadoInicialCache;
+      }
+
+      // Fallback
       const row = await this.prisma.botEstadoConfig.findFirst({
         where: {
           ativo: true,
