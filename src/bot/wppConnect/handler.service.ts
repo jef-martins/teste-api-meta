@@ -10,6 +10,26 @@ import * as crypto from 'crypto';
  * Handlers: _handlerMensagem, _handlerCapturar, _handlerLista,
  *           _handlerBotoes, _handlerRequisicao, _handlerDelay
  */
+type ItemInterativoNormalizado = {
+  entrada: string;
+  label: string;
+  descricao: string;
+};
+
+type ItemInterativoObjeto = {
+  entrada?: unknown;
+  label?: unknown;
+  descricao?: unknown;
+  description?: unknown;
+  id?: unknown;
+  rowId?: unknown;
+  value?: unknown;
+  payload?: unknown;
+  title?: unknown;
+  text?: unknown;
+  [key: string]: unknown;
+};
+
 @Injectable()
 export class HandlerService {
   private readonly logger = new Logger(HandlerService.name);
@@ -31,10 +51,10 @@ export class HandlerService {
   }
 
   private normalizarItensInterativos(
-    bruto: any,
+    bruto: unknown,
     campo: 'opcoes' | 'botoes',
-  ): Array<{ entrada: string; label: string; descricao: string }> {
-    let itens = bruto;
+  ): ItemInterativoNormalizado[] {
+    let itens: unknown = bruto;
 
     if (typeof itens === 'string') {
       try {
@@ -45,22 +65,18 @@ export class HandlerService {
     }
 
     if (itens && typeof itens === 'object' && !Array.isArray(itens)) {
-      if (Array.isArray(itens[campo])) {
-        itens = itens[campo];
-      } else if (Array.isArray(itens.rows)) {
-        itens = itens.rows;
-      } else if (Array.isArray(itens.buttons)) {
-        itens = itens.buttons;
-      } else if (
-        'entrada' in itens ||
-        'label' in itens ||
-        'id' in itens ||
-        'title' in itens ||
-        'text' in itens
-      ) {
-        itens = [itens];
+      const obj = itens as Record<string, unknown>;
+
+      if (Array.isArray(obj[campo])) {
+        itens = obj[campo];
+      } else if (Array.isArray(obj.rows)) {
+        itens = obj.rows;
+      } else if (Array.isArray(obj.buttons)) {
+        itens = obj.buttons;
+      } else if (this.pareceItemInterativo(obj)) {
+        itens = [obj];
       } else {
-        itens = Object.values(itens);
+        itens = Object.values(obj);
       }
     }
 
@@ -69,52 +85,65 @@ export class HandlerService {
     }
 
     return itens
-      .map((item) => {
-        if (typeof item === 'string' || typeof item === 'number') {
-          const valor = String(item).trim();
-          return valor ? { entrada: valor, label: valor, descricao: '' } : null;
-        }
+      .map((item) => this.normalizarItemInterativo(item))
+      .filter((item): item is ItemInterativoNormalizado => !!item);
+  }
 
-        if (!item || typeof item !== 'object') {
-          return null;
-        }
+  private pareceItemInterativo(obj: Record<string, unknown>): boolean {
+    return (
+      'entrada' in obj ||
+      'label' in obj ||
+      'id' in obj ||
+      'title' in obj ||
+      'text' in obj
+    );
+  }
 
-        const entrada = String(
-          item.entrada ??
-          item.id ??
-          item.rowId ??
-          item.value ??
-          item.payload ??
-          item.label ??
-          item.title ??
-          item.text ??
-          '',
-        ).trim();
-        const label = String(
-          item.label ??
-          item.title ??
-          item.text ??
-          item.entrada ??
-          item.id ??
-          item.value ??
-          item.payload ??
-          '',
-        ).trim();
+  private normalizarItemInterativo(
+    item: unknown,
+  ): ItemInterativoNormalizado | null {
+    if (typeof item === 'string' || typeof item === 'number') {
+      const valor = String(item).trim();
+      return valor ? { entrada: valor, label: valor, descricao: '' } : null;
+    }
 
-        if (!entrada && !label) {
-          return null;
-        }
+    if (!item || typeof item !== 'object') {
+      return null;
+    }
 
-        return {
-          entrada: entrada || label,
-          label: label || entrada,
-          descricao: String(item.descricao ?? item.description ?? '').trim(),
-        };
-      })
-      .filter(
-        (item): item is { entrada: string; label: string; descricao: string } =>
-          !!item,
-      );
+    const obj = item as ItemInterativoObjeto;
+
+    const entrada = String(
+      obj.entrada ??
+        obj.id ??
+        obj.rowId ??
+        obj.value ??
+        obj.payload ??
+        obj.label ??
+        obj.title ??
+        obj.text ??
+        '',
+    ).trim();
+    const label = String(
+      obj.label ??
+        obj.title ??
+        obj.text ??
+        obj.entrada ??
+        obj.id ??
+        obj.value ??
+        obj.payload ??
+        '',
+    ).trim();
+
+    if (!entrada && !label) {
+      return null;
+    }
+
+    return {
+      entrada: entrada || label,
+      label: label || entrada,
+      descricao: String(obj.descricao ?? obj.description ?? '').trim(),
+    };
   }
 
   // ─── Helper: advance to next state and execute its handler ──────────────
@@ -722,7 +751,7 @@ export class HandlerService {
                 ...objLimpo,
               };
               return engine.interpolar(
-                config.mensagemSucesso ?? '✅ \n {resposta}',
+                config.mensagemSucesso ?? '✅ {{resposta}}',
                 vars,
               );
             });
@@ -744,7 +773,7 @@ export class HandlerService {
             variaveis = { ...variaveis, ...this.limparHtml(valorExtraido) };
           }
           const msgSucesso = engine.interpolar(
-            config.mensagemSucesso ?? '✅ Resposta:  \n {resposta}',
+            config.mensagemSucesso ?? '✅ Resposta: {{resposta}}',
             variaveis,
           );
           await this.enviarResposta(message, msgSucesso);
