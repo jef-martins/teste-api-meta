@@ -104,6 +104,34 @@ export class CollaborationService implements OnModuleDestroy {
     this.rooms.clear();
   }
 
+  /** Returns collab settings for the sub-org that owns the given flow (null = no restriction) */
+  async getFlowCollabInfo(flowId: string): Promise<{ collabEnabled: boolean; collabDisabledByMaster: boolean } | null> {
+    const flow = await this.prisma.botFluxo.findUnique({
+      where: { id: flowId },
+      select: { subOrganizacaoId: true },
+    });
+    if (!flow?.subOrganizacaoId) return null;
+    const subOrg = await this.prisma.subOrganizacao.findUnique({
+      where: { id: flow.subOrganizacaoId },
+      select: { collabEnabled: true, collabDisabledByMaster: true },
+    });
+    return subOrg ?? null;
+  }
+
+  /** Returns collab settings for the sub-org that owns the given component (null = no restriction) */
+  async getComponentCollabInfo(componentId: string): Promise<{ collabEnabled: boolean; collabDisabledByMaster: boolean } | null> {
+    const component = await this.prisma.componentePersonalizado.findUnique({
+      where: { id: componentId },
+      select: { subOrganizacaoId: true },
+    });
+    if (!component?.subOrganizacaoId) return null;
+    const subOrg = await this.prisma.subOrganizacao.findUnique({
+      where: { id: component.subOrganizacaoId },
+      select: { collabEnabled: true, collabDisabledByMaster: true },
+    });
+    return subOrg ?? null;
+  }
+
   async getOrCreateRoom(flowId: string): Promise<Room> {
     let room = this.rooms.get(flowId);
     if (room) {

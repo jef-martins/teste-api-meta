@@ -212,10 +212,24 @@ export class FlowService {
   }
 
   async obter(id: string, usuarioId: string, isMaster = false) {
-    const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
+    const fluxo = await this.prisma.botFluxo.findUnique({
+      where: { id },
+      include: {
+        subOrganizacao: {
+          select: { id: true, collabEnabled: true, collabDisabledByMaster: true },
+        },
+      },
+    });
     if (!fluxo) throw new NotFoundException('Fluxo não encontrado');
 
     await this.verificarAcessoFluxo(fluxo, usuarioId, isMaster);
+
+    const collabInfo = fluxo.subOrganizacao
+      ? {
+          collabEnabled: fluxo.subOrganizacao.collabEnabled,
+          collabDisabledByMaster: fluxo.subOrganizacao.collabDisabledByMaster,
+        }
+      : null;
 
     if (fluxo.flowJson) {
       return {
@@ -224,6 +238,8 @@ export class FlowService {
         description: fluxo.descricao,
         version: fluxo.versao,
         ativo: fluxo.ativo,
+        subOrganizacaoId: fluxo.subOrganizacaoId,
+        collabInfo,
         ...(fluxo.flowJson as object),
       };
     }
@@ -257,6 +273,8 @@ export class FlowService {
       description: fluxo.descricao,
       version: fluxo.versao,
       ativo: fluxo.ativo,
+      subOrganizacaoId: fluxo.subOrganizacaoId,
+      collabInfo,
       ...flowData,
     };
   }

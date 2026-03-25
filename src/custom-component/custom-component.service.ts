@@ -40,10 +40,23 @@ export class CustomComponentService {
   async obter(id: string, usuarioId: string) {
     const comp = await this.prisma.componentePersonalizado.findUnique({
       where: { id },
+      include: {
+        subOrganizacao: {
+          select: { id: true, collabEnabled: true, collabDisabledByMaster: true },
+        },
+      },
     });
     if (!comp) throw new NotFoundException('Componente não encontrado');
     await this.verificarAcessoSubOrg(usuarioId, comp.subOrganizacaoId);
-    return comp;
+
+    const collabInfo = comp.subOrganizacao
+      ? {
+          collabEnabled: comp.subOrganizacao.collabEnabled,
+          collabDisabledByMaster: comp.subOrganizacao.collabDisabledByMaster,
+        }
+      : null;
+
+    return { ...comp, collabInfo };
   }
 
   async criar(

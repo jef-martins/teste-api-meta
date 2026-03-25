@@ -91,12 +91,17 @@ export class OrganizationService {
     isMaster = false,
     papel = 'user',
   ) {
+    const subOrgSelect = {
+      id: true, nome: true, slug: true,
+      collabEnabled: true, collabDisabledByMaster: true,
+    };
+
     if (isMaster) {
       const orgs = await this.prisma.organizacao.findMany({
         include: {
           subOrganizacoes: {
             where: { ativa: true },
-            select: { id: true, nome: true, slug: true },
+            select: subOrgSelect,
           },
           _count: { select: { membros: true } },
         },
@@ -113,7 +118,7 @@ export class OrganizationService {
             include: {
               subOrganizacoes: {
                 where: { ativa: true },
-                select: { id: true, nome: true, slug: true },
+                select: subOrgSelect,
               },
               _count: { select: { membros: true } },
             },
@@ -332,6 +337,43 @@ export class OrganizationService {
     return this.prisma.subOrganizacao.update({
       where: { id: subOrgId },
       data,
+    });
+  }
+
+  async toggleCollabSubOrg(
+    orgId: string,
+    subOrgId: string,
+    usuarioId: string,
+    isMaster = false,
+    collabEnabled: boolean,
+  ) {
+    const subOrg = await this.prisma.subOrganizacao.findUnique({
+      where: { id: subOrgId as any },
+    });
+    if (!subOrg || subOrg.organizacaoId !== orgId) {
+      throw new NotFoundException('Sub-organização não encontrada');
+    }
+
+    if (!isMaster) {
+      // Admin não pode alterar se o master bloqueou
+      if (subOrg.collabDisabledByMaster) {
+        throw new ForbiddenException(
+          'Esta configuração foi bloqueada pelo master e não pode ser alterada',
+        );
+      }
+      // Admin precisa ter papel adequado na org
+      await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin'], isMaster);
+    }
+
+    const updateData: any = { collabEnabled };
+    if (isMaster) {
+      // Master marca/desmarca o bloqueio conforme estiver desativando ou reativando
+      updateData.collabDisabledByMaster = !collabEnabled;
+    }
+
+    return this.prisma.subOrganizacao.update({
+      where: { id: subOrgId as any },
+      data: updateData,
     });
   }
 

@@ -20,6 +20,7 @@ const WsEvent = {
   FlowJoined: 'flow-joined',
   ComponentJoined: 'component-joined',
   FlowError: 'flow-error',
+  CollabDisabled: 'collab-disabled',
   SyncStep1: 'sync-step-1',
   SyncStep2: 'sync-step-2',
   Update: 'update',
@@ -96,6 +97,13 @@ export class CollaborationGateway
     const { flowId } = data;
     await this.leaveCurrentRoom(client);
 
+    // Check if real-time collaboration is enabled for this flow's sub-org
+    const collabInfo = await this.collaborationService.getFlowCollabInfo(flowId);
+    if (collabInfo && !collabInfo.collabEnabled) {
+      client.emit(WsEvent.CollabDisabled, { flowId });
+      return;
+    }
+
     try {
       const room = await this.collaborationService.getOrCreateRoom(flowId);
       client.join(flowId);
@@ -121,6 +129,13 @@ export class CollaborationGateway
   ) {
     const { componentId } = data;
     await this.leaveCurrentRoom(client);
+
+    // Check if real-time collaboration is enabled for this component's sub-org
+    const collabInfo = await this.collaborationService.getComponentCollabInfo(componentId);
+    if (collabInfo && !collabInfo.collabEnabled) {
+      client.emit(WsEvent.CollabDisabled, { componentId });
+      return;
+    }
 
     const roomKey = this.roomKey({ id: componentId, type: 'component' });
 
