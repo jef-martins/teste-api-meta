@@ -24,7 +24,7 @@ export class StateMachineEngine {
   ) { }
 
   interpolar(texto: string, variaveis: Record<string, any> = {}): string {
-    // Normaliza {{expr}} -> {expr} para suportar ambos os formatos
+    // Mantém compatibilidade com {expr}, mas o formato padrão é {{expr}}
     const normalizado = texto.replace(/\{\{([^}]+)\}\}/g, '{$1}');
     return normalizado.replace(/\{([^}]+)\}/g, (match, expr) => {
       const valor = this.resolverExprPath(expr.trim(), variaveis);

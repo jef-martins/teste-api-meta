@@ -98,8 +98,8 @@ export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
     config: {
       mensagemPedir: 'Por favor, digite o seu *CEP* (somente números):',
       metodo: 'GET',
-      // {valor} = texto digitado pelo usuário (CEP)
-      url: 'http://api2.telecontrol.com.br/institucional-dev/postoMaisProximo/cep/{valor}/limit/3',
+      // {{valor}} = texto digitado pelo usuário (CEP)
+      url: 'http://api2.telecontrol.com.br/institucional-dev/postoMaisProximo/cep/{{valor}}/limit/3',
       headers: {
         'Access-Application-Key':
           process.env.TOKEN_BRASLAR ||
@@ -111,10 +111,10 @@ export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
       campoResposta: '',
       // template aplicado a cada item do array de postos
       mensagemSucesso:
-        '📍 *{nome}*\n' +
-        '🏠 Endereço: {contato_endereco}, {contato_numero}\n' +
-        '📞 Tel: {fone}\n' +
-        '📏 Distância: {distance} km',
+        '📍 *{{nome}}*\n' +
+        '🏠 Endereço: {{contato_endereco}}, {{contato_numero}}\n' +
+        '📞 Tel: {{fone}}\n' +
+        '📏 Distância: {{distance}} km',
       separador: '➖➖➖➖➖',
       mensagemNaoEncontrado: '❌ Nenhum posto encontrado para este CEP.',
       mensagemErro:
@@ -131,7 +131,7 @@ export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
     config: {
       mensagemPedir: 'Por favor, digite o número do seu *Protocolo*:',
       metodo: 'GET',
-      url: 'http://backend2.telecontrol.com.br/homologation-api-callcenter/callcenter/{valor}?ultima_obs_sac=true',
+      url: 'http://backend2.telecontrol.com.br/homologation-api-callcenter/callcenter/{{valor}}?ultima_obs_sac=true',
       headers: {
         'Access-Application-Key':
           process.env.TOKEN_BRASLAR ||
@@ -143,11 +143,11 @@ export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
       campoResposta: 'data',
       // cada item do array é { atributes: { consumidor_nome, situacao, ... } }
       mensagemSucesso:
-        '📄 *Detalhes do Protocolo {valor}:*\n\n' +
-        '👤 Consumidor: {atributes.consumidor_nome}\n' +
-        '📦 Situação: *{atributes.situacao}*\n' +
-        '📅 Abertura: {atributes.data_abertura}\n' +
-        '🛠 Origem: {atributes.origem}',
+        '📄 *Detalhes do Protocolo {{valor}}:*\n\n' +
+        '👤 Consumidor: {{atributes.consumidor_nome}}\n' +
+        '📦 Situação: *{{atributes.situacao}}*\n' +
+        '📅 Abertura: {{atributes.data_abertura}}\n' +
+        '🛠 Origem: {{atributes.origem}}',
       mensagemNaoEncontrado:
         '❌ Protocolo não encontrado. Verifique o número e tente novamente.',
       mensagemErro:
@@ -165,7 +165,7 @@ export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
       mensagemPedir:
         'Por favor, digite o número da sua *Ordem de Serviço (OS)*:',
       metodo: 'GET',
-      url: 'http://backend2.telecontrol.com.br/os/ordem/os/{valor}',
+      url: 'http://backend2.telecontrol.com.br/os/ordem/os/{{valor}}',
       headers: {
         'Access-Application-Key':
           process.env.TOKEN_BRASLAR ||
@@ -175,12 +175,12 @@ export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
       },
       campoResposta: 'os',
       mensagemSucesso:
-        '🛠 *Detalhes da OS {valor}:*\n\n' +
-        '👤 Cliente: {consumidor_nome}\n' +
-        '📦 Produto: {descricao}\n' +
-        '📊 Status: *{status_os}*\n' +
-        '⚠️ Defeito: {defeito_reclamado}\n' +
-        '📅 Abertura: {data_abertura}',
+        '🛠 *Detalhes da OS {{valor}}:*\n\n' +
+        '👤 Cliente: {{consumidor_nome}}\n' +
+        '📦 Produto: {{descricao}}\n' +
+        '📊 Status: *{{status_os}}*\n' +
+        '⚠️ Defeito: {{defeito_reclamado}}\n' +
+        '📅 Abertura: {{data_abertura}}',
       mensagemNaoEncontrado:
         '❌ Ordem de Serviço não encontrada. Verifique o número e tente novamente.',
       mensagemErro:

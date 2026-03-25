@@ -291,12 +291,26 @@ export class AdminService {
     const { config, valor, variaveis } = data;
     if (!config?.url) throw new BadRequestException('URL não fornecida.');
 
-    const interpolar = (texto: string, vars: Record<string, string>) =>
-      typeof texto === 'string'
-        ? texto.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`)
-        : texto;
+    const resolverExprPath = (expr: string, ctx: Record<string, any>): any => {
+      const tokens = expr.replace(/\[(\d+)\]/g, '.$1').split('.');
+      return tokens.reduce((acc: any, key: string) => {
+        if (acc === undefined || acc === null) return undefined;
+        return acc[key];
+      }, ctx);
+    };
 
-    const interpolarDeep = (obj: any, vars: Record<string, string>): any => {
+    const interpolar = (texto: string, vars: Record<string, any>) => {
+      if (typeof texto !== 'string') return texto;
+      const normalizado = texto.replace(/\{\{([^}]+)\}\}/g, '{$1}');
+      return normalizado.replace(/\{([^}]+)\}/g, (match, expr) => {
+        const valorInterpolado = resolverExprPath(expr.trim(), vars);
+        return valorInterpolado !== undefined && valorInterpolado !== null
+          ? String(valorInterpolado)
+          : match;
+      });
+    };
+
+    const interpolarDeep = (obj: any, vars: Record<string, any>): any => {
       if (typeof obj === 'string') return interpolar(obj, vars);
       if (Array.isArray(obj))
         return obj.map((item) => interpolarDeep(item, vars));

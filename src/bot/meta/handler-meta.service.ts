@@ -774,7 +774,7 @@ export class HandlerMetaService {
                 ...objLimpo,
               };
               return engine.interpolar(
-                config.mensagemSucesso ?? '✅ {resposta}',
+                config.mensagemSucesso ?? '✅ {{resposta}}',
                 vars,
               );
             });
@@ -802,7 +802,7 @@ export class HandlerMetaService {
             variaveis = { ...variaveis, ...objLimpo };
           }
           const msgSucesso = engine.interpolar(
-            config.mensagemSucesso ?? '✅ Resposta: {resposta}',
+            config.mensagemSucesso ?? '✅ Resposta: {{resposta}}',
             variaveis,
           );
           await this.enviarResposta(message, msgSucesso);
