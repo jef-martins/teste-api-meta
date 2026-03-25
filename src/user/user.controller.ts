@@ -14,6 +14,9 @@ import {
 import { UserService } from './user.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MasterGuard } from '../auth/master.guard';
+import { AdminGuard } from '../auth/admin.guard';
+import { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
+import { UpdateUserData } from './interfaces/update-user.interface';
 
 @Controller('auth/usuarios')
 @UseGuards(JwtAuthGuard)
@@ -75,13 +78,13 @@ export class UserController {
 
   @Put(':id')
   @UseGuards(MasterGuard)
-  atualizar(@Param('id') id: string, @Body() body: any) {
+  atualizar(@Param('id') id: string, @Body() body: UpdateUserData) {
     return this.userService.atualizar(id, body);
   }
 
   @Delete(':id')
   @UseGuards(MasterGuard)
-  excluir(@Param('id') id: string, @Req() req: any) {
+  excluir(@Param('id') id: string, @Req() req: RequestWithUser) {
     return this.userService.excluir(id, req.user.id);
   }
 }

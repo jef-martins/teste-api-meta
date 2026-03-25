@@ -6,6 +6,7 @@ import {
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserData } from './interfaces/update-user.interface';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class UserService {
@@ -87,10 +88,14 @@ export class UserService {
       }
 
       return usuario;
-    } catch (err: any) {
-      if (err?.code === 'P2002')
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
         throw new BadRequestException('Email já cadastrado');
-      throw err;
+      }
+      throw error;
     }
   }
 
@@ -145,7 +150,7 @@ export class UserService {
       updateData.senha = await bcrypt.hash(data.senha, 10);
     }
 
-    const dataForPrisma: any = {
+    const dataForPrisma: Prisma.BotUsuarioUpdateInput = {
       nome: updateData.nome,
       email: updateData.email,
       papel: updateData.papel,
@@ -158,7 +163,7 @@ export class UserService {
     }
 
     try {
-      return await (this.prisma.botUsuario as any).update({
+      return await this.prisma.botUsuario.update({
         where: { id },
         data: dataForPrisma,
         select: {
@@ -171,12 +176,14 @@ export class UserService {
           atualizadoEm: true,
         },
       });
-    } catch (err: any) {
-      if (err?.code === 'P2025')
-        throw new NotFoundException('Usuário não encontrado');
-      if (err?.code === 'P2002')
-        throw new BadRequestException('Email já cadastrado');
-      throw err;
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2025')
+          throw new NotFoundException('Usuário não encontrado');
+        if (error.code === 'P2002')
+          throw new BadRequestException('Email já cadastrado');
+      }
+      throw error;
     }
   }
 
@@ -185,12 +192,16 @@ export class UserService {
       throw new BadRequestException('Você não pode excluir sua própria conta');
     }
     try {
-      await (this.prisma.botUsuario as any).delete({ where: { id } });
+      await this.prisma.botUsuario.delete({ where: { id } });
       return { ok: true };
-    } catch (err: any) {
-      if (err?.code === 'P2025')
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException('Usuário não encontrado');
-      throw err;
+      }
+      throw error;
     }
   }
 }
