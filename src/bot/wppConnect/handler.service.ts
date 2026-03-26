@@ -881,7 +881,7 @@ export class HandlerService {
         }
         const res = await fetch(urlFinal, { headers });
         statusHttp = res.status;
-        respostaBody = await res.json();
+        respostaBody = await res.json().catch(() => ({}));
       } else {
         const res = await fetch(urlBase, {
           method: metodo,
@@ -889,7 +889,7 @@ export class HandlerService {
           body: JSON.stringify(bodyObj),
         });
         statusHttp = res.status;
-        respostaBody = await res.json();
+        respostaBody = await res.json().catch(() => ({}));
       }
 
       const respostaTexto = JSON.stringify(respostaBody);

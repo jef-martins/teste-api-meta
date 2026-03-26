@@ -8,12 +8,13 @@ import * as crypto from 'crypto';
  * Cada handler corresponde a um valor em bot_estado_config.handler.
  *
  * Handlers disponíveis:
- *   _handlerMensagem   — envia mensagens de texto simples
- *   _handlerCapturar   — captura entrada de texto do usuário
- *   _handlerLista      — envia menu de lista interativo (WhatsApp List Message)
- *   _handlerBotoes     — envia botões de resposta rápida (máx. 3)
- *   _handlerRequisicao — faz chamada HTTP (GET/POST) a uma API externa
- *   _handlerDelay      — aguarda um tempo antes de avançar o estado
+ *   _handlerMensagem    — envia mensagens de texto simples
+ *   _handlerCapturar    — captura entrada de texto do usuário
+ *   _handlerLista       — envia menu de lista interativo (WhatsApp List Message)
+ *   _handlerBotoes      — envia botões de resposta rápida (máx. 3)
+ *   _handlerRequisicao  — faz chamada HTTP (GET/POST) a uma API externa
+ *   _handlerSetVariable — atribui variáveis e avança automaticamente
+ *   _handlerDelay       — aguarda um tempo antes de avançar o estado
  */
 type ItemInterativoNormalizado = {
   entrada: string;
@@ -146,6 +147,28 @@ export class HandlerMetaService {
     const handler = this.getHandler(handlerName);
     if (!handler) return;
     await handler.call(this, message, chatId, '', engine);
+  }
+
+  // ─── Helper: advance to next state and execute its handler ──────────────
+
+  private async avancarEExecutar(
+    proximo: string,
+    message: MetaMessage,
+    chatId: string,
+    corpo: string,
+    engine: StateMachineEngine,
+    gatilho?: string,
+  ) {
+    await engine.avancarEstado(chatId, proximo, gatilho ?? corpo);
+    const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
+    if (configProximo) {
+      await this.executarHandler(
+        configProximo.handler,
+        message,
+        chatId,
+        engine,
+      );
+    }
   }
 
   private normalizarItensInterativos(
@@ -334,6 +357,21 @@ export class HandlerMetaService {
       await this.enviarResposta(message, textoInterpolado);
     }
 
+    // Processar assignments de setVariable (sub-componentes inline)
+    const assignments = config.assignments ?? [];
+    if (assignments.length > 0) {
+      const dadosAtuais = engine.obterDados(chatId);
+      for (const assignment of assignments) {
+        const key = assignment.key;
+        const rawValue = assignment.value ?? '';
+        const interpolado = engine.interpolar(String(rawValue), dadosAtuais);
+        if (key) engine.salvarDado(chatId, key, interpolado);
+      }
+      this.logger.log(
+        `[${chatId}] mensagem+setVariable: ${assignments.map((a: Assignment) => a.key).join(', ')}`,
+      );
+    }
+
     if (config.transicaoAutomatica || config.transicao_automatica) {
       await engine.transitarPorEntrada(
         chatId,
@@ -344,6 +382,26 @@ export class HandlerMetaService {
         null,
         this,
       );
+      return;
+    }
+
+    // Auto-exit: nós sem transicaoAutomatica mas com transição '*' de saída
+    // devem avançar automaticamente quando chamados via auto-transição (corpo vazio).
+    if (!corpo) {
+      const proximoAuto = await this.estadoRepo.buscarProximoEstado(
+        estadoAtual,
+        '*',
+      );
+      if (proximoAuto) {
+        await this.avancarEExecutar(
+          proximoAuto,
+          message,
+          chatId,
+          '',
+          engine,
+          '[auto-exit]',
+        );
+      }
     }
   }
 
@@ -402,6 +460,18 @@ export class HandlerMetaService {
     const chave = config.campoSalvar || config.campoEnviar;
     if (chave) engine.salvarDado(chatId, chave, corpo);
 
+    // Processar assignments de setVariable (se houver junto com waitForResponse)
+    const captureAssignments = config.assignments ?? [];
+    if (captureAssignments.length > 0) {
+      const dadosAtuais = engine.obterDados(chatId);
+      for (const assignment of captureAssignments) {
+        const key = assignment.key;
+        const rawValue = assignment.value ?? '';
+        const interpolado = engine.interpolar(String(rawValue), dadosAtuais);
+        if (key) engine.salvarDado(chatId, key, interpolado);
+      }
+    }
+
     if (config.mensagemConfirmacao) {
       const texto = engine.interpolar(config.mensagemConfirmacao, {
         valor: corpo,
@@ -409,17 +479,7 @@ export class HandlerMetaService {
       await this.enviarResposta(message, texto);
     }
 
-    await engine.avancarEstado(chatId, proximo, corpo);
-
-    const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-    if (configProximo) {
-      await this.executarHandler(
-        configProximo.handler,
-        message,
-        chatId,
-        engine,
-      );
-    }
+    await this.avancarEExecutar(proximo, message, chatId, corpo, engine);
   }
 
   private async _handlerCapturarMulti(
@@ -437,7 +497,11 @@ export class HandlerMetaService {
     if (!proximoCampo) return;
 
     if (!corpo) {
-      await this.enviarResposta(message, proximoCampo.mensagemPedir);
+      const textoInterpolado = engine.interpolar(
+        proximoCampo.mensagemPedir,
+        dados,
+      );
+      await this.enviarResposta(message, textoInterpolado);
       return;
     }
 
@@ -460,7 +524,11 @@ export class HandlerMetaService {
     );
 
     if (proximoCampoRestante) {
-      await this.enviarResposta(message, proximoCampoRestante.mensagemPedir);
+      const textoInterpolado = engine.interpolar(
+        proximoCampoRestante.mensagemPedir,
+        dadosAtualizados,
+      );
+      await this.enviarResposta(message, textoInterpolado);
       return;
     }
 
@@ -475,16 +543,14 @@ export class HandlerMetaService {
     const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
     if (!proximo) return;
 
-    await engine.avancarEstado(chatId, proximo, '[multi-captura concluída]');
-    const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-    if (configProximo) {
-      await this.executarHandler(
-        configProximo.handler,
-        message,
-        chatId,
-        engine,
-      );
-    }
+    await this.avancarEExecutar(
+      proximo,
+      message,
+      chatId,
+      corpo,
+      engine,
+      '[multi-captura concluída]',
+    );
   }
 
   // ─── _handlerLista ────────────────────────────────────────────────────────
@@ -509,27 +575,61 @@ export class HandlerMetaService {
 
     // Se o usuário já enviou uma seleção, processa a transição
     if (corpo) {
-      const proximo = await this.estadoRepo.buscarProximoEstado(
+      let proximo = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
         corpo,
       );
-      if (proximo) {
-        await engine.avancarEstado(chatId, proximo, corpo);
-        const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (configProximo) {
-          return await this.executarHandler(
-            configProximo.handler,
-            message,
-            chatId,
-            engine,
+
+      // Fallback: match by option label (for clients that return label text instead of rowId)
+      if (!proximo) {
+        const opcoesMatch = this.normalizarItensInterativos(
+          config.opcoes ?? [],
+          chatId,
+          'opcoes',
+        );
+        const match = opcoesMatch.find(
+          (o: ItemInterativoNormalizado) =>
+            (o.label || '').toLowerCase() === corpo.toLowerCase(),
+        );
+        if (match) {
+          proximo = await this.estadoRepo.buscarProximoEstado(
+            estadoAtual,
+            match.entrada,
           );
         }
-      } else {
-        return await this.enviarResposta(
+      }
+
+      if (proximo) {
+        return await this.avancarEExecutar(
+          proximo,
           message,
-          config.mensagemInvalida ?? '⚠️ Opção inválida.',
+          chatId,
+          '',
+          engine,
+          corpo,
         );
       }
+
+      // Fallback: try the default/padrão (*) transition
+      const proximoPadrao = await this.estadoRepo.buscarProximoEstado(
+        estadoAtual,
+        '*',
+      );
+      if (proximoPadrao) {
+        return await this.avancarEExecutar(
+          proximoPadrao,
+          message,
+          chatId,
+          '',
+          engine,
+          corpo,
+        );
+      }
+
+      return await this.enviarResposta(
+        message,
+        config.mensagemInvalida ?? '⚠️ Opção inválida.',
+      );
     }
 
     // Monta o payload de lista interativa
@@ -623,21 +723,56 @@ export class HandlerMetaService {
 
     // Se o usuário já clicou em um botão, processa a transição
     if (corpo) {
-      const proximo = await this.estadoRepo.buscarProximoEstado(
+      let proximo = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
         corpo,
       );
-      if (proximo) {
-        await engine.avancarEstado(chatId, proximo, corpo);
-        const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (configProximo) {
-          await this.executarHandler(
-            configProximo.handler,
-            message,
-            chatId,
-            engine,
+
+      // Fallback: match by button label (for text replies of buttons)
+      if (!proximo) {
+        const botoesMatch = this.normalizarItensInterativos(
+          config.botoes ?? [],
+          chatId,
+          'botoes',
+        );
+        const match = botoesMatch.find(
+          (b: ItemInterativoNormalizado) =>
+            (b.label || '').toLowerCase() === corpo.toLowerCase(),
+        );
+        if (match) {
+          proximo = await this.estadoRepo.buscarProximoEstado(
+            estadoAtual,
+            match.entrada,
           );
         }
+      }
+
+      if (proximo) {
+        await this.avancarEExecutar(
+          proximo,
+          message,
+          chatId,
+          '',
+          engine,
+          corpo,
+        );
+        return;
+      }
+
+      // Fallback: try the default/padrão (*) transition
+      const proximoPadrao = await this.estadoRepo.buscarProximoEstado(
+        estadoAtual,
+        '*',
+      );
+      if (proximoPadrao) {
+        await this.avancarEExecutar(
+          proximoPadrao,
+          message,
+          chatId,
+          '',
+          engine,
+          corpo,
+        );
         return;
       }
     }
@@ -970,17 +1105,62 @@ export class HandlerMetaService {
         proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
       }
       if (proximo) {
-        await engine.avancarEstado(chatId, proximo, corpo);
-        const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (configProximo) {
-          await this.executarHandler(
-            configProximo.handler,
-            message,
-            chatId,
-            engine,
-          );
-        }
+        await this.avancarEExecutar(
+          proximo,
+          message,
+          chatId,
+          '',
+          engine,
+          corpo,
+        );
       }
+    }
+  }
+
+  // ─── _handlerSetVariable ─────────────────────────────────────────────────
+
+  /**
+   * Processa assignments (atribuições de variáveis) e avança automaticamente
+   * via transição wildcard (*).
+   */
+  async _handlerSetVariable(
+    message: MetaMessage,
+    chatId: string,
+    corpo: string,
+    engine: StateMachineEngine,
+  ) {
+    const estadoAtual = engine.estadosUsuarios.get(chatId)!;
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
+
+    const assignments = config.assignments ?? [];
+    const dadosChat = engine.obterDados(chatId);
+
+    for (const assignment of assignments) {
+      const key = assignment.key;
+      const rawValue = assignment.value ?? '';
+      const interpolado = engine.interpolar(String(rawValue), dadosChat);
+      if (key) engine.salvarDado(chatId, key, interpolado);
+    }
+
+    if (assignments.length > 0) {
+      this.logger.log(
+        `[${chatId}] setVariable: ${assignments.map((a: Assignment) => a.key).join(', ')}`,
+      );
+    }
+
+    // Transição automática
+    const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+    if (proximo) {
+      await this.avancarEExecutar(
+        proximo,
+        message,
+        chatId,
+        '',
+        engine,
+        '[setVariable]',
+      );
     }
   }
 
@@ -1017,16 +1197,14 @@ export class HandlerMetaService {
 
     const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
     if (proximo) {
-      await engine.avancarEstado(chatId, proximo, '[delay]');
-      const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-      if (configProximo) {
-        await this.executarHandler(
-          configProximo.handler,
-          message,
-          chatId,
-          engine,
-        );
-      }
+      await this.avancarEExecutar(
+        proximo,
+        message,
+        chatId,
+        '',
+        engine,
+        '[delay]',
+      );
     }
   }
 }
