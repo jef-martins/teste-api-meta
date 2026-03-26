@@ -7,11 +7,18 @@ import {
   Body,
   Param,
 } from '@nestjs/common';
-import { AdminService } from './admin.service';
+import {
+  AdminService,
+  EstadoInput,
+  EstadoUpdateInput,
+  TransicaoInput,
+  TransicaoUpdateInput,
+  TesteRequisicaoInput,
+} from './admin.service';
 
 @Controller('admin')
 export class AdminController {
-  constructor(private adminService: AdminService) {}
+  constructor(private adminService: AdminService) { }
 
   @Get('modo')
   obterModo() {
@@ -26,12 +33,12 @@ export class AdminController {
   }
 
   @Post('estados')
-  criarEstado(@Body() body: any) {
+  criarEstado(@Body() body: EstadoInput) {
     return this.adminService.criarEstado(body);
   }
 
   @Put('estados/:estado')
-  atualizarEstado(@Param('estado') estado: string, @Body() body: any) {
+  atualizarEstado(@Param('estado') estado: string, @Body() body: EstadoUpdateInput) {
     return this.adminService.atualizarEstado(estado, body);
   }
 
@@ -48,12 +55,12 @@ export class AdminController {
   }
 
   @Post('transicoes')
-  criarTransicao(@Body() body: any) {
+  criarTransicao(@Body() body: TransicaoInput) {
     return this.adminService.criarTransicao(body);
   }
 
   @Put('transicoes/:id')
-  atualizarTransicao(@Param('id') id: string, @Body() body: any) {
+  atualizarTransicao(@Param('id') id: string, @Body() body: TransicaoUpdateInput) {
     return this.adminService.atualizarTransicao(id, body);
   }
 
@@ -65,7 +72,7 @@ export class AdminController {
   // ─── Teste de Requisição ─────────────────────────────────────────────────
 
   @Post('testar-req')
-  testarRequisicao(@Body() body: any) {
+  testarRequisicao(@Body() body: TesteRequisicaoInput) {
     return this.adminService.testarRequisicao(body);
   }
 }

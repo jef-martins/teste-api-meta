@@ -29,7 +29,7 @@ export class DefaultEstadoRepository {
   obterConfigEstado(estado: string): Promise<{
     handler: string;
     descricao: string;
-    config: any;
+    config: unknown;
   } | null> {
     const cfg = DEFAULT_ESTADOS[estado];
     if (!cfg || cfg.ativo === false) {

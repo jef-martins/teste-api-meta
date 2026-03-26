@@ -18,6 +18,12 @@ type KeywordMemoria = {
   atualizadoEm: Date;
 };
 
+export class GlobalKeywordDto {
+  keyword!: string;
+  estado_destino!: string;
+  ativo?: boolean;
+}
+
 @Injectable()
 export class GlobalKeywordService {
   private readonly keywordsMemoria: KeywordMemoria[] = [];
@@ -25,17 +31,17 @@ export class GlobalKeywordService {
   constructor(
     private prisma: PrismaService,
     private repository: GlobalKeywordRepository,
-  ) {}
+  ) { }
 
   private isDefaultMode() {
     return process.env.BOT_STATE_MACHINE_PADRAO === 'true';
   }
 
-  private normalizarKeyword(keyword: string) {
+  private normalizarKeyword(keyword: string | undefined) {
     return typeof keyword === 'string' ? keyword.trim() : '';
   }
 
-  private normalizarEstado(estado: string) {
+  private normalizarEstado(estado: string | undefined) {
     return typeof estado === 'string' ? estado.trim().toUpperCase() : '';
   }
 
@@ -79,10 +85,10 @@ export class GlobalKeywordService {
     }
   }
 
-  private validarPayload(data: any) {
-    const keyword = this.normalizarKeyword(data?.keyword);
-    const estadoDestino = this.normalizarEstado(data?.estado_destino);
-    const ativo = data?.ativo !== false;
+  private validarPayload(data: GlobalKeywordDto) {
+    const keyword = this.normalizarKeyword(data.keyword);
+    const estadoDestino = this.normalizarEstado(data.estado_destino);
+    const ativo = data.ativo !== false;
 
     if (!keyword) {
       throw new BadRequestException('Keyword é obrigatória.');
@@ -112,7 +118,7 @@ export class GlobalKeywordService {
     return registros.map((item) => this.serializar(item));
   }
 
-  async criar(data: any) {
+  async criar(data: GlobalKeywordDto) {
     const { keyword, estadoDestino, ativo } = this.validarPayload(data);
     await this.validarEstadoDestino(estadoDestino);
 
@@ -147,7 +153,7 @@ export class GlobalKeywordService {
     return this.serializar(criado);
   }
 
-  async atualizar(id: string, data: any) {
+  async atualizar(id: string, data: GlobalKeywordDto) {
     const { keyword, estadoDestino, ativo } = this.validarPayload(data);
     await this.validarEstadoDestino(estadoDestino);
 

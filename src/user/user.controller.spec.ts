@@ -1,19 +1,29 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
-import { BadRequestException } from '@nestjs/common';
-import { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
+import type { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
 
 const mockUserService = {
   listar: jest.fn(),
+  listarPorAdmin: jest.fn(),
   criar: jest.fn(),
   atualizar: jest.fn(),
   excluir: jest.fn(),
 };
 
+const buildReq = (user: Partial<RequestWithUser['user']>): RequestWithUser =>
+  ({
+    user: {
+      id: 'default-user',
+      papel: 'user',
+      master: false,
+      ...user,
+    },
+  }) as RequestWithUser;
+
 describe('UserController', () => {
   let controller: UserController;
-  let service: UserService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -27,76 +37,148 @@ describe('UserController', () => {
     }).compile();
 
     controller = module.get<UserController>(UserController);
-    service = module.get<UserService>(UserService);
-
     jest.clearAllMocks();
   });
 
-  it('deve listar usuários', async () => {
+  it('lista usuários para master', async () => {
     const mockUsers = [{ id: '1', nome: 'Admin' }];
-    (service.listar as jest.Mock).mockResolvedValue(mockUsers);
+    mockUserService.listar.mockResolvedValue(mockUsers);
 
-    const req = { user: { master: true, id: 'admin-id' } } as any;
-    const result = await controller.listar(req);
+    const result = await controller.listar(
+      buildReq({ id: 'master-id', master: true }),
+    );
+
     expect(result).toEqual(mockUsers);
-    expect(service.listar).toHaveBeenCalled();
+    expect(mockUserService.listar).toHaveBeenCalledTimes(1);
   });
 
-  it('deve criar um usuário', async () => {
-    const mockUser = { id: '1', email: 'test@test.com' };
-    (service.criar as jest.Mock).mockResolvedValue(mockUser);
+  it('lista usuários para admin usando listarPorAdmin', async () => {
+    const mockUsers = [{ id: '2', nome: 'Colaborador' }];
+    mockUserService.listarPorAdmin.mockResolvedValue(mockUsers);
 
-    const req = { user: { master: true, id: 'admin-id' } } as any;
+    const result = await controller.listar(
+      buildReq({ id: 'admin-id', papel: 'admin', master: false }),
+    );
+
+    expect(result).toEqual(mockUsers);
+    expect(mockUserService.listarPorAdmin).toHaveBeenCalledWith('admin-id');
+  });
+
+  it('bloqueia listagem para usuário sem permissão', () => {
+    expect(() =>
+      controller.listar(buildReq({ papel: 'user', master: false })),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('cria usuário admin quando master informa organização', async () => {
+    const mockUser = { id: '1', email: 'test@test.com' };
+    mockUserService.criar.mockResolvedValue(mockUser);
+
     const result = await controller.criar(
       {
         email: 'test@test.com',
         senha: '123',
         nome: 'Test',
         papel: 'admin',
+        organizacaoId: 'org-1',
       },
-      req,
+      buildReq({ id: 'master-id', master: true }),
     );
+
     expect(result).toEqual(mockUser);
-    expect(service.criar).toHaveBeenCalledWith(
+    expect(mockUserService.criar).toHaveBeenCalledWith(
       'test@test.com',
       '123',
       'Test',
       'admin',
+      'org-1',
       undefined,
+      'master-id',
+    );
+  });
+
+  it('exige organização ao master criar admin', () => {
+    expect(() =>
+      controller.criar(
+        {
+          email: 'test@test.com',
+          senha: '123',
+          nome: 'Test',
+          papel: 'admin',
+        },
+        buildReq({ id: 'master-id', master: true }),
+      ),
+    ).toThrow(BadRequestException);
+  });
+
+  it('exige sub-organização ao admin criar usuário comum', () => {
+    expect(() =>
+      controller.criar(
+        {
+          email: 'novo@test.com',
+          senha: '123',
+          nome: 'Novo',
+        },
+        buildReq({ id: 'admin-id', papel: 'admin', master: false }),
+      ),
+    ).toThrow(BadRequestException);
+  });
+
+  it('força papel user quando admin cria usuário', async () => {
+    mockUserService.criar.mockResolvedValue({ id: '3' });
+
+    await controller.criar(
+      {
+        email: 'novo@test.com',
+        senha: '123',
+        nome: 'Novo',
+        papel: 'admin',
+        subOrganizacaoId: 'sub-1',
+      },
+      buildReq({ id: 'admin-id', papel: 'admin', master: false }),
+    );
+
+    expect(mockUserService.criar).toHaveBeenCalledWith(
+      'novo@test.com',
+      '123',
+      'Novo',
+      'user',
       undefined,
+      'sub-1',
       'admin-id',
     );
   });
 
-  it('deve lançar erro se faltar email na criação', () => {
-    const req = { user: { master: true, id: 'admin-id' } } as any;
+  it('valida email e senha obrigatórios na criação', () => {
     expect(() =>
       controller.criar(
         {
           email: '',
           senha: '123',
         },
-        req,
+        buildReq({ id: 'master-id', master: true }),
       ),
     ).toThrow(BadRequestException);
   });
 
-  it('deve atualizar um usuário', async () => {
+  it('atualiza um usuário', async () => {
     const mockUser = { id: '1', nome: 'Test Updated' };
-    (service.atualizar as jest.Mock).mockResolvedValue(mockUser);
+    mockUserService.atualizar.mockResolvedValue(mockUser);
 
     const result = await controller.atualizar('1', { nome: 'Test Updated' });
+
     expect(result).toEqual(mockUser);
-    expect(service.atualizar).toHaveBeenCalledWith('1', { nome: 'Test Updated' });
+    expect(mockUserService.atualizar).toHaveBeenCalledWith('1', {
+      nome: 'Test Updated',
+    });
   });
 
-  it('deve excluir um usuário', async () => {
-    (service.excluir as jest.Mock).mockResolvedValue({ ok: true });
+  it('exclui um usuário', async () => {
+    mockUserService.excluir.mockResolvedValue({ ok: true });
 
-    const req = { user: { id: 'admin-id' } } as unknown as RequestWithUser;
+    const result = await controller.excluir('1', buildReq({ id: 'admin-id' }));
 
-    const result = await controller.excluir('1', req);
     expect(result).toEqual({ ok: true });
-    expect(service.excluir).toHaveBeenCalledWith('1', 'admin-id');
+    expect(mockUserService.excluir).toHaveBeenCalledWith('1', 'admin-id');
   });
 });

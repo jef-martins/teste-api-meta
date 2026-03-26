@@ -5,6 +5,19 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+type SubOrgAcessivel = {
+  id: string;
+  ativa?: boolean;
+  [key: string]: unknown;
+};
+
+type OrgUsuarioResultado = {
+  id: string;
+  papel: string;
+  subOrganizacoes: Array<{ id: string; nome: string; slug: string }>;
+  [key: string]: unknown;
+};
+
 
 @Injectable()
 export class OrganizationService {
@@ -50,7 +63,7 @@ export class OrganizationService {
       },
     });
 
-    const todas = new Map<string, any>();
+    const todas = new Map<string, SubOrgAcessivel>();
     for (const s of viaOrg) todas.set(s.id, s);
     for (const m of subOrgMembros) {
       if (m.subOrganizacao && m.subOrganizacao.ativa) {
@@ -124,7 +137,7 @@ export class OrganizationService {
       },
     });
 
-    const resultado = new Map<string, any>();
+    const resultado = new Map<string, OrgUsuarioResultado>();
     for (const sm of subOrgMembros) {
       if (!sm.subOrganizacao || !sm.subOrganizacao.ativa) continue;
       const org = sm.subOrganizacao.organizacao;
@@ -134,7 +147,7 @@ export class OrganizationService {
         subOrganizacoes: [],
       };
       const jaAdicionada = entry.subOrganizacoes.some(
-        (s: any) => s.id === sm.subOrganizacao.id,
+        (s: { id: string }) => s.id === sm.subOrganizacao.id,
       );
       if (!jaAdicionada) {
         entry.subOrganizacoes.push({
@@ -184,7 +197,7 @@ export class OrganizationService {
   async obterOrganizacao(orgId: string, usuarioId: string, isMaster = false) {
     await this.verificarMembroOrg(orgId, usuarioId, isMaster);
     return this.prisma.organizacao.findUnique({
-      where: { id: orgId as any },
+      where: { id: orgId },
       include: {
         subOrganizacoes: { where: { ativa: true } },
         membros: {
@@ -204,14 +217,14 @@ export class OrganizationService {
   ) {
     await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin'], isMaster);
     return this.prisma.organizacao.update({
-      where: { id: orgId as any },
+      where: { id: orgId },
       data,
     });
   }
 
   async excluirOrganizacao(orgId: string, usuarioId: string, isMaster = false) {
     await this.verificarPapelOrg(orgId, usuarioId, ['dono'], isMaster);
-    await this.prisma.organizacao.delete({ where: { id: orgId as any } });
+    await this.prisma.organizacao.delete({ where: { id: orgId } });
     return { ok: true };
   }
 
@@ -242,8 +255,8 @@ export class OrganizationService {
     const jaExiste = await this.prisma.orgMembro.findUnique({
       where: {
         organizacaoId_usuarioId: {
-          organizacaoId: orgId as any,
-          usuarioId: usuario.id as any,
+          organizacaoId: orgId,
+          usuarioId: usuario.id,
         },
       },
     });
@@ -260,8 +273,8 @@ export class OrganizationService {
     await this.prisma.orgMembro.delete({
       where: {
         organizacaoId_usuarioId: {
-          organizacaoId: orgId as any,
-          usuarioId: membroId as any,
+          organizacaoId: orgId,
+          usuarioId: membroId,
         },
       },
     });
@@ -317,14 +330,14 @@ export class OrganizationService {
   ) {
     await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin'], isMaster);
     return this.prisma.subOrganizacao.update({
-      where: { id: subOrgId as any },
+      where: { id: subOrgId },
       data,
     });
   }
 
   async excluirSubOrg(orgId: string, subOrgId: string, usuarioId: string, isMaster = false) {
     await this.verificarPapelOrg(orgId, usuarioId, ['dono', 'admin'], isMaster);
-    await this.prisma.subOrganizacao.delete({ where: { id: subOrgId as any } });
+    await this.prisma.subOrganizacao.delete({ where: { id: subOrgId } });
     return { ok: true };
   }
 
@@ -335,7 +348,7 @@ export class OrganizationService {
     isMaster = false,
   ) {
     const subOrg = await this.prisma.subOrganizacao.findUnique({
-      where: { id: subOrgId as any },
+      where: { id: subOrgId },
     });
     if (!subOrg) throw new NotFoundException('Sub-organização não encontrada');
 
@@ -352,7 +365,7 @@ export class OrganizationService {
     const novoSlug = conflito ? `${slug}-${Date.now()}` : slug;
 
     return this.prisma.subOrganizacao.update({
-      where: { id: subOrgId as any },
+      where: { id: subOrgId },
       data: { organizacaoId: novaOrgId, slug: novoSlug },
     });
   }
@@ -377,8 +390,8 @@ export class OrganizationService {
     const jaExiste = await this.prisma.subOrgMembro.findUnique({
       where: {
         subOrganizacaoId_usuarioId: {
-          subOrganizacaoId: subOrgId as any,
-          usuarioId: usuario.id as any,
+          subOrganizacaoId: subOrgId,
+          usuarioId: usuario.id,
         },
       },
     });
@@ -403,8 +416,8 @@ export class OrganizationService {
     await this.prisma.subOrgMembro.delete({
       where: {
         subOrganizacaoId_usuarioId: {
-          subOrganizacaoId: subOrgId as any,
-          usuarioId: membroId as any,
+          subOrganizacaoId: subOrgId,
+          usuarioId: membroId,
         },
       },
     });
@@ -429,7 +442,7 @@ export class OrganizationService {
     const usuario = await this.prisma.botUsuario.findUnique({ where: { email } });
     if (usuario) {
       const jaExiste = await this.prisma.orgMembro.findUnique({
-        where: { organizacaoId_usuarioId: { organizacaoId: orgId as any, usuarioId: usuario.id as any } },
+        where: { organizacaoId_usuarioId: { organizacaoId: orgId, usuarioId: usuario.id } },
       });
       if (jaExiste) throw new BadRequestException('Usuário já é membro desta organização');
     }
@@ -451,7 +464,7 @@ export class OrganizationService {
     const usuario = await this.prisma.botUsuario.findUnique({ where: { email } });
     if (usuario) {
       const jaExiste = await this.prisma.subOrgMembro.findUnique({
-        where: { subOrganizacaoId_usuarioId: { subOrganizacaoId: subOrgId as any, usuarioId: usuario.id as any } },
+        where: { subOrganizacaoId_usuarioId: { subOrganizacaoId: subOrgId, usuarioId: usuario.id } },
       });
       if (jaExiste) throw new BadRequestException('Usuário já é membro desta sub-organização');
     }

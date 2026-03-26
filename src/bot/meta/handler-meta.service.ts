@@ -15,6 +15,90 @@ import * as crypto from 'crypto';
  *   _handlerRequisicao — faz chamada HTTP (GET/POST) a uma API externa
  *   _handlerDelay      — aguarda um tempo antes de avançar o estado
  */
+type ItemInterativoNormalizado = {
+  entrada: string;
+  label: string;
+  descricao: string;
+};
+
+type ItemInterativoObjeto = {
+  entrada?: unknown;
+  label?: unknown;
+  descricao?: unknown;
+  description?: unknown;
+  id?: unknown;
+  rowId?: unknown;
+  value?: unknown;
+  payload?: unknown;
+  title?: unknown;
+  text?: unknown;
+  [key: string]: unknown;
+};
+
+type MetaMessage = {
+  from: string;
+  [key: string]: unknown;
+};
+
+type Assignment = {
+  key?: string;
+  value?: unknown;
+  [key: string]: unknown;
+};
+
+type CampoCaptura = {
+  nome: string;
+  mensagemPedir: string;
+  valoresAceitos?: string[];
+  mensagemInvalida?: string;
+  [key: string]: unknown;
+};
+
+type HandlerConfig = Record<string, unknown> & {
+  mensagens?: string[];
+  assignments?: Assignment[];
+  transicaoAutomatica?: boolean;
+  transicao_automatica?: boolean;
+  campos?: CampoCaptura[];
+  mensagemPedir?: string;
+  mensagemInvalida?: string;
+  campoSalvar?: string;
+  campoEnviar?: string;
+  mensagemConfirmacao?: string;
+  opcoes?: ItemInterativoObjeto[] | ItemInterativoNormalizado[];
+  botoes?: ItemInterativoObjeto[] | ItemInterativoNormalizado[];
+  titulo?: string;
+  botaoTexto?: string;
+  secaoTitulo?: string;
+  rodape?: string;
+  cabecalho?: string;
+  body?: Record<string, unknown>;
+  camposEnviar?: string[];
+  palavraSair?: string;
+  apiId?: string;
+  routeId?: string;
+  url?: string;
+  metodo?: string;
+  headers?: Record<string, string>;
+  campoResposta?: string;
+  variavelResposta?: string;
+  mensagemErro?: string;
+  mensagemNaoEncontrado?: string;
+  mensagemSucesso?: string;
+  separador?: string;
+  limparDados?: boolean;
+  duracao?: number;
+  unidade?: string;
+  mensagem?: string;
+};
+
+type DynamicHandler = (
+  message: MetaMessage,
+  chatId: string,
+  corpo: string,
+  engine: StateMachineEngine,
+) => Promise<unknown> | unknown;
+
 @Injectable()
 export class HandlerMetaService {
   private readonly logger = new Logger(HandlerMetaService.name);
@@ -25,7 +109,7 @@ export class HandlerMetaService {
 
   constructor(private estadoRepo: EstadoRepository) {}
 
-  private parseConfig(config: any) {
+  private parseConfig(config: unknown): HandlerConfig {
     if (typeof config === 'string') {
       try {
         return JSON.parse(config);
@@ -33,14 +117,42 @@ export class HandlerMetaService {
         return {};
       }
     }
-    return config && typeof config === 'object' ? config : {};
+    return config && typeof config === 'object'
+      ? (config as HandlerConfig)
+      : {};
+  }
+
+  private getErrorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    return String(err);
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private getHandler(handlerName: string): DynamicHandler | null {
+    const candidato = (this as Record<string, unknown>)[handlerName];
+    if (typeof candidato !== 'function') return null;
+    return candidato as DynamicHandler;
+  }
+
+  private async executarHandler(
+    handlerName: string,
+    message: MetaMessage,
+    chatId: string,
+    engine: StateMachineEngine,
+  ): Promise<void> {
+    const handler = this.getHandler(handlerName);
+    if (!handler) return;
+    await handler.call(this, message, chatId, '', engine);
   }
 
   private normalizarItensInterativos(
-    bruto: any,
+    bruto: unknown,
     chatId: string,
     campo: 'opcoes' | 'botoes',
-  ): Array<{ entrada: string; label: string; descricao: string }> {
+  ): ItemInterativoNormalizado[] {
     let itens = bruto;
 
     if (typeof itens === 'string') {
@@ -51,23 +163,24 @@ export class HandlerMetaService {
       }
     }
 
-    if (itens && typeof itens === 'object' && !Array.isArray(itens)) {
-      if (Array.isArray(itens[campo])) {
-        itens = itens[campo];
-      } else if (Array.isArray(itens.rows)) {
-        itens = itens.rows;
-      } else if (Array.isArray(itens.buttons)) {
-        itens = itens.buttons;
+    if (this.isRecord(itens)) {
+      const obj = itens;
+      if (Array.isArray(obj[campo])) {
+        itens = obj[campo];
+      } else if (Array.isArray(obj.rows)) {
+        itens = obj.rows;
+      } else if (Array.isArray(obj.buttons)) {
+        itens = obj.buttons;
       } else if (
-        'entrada' in itens ||
-        'label' in itens ||
-        'id' in itens ||
-        'title' in itens ||
-        'text' in itens
+        'entrada' in obj ||
+        'label' in obj ||
+        'id' in obj ||
+        'title' in obj ||
+        'text' in obj
       ) {
-        itens = [itens];
+        itens = [obj];
       } else {
-        itens = Object.values(itens);
+        itens = Object.values(obj);
       }
       this.logger.warn(
         `[${chatId}] Config de ${campo} recebida com formato inesperado; normalizando.`,
@@ -89,25 +202,27 @@ export class HandlerMetaService {
           return null;
         }
 
+        const obj = item as ItemInterativoObjeto;
+
         const entrada = String(
-          item.entrada ??
-            item.id ??
-            item.rowId ??
-            item.value ??
-            item.payload ??
-            item.label ??
-            item.title ??
-            item.text ??
+          obj.entrada ??
+            obj.id ??
+            obj.rowId ??
+            obj.value ??
+            obj.payload ??
+            obj.label ??
+            obj.title ??
+            obj.text ??
             '',
         ).trim();
         const label = String(
-          item.label ??
-            item.title ??
-            item.text ??
-            item.entrada ??
-            item.id ??
-            item.value ??
-            item.payload ??
+          obj.label ??
+            obj.title ??
+            obj.text ??
+            obj.entrada ??
+            obj.id ??
+            obj.value ??
+            obj.payload ??
             '',
         ).trim();
 
@@ -118,18 +233,17 @@ export class HandlerMetaService {
         return {
           entrada: entrada || label,
           label: label || entrada,
-          descricao: String(item.descricao ?? item.description ?? '').trim(),
+          descricao: String(obj.descricao ?? obj.description ?? '').trim(),
         };
       })
-      .filter(
-        (item): item is { entrada: string; label: string; descricao: string } =>
-          !!item,
-      );
+      .filter((item): item is ItemInterativoNormalizado => !!item);
   }
 
   // ─── Método privado: chama a Graph API da Meta ────────────────────────────
 
-  private async chamadaMetaAPI(payload: any): Promise<void> {
+  private async chamadaMetaAPI(
+    payload: Record<string, unknown>,
+  ): Promise<void> {
     if (!this.phone_id || !this.access_token) {
       this.logger.error(
         'Meta API não inicializada: phone_id ou access_token ausente.',
@@ -157,14 +271,19 @@ export class HandlerMetaService {
       } else {
         this.logger.log('Mensagem enviada com sucesso via Meta API.');
       }
-    } catch (err: any) {
-      this.logger.error(`Exceção ao chamar a Meta API: ${err.message}`);
+    } catch (err: unknown) {
+      this.logger.error(
+        `Exceção ao chamar a Meta API: ${this.getErrorMessage(err)}`,
+      );
     }
   }
 
   // ─── Helper: envia mensagem de texto simples ──────────────────────────────
 
-  private async enviarResposta(message: any, texto: string): Promise<void> {
+  private async enviarResposta(
+    message: MetaMessage,
+    texto: string,
+  ): Promise<void> {
     // Remove o sufixo @meta (ou @c.us) para obter o número puro
     const destino = message.from.replace(/@(meta|c\.us)$/, '');
     const payload = {
@@ -184,7 +303,7 @@ export class HandlerMetaService {
    * Se transicaoAutomatica=true, avança automaticamente para o próximo estado.
    */
   async _handlerMensagem(
-    message: any,
+    message: MetaMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
@@ -203,7 +322,7 @@ export class HandlerMetaService {
         message,
         true,
         null,
-        this as any,
+        this,
       );
       if (proximo) return;
     }
@@ -223,7 +342,7 @@ export class HandlerMetaService {
         message,
         true,
         null,
-        this as any,
+        this,
       );
     }
   }
@@ -235,14 +354,15 @@ export class HandlerMetaService {
    * Suporta modo simples (um campo) e modo multi-campo (config.campos[]).
    */
   async _handlerCapturar(
-    message: any,
+    message: MetaMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
 
     // Modo multi-campo
     if (Array.isArray(config.campos) && config.campos.length > 0) {
@@ -292,25 +412,27 @@ export class HandlerMetaService {
     await engine.avancarEstado(chatId, proximo, corpo);
 
     const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-    if (
-      configProximo &&
-      typeof (this as any)[configProximo.handler] === 'function'
-    ) {
-      await (this as any)[configProximo.handler](message, chatId, '', engine);
+    if (configProximo) {
+      await this.executarHandler(
+        configProximo.handler,
+        message,
+        chatId,
+        engine,
+      );
     }
   }
 
   private async _handlerCapturarMulti(
-    message: any,
+    message: MetaMessage,
     chatId: string,
     corpo: string,
     estadoAtual: string,
-    config: any,
+    config: HandlerConfig,
     engine: StateMachineEngine,
   ) {
-    const campos = config.campos;
+    const campos = config.campos ?? [];
     const dados = engine.obterDados(chatId);
-    const proximoCampo = campos.find((c: any) => !(c.nome in dados));
+    const proximoCampo = campos.find((c: CampoCaptura) => !(c.nome in dados));
 
     if (!proximoCampo) return;
 
@@ -334,7 +456,7 @@ export class HandlerMetaService {
     engine.salvarDado(chatId, proximoCampo.nome, corpo);
     const dadosAtualizados = engine.obterDados(chatId);
     const proximoCampoRestante = campos.find(
-      (c: any) => !(c.nome in dadosAtualizados),
+      (c: CampoCaptura) => !(c.nome in dadosAtualizados),
     );
 
     if (proximoCampoRestante) {
@@ -355,11 +477,13 @@ export class HandlerMetaService {
 
     await engine.avancarEstado(chatId, proximo, '[multi-captura concluída]');
     const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-    if (
-      configProximo &&
-      typeof (this as any)[configProximo.handler] === 'function'
-    ) {
-      await (this as any)[configProximo.handler](message, chatId, '', engine);
+    if (configProximo) {
+      await this.executarHandler(
+        configProximo.handler,
+        message,
+        chatId,
+        engine,
+      );
     }
   }
 
@@ -373,7 +497,7 @@ export class HandlerMetaService {
    * Config esperada: { titulo, botaoTexto, secaoTitulo, rodape, opcoes: [{entrada, label, descricao}] }
    */
   async _handlerLista(
-    message: any,
+    message: MetaMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
@@ -392,14 +516,11 @@ export class HandlerMetaService {
       if (proximo) {
         await engine.avancarEstado(chatId, proximo, corpo);
         const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (
-          configProximo &&
-          typeof (this as any)[configProximo.handler] === 'function'
-        ) {
-          return await (this as any)[configProximo.handler](
+        if (configProximo) {
+          return await this.executarHandler(
+            configProximo.handler,
             message,
             chatId,
-            '',
             engine,
           );
         }
@@ -428,7 +549,7 @@ export class HandlerMetaService {
     }
     const destino = message.from.replace(/@(meta|c\.us)$/, '');
 
-    const payload: any = {
+    const payload: Record<string, unknown> = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: destino,
@@ -441,14 +562,16 @@ export class HandlerMetaService {
           sections: [
             {
               title: (config.secaoTitulo ?? 'Opções').substring(0, 24),
-              rows: opcoes.slice(0, 10).map((op: any) => ({
-                id: String(op.entrada ?? op.label ?? '').substring(0, 200),
-                title: String(op.label ?? op.entrada ?? 'Opção').substring(
-                  0,
-                  24,
-                ),
-                description: String(op.descricao ?? '').substring(0, 72),
-              })),
+              rows: opcoes
+                .slice(0, 10)
+                .map((op: ItemInterativoNormalizado) => ({
+                  id: String(op.entrada ?? op.label ?? '').substring(0, 200),
+                  title: String(op.label ?? op.entrada ?? 'Opção').substring(
+                    0,
+                    24,
+                  ),
+                  description: String(op.descricao ?? '').substring(0, 72),
+                })),
             },
           ],
         },
@@ -456,18 +579,20 @@ export class HandlerMetaService {
     };
 
     if (config.rodape) {
-      payload.interactive.footer = { text: config.rodape.substring(0, 60) };
+      (payload.interactive as { footer?: { text: string } }).footer = {
+        text: config.rodape.substring(0, 60),
+      };
     }
 
     try {
       await this.chamadaMetaAPI(payload);
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.logger.warn(
-        `[${chatId}] Fallback para texto em _handlerLista: ${err.message}`,
+        `[${chatId}] Fallback para texto em _handlerLista: ${this.getErrorMessage(err)}`,
       );
       const linhas = opcoes
         .map(
-          (o: any) =>
+          (o: ItemInterativoNormalizado) =>
             `*${String(o.entrada ?? o.label ?? '')}* - ${String(
               o.label ?? o.entrada ?? 'Opção',
             )}`,
@@ -486,7 +611,7 @@ export class HandlerMetaService {
    * Config esperada: { titulo, cabecalho, rodape, botoes: [{entrada, label}] }
    */
   async _handlerBotoes(
-    message: any,
+    message: MetaMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
@@ -505,14 +630,11 @@ export class HandlerMetaService {
       if (proximo) {
         await engine.avancarEstado(chatId, proximo, corpo);
         const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (
-          configProximo &&
-          typeof (this as any)[configProximo.handler] === 'function'
-        ) {
-          await (this as any)[configProximo.handler](
+        if (configProximo) {
+          await this.executarHandler(
+            configProximo.handler,
             message,
             chatId,
-            '',
             engine,
           );
         }
@@ -544,7 +666,7 @@ export class HandlerMetaService {
 
     const destino = message.from.replace(/@(meta|c\.us)$/, '');
 
-    const payload: any = {
+    const payload: Record<string, unknown> = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: destino,
@@ -555,7 +677,7 @@ export class HandlerMetaService {
           text: (config.titulo ?? 'Escolha uma opção:').substring(0, 1024),
         },
         action: {
-          buttons: botoesLimitados.map((b: any) => ({
+          buttons: botoesLimitados.map((b: ItemInterativoNormalizado) => ({
             type: 'reply',
             reply: {
               id: String(b.entrada).substring(0, 256),
@@ -567,10 +689,14 @@ export class HandlerMetaService {
     };
 
     if (config.rodape) {
-      payload.interactive.footer = { text: config.rodape.substring(0, 60) };
+      (payload.interactive as { footer?: { text: string } }).footer = {
+        text: config.rodape.substring(0, 60),
+      };
     }
     if (config.cabecalho) {
-      payload.interactive.header = {
+      (
+        payload.interactive as { header?: { type: string; text: string } }
+      ).header = {
         type: 'text',
         text: config.cabecalho.substring(0, 60),
       };
@@ -578,11 +704,13 @@ export class HandlerMetaService {
 
     try {
       await this.chamadaMetaAPI(payload);
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.logger.error(
-        `[${chatId}] Fallback para texto em _handlerBotoes: ${err.message}`,
+        `[${chatId}] Fallback para texto em _handlerBotoes: ${this.getErrorMessage(err)}`,
       );
-      const linhas = botoes.map((b: any) => b.label).join('\n');
+      const linhas = botoes
+        .map((b: ItemInterativoNormalizado) => b.label)
+        .join('\n');
       await this.enviarResposta(message, `${config.titulo ?? ''}\n\n${linhas}`);
     }
   }
@@ -599,22 +727,25 @@ export class HandlerMetaService {
    *   mensagemErro, mensagemNaoEncontrado, transicaoAutomatica, palavraSair
    */
   async _handlerRequisicao(
-    message: any,
+    message: MetaMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
 
     const dadosMemoria = engine.obterDados(chatId);
     const usandoBodyFixo =
       config.body &&
       typeof config.body === 'object' &&
       !Array.isArray(config.body);
-    const usandoMulti =
-      Array.isArray(config.camposEnviar) && config.camposEnviar.length > 0;
+    const camposEnviar = Array.isArray(config.camposEnviar)
+      ? config.camposEnviar
+      : [];
+    const usandoMulti = camposEnviar.length > 0;
 
     // Intercepta palavra de saída (ex: "sair")
     const palavraSair = (config.palavraSair ?? 'sair').toLowerCase();
@@ -627,14 +758,11 @@ export class HandlerMetaService {
         engine.limparDados(chatId);
         await engine.avancarEstado(chatId, proximo, corpo);
         const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (
-          configProximo &&
-          typeof (this as any)[configProximo.handler] === 'function'
-        ) {
-          await (this as any)[configProximo.handler](
+        if (configProximo) {
+          await this.executarHandler(
+            configProximo.handler,
             message,
             chatId,
-            '',
             engine,
           );
         }
@@ -661,7 +789,7 @@ export class HandlerMetaService {
       const metodo = (config.metodo ?? 'GET').toUpperCase();
       const from = message.from ?? chatId;
       const numero = from.replace(/@(meta|c\.us)$/, '').split('@')[0];
-      const tudo: Record<string, any> = {
+      const tudo: Record<string, unknown> = {
         id: crypto.randomUUID(),
         valor: corpo,
         chatId,
@@ -675,7 +803,7 @@ export class HandlerMetaService {
         ...(config.headers ?? {}),
       };
 
-      const interpolarDeep = (obj: any): any => {
+      const interpolarDeep = (obj: unknown): unknown => {
         if (typeof obj === 'string') return engine.interpolar(obj, tudo);
         if (Array.isArray(obj)) return obj.map((item) => interpolarDeep(item));
         if (typeof obj === 'object' && obj !== null) {
@@ -686,12 +814,12 @@ export class HandlerMetaService {
         return obj;
       };
 
-      let bodyObj: any;
+      let bodyObj: Record<string, unknown>;
       if (usandoBodyFixo) {
-        bodyObj = interpolarDeep(config.body);
+        bodyObj = interpolarDeep(config.body) as Record<string, unknown>;
       } else if (usandoMulti) {
         bodyObj = Object.fromEntries(
-          config.camposEnviar.map((chave: string) => [
+          camposEnviar.map((chave: string) => [
             chave,
             dadosMemoria[chave] ?? '',
           ]),
@@ -704,7 +832,7 @@ export class HandlerMetaService {
         bodyObj = { valor: corpo };
       }
 
-      let resposta: any;
+      let resposta: unknown;
       let statusHttp: number;
 
       if (metodo === 'GET') {
@@ -740,7 +868,7 @@ export class HandlerMetaService {
       } else {
         const valorExtraido = engine.extrairValorPath(
           resposta,
-          config.campoResposta,
+          config.campoResposta ?? '',
         );
 
         if (
@@ -760,12 +888,16 @@ export class HandlerMetaService {
             );
           } else {
             const separador = config.separador ?? '➖➖➖➖➖';
-            const partes = valorExtraido.map((item: any) => {
+            const partes = valorExtraido.map((item: unknown) => {
               const objLimpo = Object.fromEntries(
-                Object.entries(item).map(([k, v]) => [
-                  k,
-                  typeof v === 'string' ? v.replace(/<[^>]+>/g, ' ').trim() : v,
-                ]),
+                Object.entries(item as Record<string, unknown>).map(
+                  ([k, v]) => [
+                    k,
+                    typeof v === 'string'
+                      ? v.replace(/<[^>]+>/g, ' ').trim()
+                      : v,
+                  ],
+                ),
               );
               const vars = {
                 resposta: item,
@@ -787,17 +919,19 @@ export class HandlerMetaService {
           if (typeof valorExtraido !== 'object') {
             valorParaTransicao = String(valorExtraido).toLowerCase();
           }
-          let variaveis: Record<string, any> = {
+          let variaveis: Record<string, unknown> = {
             resposta: valorExtraido,
             valor: corpo,
             ...dadosMemoria,
           };
           if (typeof valorExtraido === 'object' && valorExtraido !== null) {
             const objLimpo = Object.fromEntries(
-              Object.entries(valorExtraido).map(([k, v]) => [
-                k,
-                typeof v === 'string' ? v.replace(/<[^>]+>/g, ' ').trim() : v,
-              ]),
+              Object.entries(valorExtraido as Record<string, unknown>).map(
+                ([k, v]) => [
+                  k,
+                  typeof v === 'string' ? v.replace(/<[^>]+>/g, ' ').trim() : v,
+                ],
+              ),
             );
             variaveis = { ...variaveis, ...objLimpo };
           }
@@ -808,9 +942,9 @@ export class HandlerMetaService {
           await this.enviarResposta(message, msgSucesso);
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.logger.error(
-        `[${chatId}] Erro em _handlerRequisicao: ${err.message}`,
+        `[${chatId}] Erro em _handlerRequisicao: ${this.getErrorMessage(err)}`,
       );
       await this.enviarResposta(
         message,
@@ -838,14 +972,11 @@ export class HandlerMetaService {
       if (proximo) {
         await engine.avancarEstado(chatId, proximo, corpo);
         const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (
-          configProximo &&
-          typeof (this as any)[configProximo.handler] === 'function'
-        ) {
-          await (this as any)[configProximo.handler](
+        if (configProximo) {
+          await this.executarHandler(
+            configProximo.handler,
             message,
             chatId,
-            '',
             engine,
           );
         }
@@ -862,14 +993,15 @@ export class HandlerMetaService {
    * Tempo máximo: 5 minutos (300s).
    */
   async _handlerDelay(
-    message: any,
+    message: MetaMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
 
     const duracao = config.duracao || 1;
     const unidade = config.unidade || 'seconds';
@@ -887,11 +1019,13 @@ export class HandlerMetaService {
     if (proximo) {
       await engine.avancarEstado(chatId, proximo, '[delay]');
       const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-      if (
-        configProximo &&
-        typeof (this as any)[configProximo.handler] === 'function'
-      ) {
-        await (this as any)[configProximo.handler](message, chatId, '', engine);
+      if (configProximo) {
+        await this.executarHandler(
+          configProximo.handler,
+          message,
+          chatId,
+          engine,
+        );
       }
     }
   }

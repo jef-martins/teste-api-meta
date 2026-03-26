@@ -17,7 +17,7 @@ export interface EstadoConfigDefault {
   ativo?: boolean;
   handler: string;
   descricao: string;
-  config: Record<string, any>;
+  config: Record<string, unknown>;
 }
 
 export interface TransicaoDefault {

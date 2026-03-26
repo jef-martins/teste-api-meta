@@ -10,6 +10,7 @@ import {
   UseGuards,
   Headers,
 } from '@nestjs/common';
+import type { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ApiRegistryService } from './api-registry.service';
 
@@ -31,14 +32,17 @@ export class ApiRegistryController {
   // ─── APIs ─────────────────────────────────────────────────────────────────
 
   @Get()
-  listar(@Req() req: any, @Headers() headers: Record<string, string>) {
+  listar(
+    @Req() req: RequestWithUser,
+    @Headers() headers: Record<string, string>,
+  ) {
     const subOrgId = this.getSubOrgId(headers);
     return this.service.listarApis(req.user.id, subOrgId);
   }
 
   @Post()
   criar(
-    @Req() req: any,
+    @Req() req: RequestWithUser,
     @Headers() headers: Record<string, string>,
     @Body() body: { nome: string; urlBase: string; headers?: object },
   ) {
@@ -51,14 +55,14 @@ export class ApiRegistryController {
   @Put(':id')
   atualizar(
     @Param('id') id: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
     @Body() body: { nome?: string; urlBase?: string; headers?: object },
   ) {
     return this.service.atualizarApi(id, req.user.id, body);
   }
 
   @Delete(':id')
-  excluir(@Param('id') id: string, @Req() req: any) {
+  excluir(@Param('id') id: string, @Req() req: RequestWithUser) {
     return this.service.excluirApi(id, req.user.id);
   }
 
@@ -68,7 +72,7 @@ export class ApiRegistryController {
   salvarToken(
     @Param('apiId') apiId: string,
     @Headers() headers: Record<string, string>,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
     @Body() body: { token: string; headers?: object },
   ) {
     const subOrgId = this.getSubOrgId(headers);
@@ -80,7 +84,7 @@ export class ApiRegistryController {
   removerToken(
     @Param('apiId') apiId: string,
     @Headers() headers: Record<string, string>,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
   ) {
     const subOrgId = this.getSubOrgId(headers);
     if (!subOrgId) throw new Error('Header X-SubOrg-Id é obrigatório');
@@ -90,14 +94,14 @@ export class ApiRegistryController {
   // ─── Rotas ────────────────────────────────────────────────────────────────
 
   @Get(':apiId/rotas')
-  listarRotas(@Param('apiId') apiId: string, @Req() req: any) {
+  listarRotas(@Param('apiId') apiId: string, @Req() req: RequestWithUser) {
     return this.service.listarRotas(apiId, req.user.id);
   }
 
   @Post(':apiId/rotas')
   criarRota(
     @Param('apiId') apiId: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
     @Body()
     body: {
       path: string;
@@ -114,7 +118,7 @@ export class ApiRegistryController {
   atualizarRota(
     @Param('apiId') apiId: string,
     @Param('rotaId') rotaId: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
     @Body()
     body: {
       path?: string;
@@ -131,7 +135,7 @@ export class ApiRegistryController {
   excluirRota(
     @Param('apiId') apiId: string,
     @Param('rotaId') rotaId: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
   ) {
     return this.service.excluirRota(rotaId, apiId, req.user.id);
   }

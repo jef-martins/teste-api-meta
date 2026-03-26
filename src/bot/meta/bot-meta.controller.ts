@@ -8,13 +8,13 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { BotMetaService } from './bot-meta.service';
+import { BotMetaService, MetaMessageItem, MetaValue } from './bot-meta.service';
 
 @Controller('webhook-meta')
 export class BotMetaController {
   private readonly logger = new Logger(BotMetaController.name);
 
-  constructor(private readonly metaService: BotMetaService) {}
+  constructor(private readonly metaService: BotMetaService) { }
 
   /**
    * GET /api/webhook-meta
@@ -49,7 +49,14 @@ export class BotMetaController {
    */
   @Post()
   async handleIncomingMessage(@Req() req: Request, @Res() res: Response) {
-    const body = req.body;
+    const body = req.body as {
+      object?: string;
+      entry?: Array<{
+        changes?: Array<{
+          value?: MetaValue;
+        }>;
+      }>;
+    };
 
     // A Meta exige resposta 200 em até 20s, respondemos imediatamente
     res.status(HttpStatus.OK).end();
@@ -59,25 +66,21 @@ export class BotMetaController {
     );
 
     if (body.object === 'whatsapp_business_account') {
-      if (
-        body.entry &&
-        body.entry[0]?.changes &&
-        body.entry[0].changes[0]?.value?.messages &&
-        body.entry[0].changes[0].value.messages[0]
-      ) {
-        const value = body.entry[0].changes[0].value;
-        const messages = value.messages;
+      const value = body.entry?.[0]?.changes?.[0]?.value;
+      const messages = value?.messages;
 
+      if (value && Array.isArray(messages) && messages.length > 0) {
         this.logger.log(
           `[Webhook] ${messages.length} mensagem(ns) recebida(s) para processar.`,
         );
 
-        for (const message of messages) {
+        for (const message of messages as MetaMessageItem[]) {
           try {
             await this.metaService.processarMensagem(message, value);
-          } catch (error: any) {
+          } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : String(error);
             this.logger.error(
-              `[Webhook] Erro ao processar mensagem: ${error.message}`,
+              `[Webhook] Erro ao processar mensagem: ${msg}`,
             );
           }
         }

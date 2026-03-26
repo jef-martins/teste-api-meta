@@ -3,6 +3,42 @@ import { StateMachineEngine } from '../state-machine.engine';
 import { HandlerMetaService } from './handler-meta.service';
 import { ConversationService } from '../../conversation/conversation.service';
 
+export interface MetaContact {
+  profile: {
+    name: string;
+  };
+  wa_id: string;
+}
+
+export interface MetaMessageItem {
+  from: string;
+  id: string;
+  timestamp: string;
+  type: 'text' | 'interactive' | 'button' | string;
+  text?: {
+    body: string;
+  };
+  interactive?: {
+    type: 'list_reply' | 'button_reply';
+    list_reply?: { id: string; title: string };
+    button_reply?: { id: string; title: string };
+  };
+  button?: {
+    payload: string;
+    text: string;
+  };
+}
+
+export interface MetaValue {
+  messaging_product: string;
+  metadata: {
+    display_phone_number: string;
+    phone_number_id: string;
+  };
+  contacts?: MetaContact[];
+  messages?: MetaMessageItem[];
+}
+
 @Injectable()
 export class BotMetaService {
   private readonly logger = new Logger(BotMetaService.name);
@@ -18,9 +54,14 @@ export class BotMetaService {
     private engine: StateMachineEngine,
     private handler: HandlerMetaService,
     private conversationService: ConversationService,
-  ) {}
+  ) { }
 
-  async processarMensagem(messageItem: any, value: any) {
+  private getErrorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    return String(err);
+  }
+
+  async processarMensagem(messageItem: MetaMessageItem, value: MetaValue) {
     const timestampMsg = parseInt(messageItem.timestamp || '0', 10);
 
     // Ignora mensagens antigas (anteriores ao início do servidor)
@@ -51,7 +92,7 @@ export class BotMetaService {
     if (!process.env.META_ACCESS_TOKEN) {
       this.logger.warn(
         '[Config] META_ACCESS_TOKEN não definido. Usando VERIFY_TOKEN como fallback. ' +
-          'Defina META_ACCESS_TOKEN no Render para clareza.',
+        'Defina META_ACCESS_TOKEN no Render para clareza.',
       );
     }
     this.handler.access_token = accessToken;
@@ -119,15 +160,15 @@ export class BotMetaService {
         chatId,
         corpo,
         nome,
-        this.handler as any,
+        this.handler,
       );
-    } catch (err: any) {
-      this.logger.error(`Erro ao processar mensagem via Meta: ${err.message}`);
+    } catch (err: unknown) {
+      this.logger.error(`Erro ao processar mensagem via Meta: ${this.getErrorMessage(err)}`);
     }
   }
 
   private async salvarNoBanco(
-    message: any,
+    message: unknown,
     from: string,
     to: string,
     nome: string | null,
@@ -141,8 +182,8 @@ export class BotMetaService {
         to,
         corpo,
       );
-    } catch (err: any) {
-      this.logger.error(`Falha ao salvar mensagem no banco: ${err.message}`);
+    } catch (err: unknown) {
+      this.logger.error(`Falha ao salvar mensagem no banco: ${this.getErrorMessage(err)}`);
     }
   }
 }

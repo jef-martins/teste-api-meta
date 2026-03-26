@@ -151,18 +151,23 @@ export class CollaborationGateway
   }
 
   /** Convert incoming data to Uint8Array (supports both binary and legacy JSON array) */
-  private toUint8Array(data: any): Uint8Array {
-    if (data instanceof Buffer || data instanceof Uint8Array) return new Uint8Array(data);
-    if (data?.update) return this.toUint8Array(data.update);
-    if (data?.stateVector) return this.toUint8Array(data.stateVector);
+  private toUint8Array(data: unknown): Uint8Array {
+    if (data instanceof Buffer || data instanceof Uint8Array)
+      return new Uint8Array(data);
+    if (typeof data === 'object' && data !== null) {
+      const record = data as Record<string, unknown>;
+      if (record.update) return this.toUint8Array(record.update);
+      if (record.stateVector) return this.toUint8Array(record.stateVector);
+    }
     if (Array.isArray(data)) return new Uint8Array(data);
-    return new Uint8Array(data);
+    // Fallback safely
+    return new Uint8Array();
   }
 
   @SubscribeMessage(WsEvent.SyncStep1)
   handleSyncStep1(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: any,
+    @MessageBody() data: unknown,
   ) {
     const roomKey = this.getClientRoomKey(client.id);
     if (!roomKey) return;
@@ -181,7 +186,7 @@ export class CollaborationGateway
   @SubscribeMessage(WsEvent.SyncStep2)
   handleSyncStep2(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: any,
+    @MessageBody() data: unknown,
   ) {
     const roomKey = this.getClientRoomKey(client.id);
     if (!roomKey) return;
@@ -193,7 +198,7 @@ export class CollaborationGateway
   @SubscribeMessage(WsEvent.Update)
   handleUpdate(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: any,
+    @MessageBody() data: unknown,
   ) {
     const roomKey = this.getClientRoomKey(client.id);
     if (!roomKey) return;
@@ -207,7 +212,7 @@ export class CollaborationGateway
   @SubscribeMessage(WsEvent.AwarenessUpdate)
   handleAwarenessUpdate(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: any,
+    @MessageBody() data: Record<string, unknown>,
   ) {
     const roomKey = this.getClientRoomKey(client.id);
     if (!roomKey) return;
@@ -231,7 +236,7 @@ export class CollaborationGateway
   @SubscribeMessage(WsEvent.PresenceUpdate)
   handlePresenceUpdate(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { user: any; location: any },
+    @MessageBody() data: { user: PresenceInfo['user']; location: PresenceInfo['location'] },
   ) {
     const presence: PresenceInfo = {
       clientId: client.id,

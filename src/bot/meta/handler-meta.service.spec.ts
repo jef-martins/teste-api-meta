@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HandlerMetaService } from './handler-meta.service';
 import { EstadoRepository } from '../estado.repository';
+import { StateMachineEngine } from '../state-machine.engine';
 import {
   createEngineMock,
   createEstadoRepoMock,
@@ -46,7 +47,7 @@ describe('HandlerMetaService', () => {
       ],
     };
 
-    const resultado = (service as any).normalizarItensInterativos(
+    const resultado = service['normalizarItensInterativos'](
       bruto,
       'chat-meta-1',
       'botoes',
@@ -78,7 +79,7 @@ describe('HandlerMetaService', () => {
       { from: '5511999999999@meta' },
       'chat-meta-2',
       '',
-      engineMock as any,
+      engineMock as unknown as StateMachineEngine,
     );
 
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -133,7 +134,7 @@ describe('HandlerMetaService', () => {
       messageFake,
       'chat-meta-3',
       '',
-      engineMock as any,
+      engineMock as unknown as StateMachineEngine,
     );
 
     expect(engineMock.transitarPorEntrada).toHaveBeenCalledWith(

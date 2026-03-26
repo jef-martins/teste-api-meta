@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HandlerService } from './handler.service';
 import { EstadoRepository } from '../estado.repository';
+import { StateMachineEngine } from '../state-machine.engine';
 import {
   createEngineMock,
   createEstadoRepoMock,
@@ -29,8 +30,8 @@ describe('HandlerService', () => {
     service = module.get(HandlerService);
     service.client = {
       sendText: jest.fn().mockResolvedValue(undefined),
-    };
-    jest.spyOn((service as any).logger, 'error').mockImplementation(() => {});
+    } as any; // Still need some 'as any' for partial client mock unless I define its type properly
+    jest.spyOn(service['logger'], 'error').mockImplementation(() => { });
 
     fetchMock = createFetchMock();
     jest.clearAllMocks();
@@ -42,7 +43,7 @@ describe('HandlerService', () => {
       { id: '2', title: 'Opcao 2', description: 'Detalhe fake' },
     ]);
 
-    const resultado = (service as any).normalizarItensInterativos(bruto, 'opcoes');
+    const resultado = service['normalizarItensInterativos'](bruto, 'opcoes');
 
     expect(resultado).toEqual([
       { entrada: '1', label: 'Opcao 1', descricao: '' },
@@ -68,16 +69,16 @@ describe('HandlerService', () => {
 
     const messageFake = { from: '5511999999999@c.us' };
 
-    await service._handlerMensagem(messageFake, 'chat-1', '', engineMock as any);
+    await service._handlerMensagem(messageFake, 'chat-1', '', engineMock as unknown as StateMachineEngine);
 
     expect(estadoRepoMock.obterConfigEstado).toHaveBeenCalledWith('ESTADO_FAKE');
     expect(engineMock.obterDados).toHaveBeenCalledWith('chat-1');
-    expect(service.client.sendText).toHaveBeenNthCalledWith(
+    expect(service.client!.sendText).toHaveBeenNthCalledWith(
       1,
       '5511999999999@c.us',
       'Ola Maria',
     );
-    expect(service.client.sendText).toHaveBeenNthCalledWith(
+    expect(service.client!.sendText).toHaveBeenNthCalledWith(
       2,
       '5511999999999@c.us',
       'Seu protocolo e 123456',
@@ -98,7 +99,7 @@ describe('HandlerService', () => {
     });
     const messageFake = { from: '5511888888888@c.us' };
 
-    await service._handlerMensagem(messageFake, 'chat-2', '', engineMock as any);
+    await service._handlerMensagem(messageFake, 'chat-2', '', engineMock as unknown as StateMachineEngine);
 
     expect(engineMock.transitarPorEntrada).toHaveBeenCalledWith(
       'chat-2',
@@ -137,14 +138,14 @@ describe('HandlerService', () => {
       { from: '5511999999999@c.us' },
       'chat-req-1',
       'ABC123',
-      engineMock as any,
+      engineMock as unknown as StateMachineEngine,
     );
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api.fake/clientes/ABC123?valor=ABC123',
       { headers: { 'Content-Type': 'application/json' } },
     );
-    expect(service.client.sendText).toHaveBeenCalledWith(
+    expect(service.client!.sendText).toHaveBeenCalledWith(
       '5511999999999@c.us',
       'Cliente: Maria',
     );
@@ -176,10 +177,10 @@ describe('HandlerService', () => {
       { from: '5511999999999@c.us' },
       'chat-req-2',
       'ABC123',
-      engineMock as any,
+      engineMock as unknown as StateMachineEngine,
     );
 
-    expect(service.client.sendText).toHaveBeenCalledWith(
+    expect(service.client!.sendText).toHaveBeenCalledWith(
       '5511999999999@c.us',
       'Nenhum cliente encontrado.',
     );
@@ -205,10 +206,10 @@ describe('HandlerService', () => {
       { from: '5511999999999@c.us' },
       'chat-req-3',
       'ABC123',
-      engineMock as any,
+      engineMock as unknown as StateMachineEngine,
     );
 
-    expect(service.client.sendText).toHaveBeenCalledWith(
+    expect(service.client!.sendText).toHaveBeenCalledWith(
       '5511999999999@c.us',
       'Erro ao consultar API fake.',
     );

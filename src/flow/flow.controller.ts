@@ -12,8 +12,27 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { FlowService } from './flow.service';
+import type { FlowConnection, FlowNode, FlowVariable } from './flow-converter.service';
+import type { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { OrganizationService } from '../organization/organization.service';
+
+type CreateFlowBody = {
+  name: string;
+  description?: string;
+  nodes?: FlowNode[];
+  connections?: FlowConnection[];
+  variables?: FlowVariable[];
+};
+
+type UpdateFlowBody = {
+  name?: string;
+  description?: string;
+  nodes?: FlowNode[];
+  connections?: FlowConnection[];
+  variables?: FlowVariable[];
+  version?: number;
+};
 
 @Controller('fluxos')
 @UseGuards(JwtAuthGuard)
@@ -29,21 +48,24 @@ export class FlowController {
   }
 
   @Get()
-  listar(@Headers() headers: Record<string, string>, @Req() req: any) {
+  listar(
+    @Headers() headers: Record<string, string>,
+    @Req() req: RequestWithUser,
+  ) {
     const subOrgId = this.getSubOrgId(headers);
     return this.flowService.listar(subOrgId, req.user.id, req.user.master);
   }
 
   @Get(':id')
-  obter(@Param('id') id: string, @Req() req: any) {
+  obter(@Param('id') id: string, @Req() req: RequestWithUser) {
     return this.flowService.obter(id, req.user.id, req.user.master);
   }
 
   @Post()
   async criar(
-    @Body() body: any,
+    @Body() body: CreateFlowBody,
     @Headers() headers: Record<string, string>,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
   ) {
     const subOrgId = this.getSubOrgId(headers);
     if (subOrgId) {
@@ -56,6 +78,7 @@ export class FlowController {
         throw new ForbiddenException('Sem acesso a esta sub-organização');
       }
     }
+
     return this.flowService.criar(
       { ...body, subOrganizacaoId: subOrgId },
       req.user.id,
@@ -63,17 +86,21 @@ export class FlowController {
   }
 
   @Put(':id')
-  atualizar(@Param('id') id: string, @Body() body: any, @Req() req: any) {
+  atualizar(
+    @Param('id') id: string,
+    @Body() body: UpdateFlowBody,
+    @Req() req: RequestWithUser,
+  ) {
     return this.flowService.atualizar(id, body, req.user.id, req.user.master);
   }
 
   @Delete(':id')
-  excluir(@Param('id') id: string, @Req() req: any) {
+  excluir(@Param('id') id: string, @Req() req: RequestWithUser) {
     return this.flowService.excluir(id, req.user.id, req.user.master);
   }
 
   @Post(':id/ativar')
-  ativar(@Param('id') id: string, @Req() req: any) {
+  ativar(@Param('id') id: string, @Req() req: RequestWithUser) {
     return this.flowService.ativar(id, req.user.id, req.user.master);
   }
 }

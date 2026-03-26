@@ -1,14 +1,64 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DEFAULT_ESTADOS,
   DEFAULT_TRANSICOES,
 } from '../bot/meta/default-state-machine.config';
 
+export class EstadoInput {
+  estado!: string;
+  handler!: string;
+  descricao?: string;
+  config?: unknown;
+}
+
+export class EstadoUpdateInput {
+  handler!: string;
+  descricao?: string;
+  config?: unknown;
+  ativo?: boolean;
+}
+
+export class TransicaoInput {
+  estado_origem!: string;
+  entrada!: string;
+  estado_destino!: string;
+}
+
+export class TransicaoUpdateInput extends TransicaoInput {
+  ativo?: boolean;
+}
+
+export class TesteRequisicaoInput {
+  config!: unknown;
+  valor?: string;
+  variaveis?: Record<string, string>;
+}
+
 @Injectable()
 export class AdminService {
   constructor(private prisma: PrismaService) {
     this.initMemoryTransitions();
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private getErrorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    return String(err);
+  }
+
+  private toRecord(value: unknown): Record<string, unknown> {
+    if (!this.isRecord(value)) return {};
+    return value;
+  }
+
+  private toInputJsonValue(value: unknown): Prisma.InputJsonValue {
+    if (value === null || value === undefined) return {};
+    return value as Prisma.InputJsonValue;
   }
 
   private isDefaultMode() {
@@ -73,17 +123,12 @@ export class AdminService {
     });
   }
 
-  async criarEstado(data: {
-    estado: string;
-    handler: string;
-    descricao?: string;
-    config?: any;
-  }) {
+  async criarEstado(data: EstadoInput) {
     if (this.isDefaultMode()) {
       DEFAULT_ESTADOS[data.estado] = {
         handler: data.handler,
         descricao: data.descricao || '',
-        config: data.config || {},
+        config: this.toRecord(data.config),
         ativo: true,
       };
       return { estado: data.estado };
@@ -94,27 +139,19 @@ export class AdminService {
         estado: data.estado,
         handler: data.handler,
         descricao: data.descricao || '',
-        config: data.config || {},
+        config: this.toInputJsonValue(data.config),
       },
     });
   }
 
-  async atualizarEstado(
-    estado: string,
-    data: {
-      handler: string;
-      descricao?: string;
-      config?: any;
-      ativo?: boolean;
-    },
-  ) {
+  async atualizarEstado(estado: string, data: EstadoUpdateInput) {
     if (this.isDefaultMode()) {
       if (!DEFAULT_ESTADOS[estado]) {
         throw new BadRequestException('Estado não encontrado na memória.');
       }
       DEFAULT_ESTADOS[estado].handler = data.handler;
       DEFAULT_ESTADOS[estado].descricao = data.descricao || '';
-      DEFAULT_ESTADOS[estado].config = data.config || {};
+      DEFAULT_ESTADOS[estado].config = this.toRecord(data.config);
       DEFAULT_ESTADOS[estado].ativo = data.ativo !== false;
       return { estado };
     }
@@ -124,7 +161,7 @@ export class AdminService {
       data: {
         handler: data.handler,
         descricao: data.descricao || '',
-        config: data.config || {},
+        config: this.toInputJsonValue(data.config),
         ativo: data.ativo !== false,
       },
     });
@@ -186,11 +223,7 @@ export class AdminService {
     });
   }
 
-  async criarTransicao(data: {
-    estado_origem: string;
-    entrada: string;
-    estado_destino: string;
-  }) {
+  async criarTransicao(data: TransicaoInput) {
     if (this.isDefaultMode()) {
       if (!DEFAULT_TRANSICOES[data.estado_origem]) {
         DEFAULT_TRANSICOES[data.estado_origem] = [];
@@ -221,15 +254,7 @@ export class AdminService {
     });
   }
 
-  async atualizarTransicao(
-    id: string,
-    data: {
-      estado_origem: string;
-      entrada: string;
-      estado_destino: string;
-      ativo?: boolean;
-    },
-  ) {
+  async atualizarTransicao(id: string, data: TransicaoUpdateInput) {
     if (this.isDefaultMode()) {
       for (const origem in DEFAULT_TRANSICOES) {
         const idx = DEFAULT_TRANSICOES[origem].findIndex((t) => t.id === id);
@@ -283,24 +308,28 @@ export class AdminService {
 
   // ─── Teste de Requisição ─────────────────────────────────────────────────
 
-  async testarRequisicao(data: {
-    config: any;
-    valor?: string;
-    variaveis?: Record<string, string>;
-  }) {
+  async testarRequisicao(data: TesteRequisicaoInput) {
     const { config, valor, variaveis } = data;
-    if (!config?.url) throw new BadRequestException('URL não fornecida.');
+    const configObj = this.toRecord(config);
 
-    const resolverExprPath = (expr: string, ctx: Record<string, any>): any => {
+    if (typeof configObj.url !== 'string' || !configObj.url) {
+      throw new BadRequestException('URL não fornecida.');
+    }
+
+    const resolverExprPath = (
+      expr: string,
+      ctx: Record<string, unknown>,
+    ): unknown => {
       const tokens = expr.replace(/\[(\d+)\]/g, '.$1').split('.');
-      return tokens.reduce((acc: any, key: string) => {
-        if (acc === undefined || acc === null) return undefined;
-        return acc[key];
+      return tokens.reduce<unknown>((acc, key) => {
+        if (acc === undefined || acc === null || typeof acc !== 'object') {
+          return undefined;
+        }
+        return (acc as Record<string, unknown>)[key];
       }, ctx);
     };
 
-    const interpolar = (texto: string, vars: Record<string, any>) => {
-      if (typeof texto !== 'string') return texto;
+    const interpolar = (texto: string, vars: Record<string, unknown>) => {
       const normalizado = texto.replace(/\{\{([^}]+)\}\}/g, '{$1}');
       return normalizado.replace(/\{([^}]+)\}/g, (match, expr) => {
         const valorInterpolado = resolverExprPath(expr.trim(), vars);
@@ -310,11 +339,15 @@ export class AdminService {
       });
     };
 
-    const interpolarDeep = (obj: any, vars: Record<string, any>): any => {
+    const interpolarDeep = (
+      obj: unknown,
+      vars: Record<string, unknown>,
+    ): unknown => {
       if (typeof obj === 'string') return interpolar(obj, vars);
-      if (Array.isArray(obj))
+      if (Array.isArray(obj)) {
         return obj.map((item) => interpolarDeep(item, vars));
-      if (typeof obj === 'object' && obj !== null) {
+      }
+      if (this.isRecord(obj)) {
         return Object.fromEntries(
           Object.entries(obj).map(([k, v]) => [k, interpolarDeep(v, vars)]),
         );
@@ -322,28 +355,31 @@ export class AdminService {
       return obj;
     };
 
-    const metodo = (config.metodo || 'GET').toUpperCase();
-    const tudo = {
+    const metodo =
+      typeof configObj.metodo === 'string'
+        ? configObj.metodo.toUpperCase()
+        : 'GET';
+    const tudo: Record<string, unknown> = {
       id: crypto.randomUUID(),
       valor: valor || '',
       ...(variaveis || {}),
     };
-    const urlBase = interpolar(config.url, tudo);
+    const urlBase = interpolar(configObj.url, tudo);
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...(config.headers || {}),
+      ...(this.isRecord(configObj.headers)
+        ? (configObj.headers as Record<string, string>)
+        : {}),
     };
 
     const usandoBodyFixo =
-      config.body &&
-      typeof config.body === 'object' &&
-      !Array.isArray(config.body);
-    let bodyObj: any;
+      this.isRecord(configObj.body) && !Array.isArray(configObj.body);
+    let bodyObj: Record<string, unknown>;
 
     if (usandoBodyFixo) {
-      bodyObj = interpolarDeep(config.body, tudo);
-    } else if (config.campoEnviar && typeof config.campoEnviar === 'string') {
-      bodyObj = { [config.campoEnviar]: valor || variaveis?.valor || '' };
+      bodyObj = interpolarDeep(configObj.body, tudo) as Record<string, unknown>;
+    } else if (typeof configObj.campoEnviar === 'string') {
+      bodyObj = { [configObj.campoEnviar]: valor || variaveis?.valor || '' };
     } else {
       bodyObj = { ...tudo };
     }
@@ -371,8 +407,8 @@ export class AdminService {
       const response = await fetch(urlFinal, fetchOptions);
       const rsStr = await response.text();
       return { status: response.status, data: rsStr };
-    } catch (err: any) {
-      return { status: 500, erro: err.message };
+    } catch (err: unknown) {
+      return { status: 500, erro: this.getErrorMessage(err) };
     }
   }
 }
