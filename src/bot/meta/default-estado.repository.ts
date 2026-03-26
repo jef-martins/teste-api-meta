@@ -118,6 +118,14 @@ export class DefaultEstadoRepository {
   }
 
   /**
+   * Compatibilidade com StateMachineEngine:
+   * no modo padrão não há variáveis globais de fluxo no banco.
+   */
+  obterVariaveisFluxoAtivo(): Promise<Record<string, string>> {
+    return Promise.resolve({});
+  }
+
+  /**
    * Utilitário de diagnóstico: retorna a contagem de sessões ativas em memória.
    */
   contarSessoesAtivas(): number {
