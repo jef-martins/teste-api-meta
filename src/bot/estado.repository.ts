@@ -371,4 +371,17 @@ export class EstadoRepository implements OnModuleInit {
       return 'NOVO';
     }
   }
+
+  async obterFluxoAtivo(): Promise<string | null> {
+    try {
+      const fluxoAtivo = await this.prisma.botFluxo.findFirst({
+        where: { ativo: true },
+        select: { id: true },
+      });
+      return fluxoAtivo?.id ?? null;
+    } catch (err: any) {
+      this.logger.error(`Erro ao obter fluxo ativo: ${err.message}`);
+      return null;
+    }
+  }
 }

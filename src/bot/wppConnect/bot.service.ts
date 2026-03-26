@@ -7,6 +7,7 @@ import {
 import { ConversationService } from '../../conversation/conversation.service';
 import { StateMachineEngine } from '../state-machine.engine';
 import { HandlerService } from './handler.service';
+import { EstadoRepository } from '../estado.repository';
 
 type WppMessage = {
   isGroupMsg?: boolean;
@@ -69,6 +70,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private engine: StateMachineEngine,
     private handler: HandlerService,
     private conversationService: ConversationService,
+    private estadoRepo: EstadoRepository,
   ) {
     this.sessao = process.env.BOT_SESSAO || 'sessao-bot-wpp';
   }
@@ -204,6 +206,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(
         `Mensagem de ${message.from ?? 'desconhecido'} [${message.type ?? 'unknown'}]: ${message.body ?? ''}`,
       );
+
+      // Log do fluxo ativo
+      const fluxoAtivo = await this.estadoRepo.obterFluxoAtivo();
+      if (fluxoAtivo) {
+        this.logger.log(`[Fluxo Ativo] ID: ${fluxoAtivo}`);
+      }
 
       try {
         await this.salvarNoBanco(message);
