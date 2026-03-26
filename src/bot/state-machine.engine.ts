@@ -187,7 +187,7 @@ export class StateMachineEngine {
         );
 
         if (handlerDestino) {
-          await handlerDestino(message, chatId, '', this);
+          await handlerDestino.call(actionDelegate, message, chatId, '', this);
         } else {
           this.logger.error(
             `Handler "${configDestino.handler}" não existe no Delegate!`,
@@ -258,7 +258,7 @@ export class StateMachineEngine {
         );
 
         if (handlerInicial) {
-          await handlerInicial(message, chatId, '', this);
+          await handlerInicial.call(actionDelegate, message, chatId, '', this);
         }
 
         return;
@@ -269,7 +269,13 @@ export class StateMachineEngine {
         config.handler,
       );
       if (handlerAtual) {
-        await handlerAtual(message, chatId, entradaNormalizada, this);
+        await handlerAtual.call(
+          actionDelegate,
+          message,
+          chatId,
+          entradaNormalizada,
+          this,
+        );
       } else {
         this.logger.error(
           `Handler "${config.handler}" não existe no Delegate!`,
@@ -337,7 +343,7 @@ export class StateMachineEngine {
         configProximo.handler,
       );
       if (handlerProximo) {
-        await handlerProximo(message, chatId, '', this);
+        await handlerProximo.call(actionDelegate, message, chatId, '', this);
       }
     }
 

@@ -26,6 +26,7 @@ Para garantir a eficiência e focar apenas no código-fonte original, siga estas
    - Sempre que possivel, crie e execute os testes antes de finalizar a tarefa.
    - Sempre que for realizar testes, utilize o comando `npm test`.
    - Sempre execute os testes após realizar alterações ou correções de código.
+   - Não excluir os arquivos de teste após realizar alterações ou correções de código.
 
 6. **Sempre me responda em portugues do brasil.**
    - Sempre que for me responder, faça em portugues do brasil.
