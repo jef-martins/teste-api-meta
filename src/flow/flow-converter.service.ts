@@ -1,5 +1,122 @@
 import { Injectable } from '@nestjs/common';
 
+type JsonObject = Record<string, unknown>;
+
+type Position = {
+  x: number;
+  y: number;
+};
+
+export type FlowVariable = {
+  id?: string;
+  key?: string;
+  value?: string;
+  chave?: string;
+  valor_padrao?: string;
+  [key: string]: unknown;
+};
+
+export type FlowSubComponent = {
+  id?: string;
+  type?: string;
+  properties?: JsonObject;
+  [key: string]: unknown;
+};
+
+type ChoiceItem = {
+  id?: string;
+  entrada?: string;
+  label?: string;
+  descricao?: string;
+  value?: string;
+  key?: string;
+  name?: string;
+  [key: string]: unknown;
+};
+
+export type FlowNodeProperties = JsonObject & {
+  label?: string;
+  content?: string;
+  titulo?: string;
+  cabecalho?: string;
+  rodape?: string;
+  botaoTexto?: string;
+  secaoTitulo?: string;
+  mensagemFim?: string;
+  duration?: number;
+  unit?: string;
+  endpoint?: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+  botoes?: ChoiceItem[];
+  opcoes?: ChoiceItem[];
+  conditions?: ChoiceItem[];
+  assignments?: ChoiceItem[];
+  subComponents?: FlowSubComponent[];
+  internalNodes?: FlowNode[];
+  internalConnections?: FlowConnection[];
+  responseVariable?: string;
+  campoSalvar?: string;
+  mensagens?: string[];
+  transicaoAutomatica?: boolean;
+  aguardarEntrada?: boolean;
+  mensagemPedir?: string;
+  url?: string;
+  metodo?: string;
+  campoResposta?: string;
+  apiId?: string | null;
+  routeId?: string | null;
+  variavelResposta?: string;
+  config?: FlowNodeProperties | JsonObject;
+  duracao?: number;
+  unidade?: string;
+};
+
+export type FlowNode = {
+  id: string;
+  type: string;
+  position: Position;
+  properties?: FlowNodeProperties;
+  node_id?: string;
+  node_type?: string;
+  [key: string]: unknown;
+};
+
+export type FlowConnection = {
+  id: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  sourcePort?: string;
+  targetPort?: string;
+  label?: string;
+  condition?: unknown;
+  [key: string]: unknown;
+};
+
+export type FlowJsonPayload = {
+  nodes?: FlowNode[];
+  connections?: FlowConnection[];
+  variables?: FlowVariable[];
+};
+
+export type EstadoConfigOutput = {
+  estado: string;
+  handler: string;
+  descricao: string;
+  ativo: boolean;
+  config: JsonObject;
+  node_id: string;
+  node_type: string;
+  position: Position;
+};
+
+export type TransicaoOutput = {
+  estado_origem: string;
+  entrada: string;
+  estado_destino: string;
+  ativo: boolean;
+};
 @Injectable()
 export class FlowConverterService {
   // ─── Utilitários ─────────────────────────────────────────────────────────
@@ -37,9 +154,9 @@ export class FlowConverterService {
   }
 
   private convertVariablesDeep(
-    obj: any,
+    obj: unknown,
     converter: (s: string) => string,
-  ): any {
+  ): unknown {
     if (typeof obj === 'string') return converter(obj);
     if (Array.isArray(obj))
       return obj.map((item) => this.convertVariablesDeep(item, converter));
@@ -60,11 +177,11 @@ export class FlowConverterService {
    * Flatten customComponent nodes into their internal nodes/connections
    */
   private flattenCustomComponents(
-    nodes: any[],
-    connections: any[],
-  ): { nodes: any[]; connections: any[] } {
-    const flatNodes: any[] = [];
-    const flatConnections = connections.map(c => ({ ...c }));
+    nodes: FlowNode[],
+    connections: FlowConnection[],
+  ): { nodes: FlowNode[]; connections: FlowConnection[] } {
+    const flatNodes: FlowNode[] = [];
+    const flatConnections = connections.map((c) => ({ ...c }));
     let hasCustom = false;
 
     for (const node of nodes) {
@@ -81,11 +198,15 @@ export class FlowConverterService {
 
         // Add internal nodes with remapped IDs and adjusted positions
         const centerX =
-          internalNodes.reduce((s: number, n: any) => s + n.position.x, 0) /
-          (internalNodes.length || 1);
+          internalNodes.reduce(
+            (s: number, n: FlowNode) => s + n.position.x,
+            0,
+          ) / (internalNodes.length || 1);
         const centerY =
-          internalNodes.reduce((s: number, n: any) => s + n.position.y, 0) /
-          (internalNodes.length || 1);
+          internalNodes.reduce(
+            (s: number, n: FlowNode) => s + n.position.y,
+            0,
+          ) / (internalNodes.length || 1);
 
         for (const iNode of internalNodes) {
           flatNodes.push({
@@ -110,11 +231,17 @@ export class FlowConverterService {
 
         // Entry node: first internal node with no incoming internal connections
         const entryNode = internalNodes.find(
-          (n: any) => !internalConnections.some((c: any) => c.targetNodeId === n.id),
+          (n: FlowNode) =>
+            !internalConnections.some(
+              (c: FlowConnection) => c.targetNodeId === n.id,
+            ),
         );
         // Exit node: last internal node with no outgoing internal connections
         const exitNode = internalNodes.find(
-          (n: any) => !internalConnections.some((c: any) => c.sourceNodeId === n.id),
+          (n: FlowNode) =>
+            !internalConnections.some(
+              (c: FlowConnection) => c.sourceNodeId === n.id,
+            ),
         );
 
         // Remap external connections that pointed to/from this customComponent
@@ -134,11 +261,15 @@ export class FlowConverterService {
     }
 
     if (!hasCustom) return { nodes, connections };
-    // Recurse to flatten any nested customComponent nodes that were inside internalNodes
+    // Recurse to flatten further nested customComponent nodes that were inside internalNodes
     return this.flattenCustomComponents(flatNodes, flatConnections);
   }
 
-  flowToStateMachine(flowJson: any) {
+  flowToStateMachine(flowJson: FlowJsonPayload): {
+    estados: EstadoConfigOutput[];
+    transicoes: TransicaoOutput[];
+    variaveis: Array<{ key: string | undefined; value: string }>;
+  } {
     let { nodes = [], connections = [], variables = [] } = flowJson;
 
     // Flatten customComponent nodes before processing
@@ -149,7 +280,7 @@ export class FlowConverterService {
     const existingNames = new Set<string>();
     const nodeIdToEstado = new Map<string, string>();
 
-    const estados = nodes.map((node: any) => {
+    const estados = nodes.map((node: FlowNode) => {
       const label = node.properties?.label || node.type;
       const baseName = this.toEstadoName(label);
       const estadoName = this.uniqueName(baseName, existingNames);
@@ -165,7 +296,7 @@ export class FlowConverterService {
         config: this.convertVariablesDeep(
           config,
           this.convertVariablesFtoB.bind(this),
-        ),
+        ) as JsonObject,
         node_id: node.id,
         node_type: node.type,
         position: node.position || { x: 0, y: 0 },
@@ -173,7 +304,7 @@ export class FlowConverterService {
     });
 
     const transicoes = connections
-      .map((conn: any) => {
+      .map((conn: FlowConnection) => {
         const estadoOrigem = nodeIdToEstado.get(conn.sourceNodeId);
         const estadoDestino = nodeIdToEstado.get(conn.targetNodeId);
         if (!estadoOrigem || !estadoDestino) return null;
@@ -186,9 +317,9 @@ export class FlowConverterService {
           ativo: true,
         };
       })
-      .filter(Boolean);
+      .filter((conn): conn is TransicaoOutput => conn !== null);
 
-    const vars = variables.map((v: any) => ({
+    const vars = variables.map((v: FlowVariable) => ({
       key: v.key,
       value: v.value || '',
     }));
@@ -196,7 +327,7 @@ export class FlowConverterService {
     return { estados, transicoes, variaveis: vars };
   }
 
-  private nodeToHandlerConfig(node: any) {
+  private nodeToHandlerConfig(node: FlowNode) {
     const props = node.properties || {};
     const subs = props.subComponents || [];
 
@@ -214,7 +345,7 @@ export class FlowConverterService {
         return this.decisionNodeToHandler(props);
 
       case 'buttons': {
-        const botoes = (props.botoes || []).map((b: any) => ({
+        const botoes = (props.botoes || []).map((b: ChoiceItem) => ({
           entrada: b.entrada || b.label || '',
           label: b.label || b.entrada || '',
         }));
@@ -230,7 +361,7 @@ export class FlowConverterService {
       }
 
       case 'listMenu': {
-        const opcoes = (props.opcoes || []).map((o: any) => ({
+        const opcoes = (props.opcoes || []).map((o: ChoiceItem) => ({
           entrada: o.entrada || o.label || '',
           label: o.label || o.entrada || '',
           ...(o.descricao ? { descricao: o.descricao } : {}),
@@ -283,15 +414,24 @@ export class FlowConverterService {
     }
   }
 
-  private messageNodeToHandler(props: any, subs: any[]) {
-    const sendMessages = subs.filter((s: any) => s.type === 'sendMessage');
-    const waitForResp = subs.find((s: any) => s.type === 'waitForResponse');
-    const setVars = subs.filter((s: any) => s.type === 'setVariable');
+  private messageNodeToHandler(
+    props: FlowNodeProperties,
+    subs: FlowSubComponent[],
+  ) {
+    const sendMessages = subs.filter(
+      (s: FlowSubComponent) => s.type === 'sendMessage',
+    );
+    const waitForResp = subs.find(
+      (s: FlowSubComponent) => s.type === 'waitForResponse',
+    );
+    const setVars = subs.filter(
+      (s: FlowSubComponent) => s.type === 'setVariable',
+    );
 
     // Coletar assignments de todos os setVariable sub-componentes
-    const assignments: any[] = [];
+    const assignments: ChoiceItem[] = [];
     for (const sv of setVars) {
-      const svAssignments = sv.properties?.assignments || [];
+      const svAssignments = (sv.properties?.assignments as ChoiceItem[]) || [];
       for (const a of svAssignments) {
         if (a.key || a.name) {
           assignments.push({ key: a.key || a.name, value: a.value || '' });
@@ -301,9 +441,9 @@ export class FlowConverterService {
 
     if (waitForResp) {
       const mensagens = sendMessages
-        .map((s: any) => s.properties?.content)
+        .map((s: FlowSubComponent) => s.properties?.content)
         .filter(Boolean);
-      const config: any = {
+      const config: JsonObject = {
         mensagemPedir: mensagens[0] || props.content || '',
         campoSalvar: waitForResp.properties?.responseVariable || 'valor',
       };
@@ -318,12 +458,14 @@ export class FlowConverterService {
 
     const mensagens =
       sendMessages.length > 0
-        ? sendMessages.map((s: any) => s.properties?.content).filter(Boolean)
+        ? sendMessages
+            .map((s: FlowSubComponent) => s.properties?.content)
+            .filter(Boolean)
         : props.content
           ? [props.content]
           : [];
 
-    const config: any = { mensagens, transicaoAutomatica: true };
+    const config: JsonObject = { mensagens, transicaoAutomatica: true };
     if (assignments.length > 0) {
       config.assignments = assignments;
     }
@@ -334,9 +476,9 @@ export class FlowConverterService {
     };
   }
 
-  private decisionNodeToHandler(props: any) {
+  private decisionNodeToHandler(props: FlowNodeProperties) {
     const conditions = props.conditions || [];
-    const opcoes = conditions.map((cond: any, idx: number) => ({
+    const opcoes = conditions.map((cond: ChoiceItem, idx: number) => ({
       entrada: cond.value || String(idx + 1),
       label: cond.value || `Opção ${idx + 1}`,
     }));
@@ -359,13 +501,18 @@ export class FlowConverterService {
     };
   }
 
-  private actionNodeToHandler(props: any, subs: any[]) {
-    const apiRoute = subs.find((s: any) => s.type === 'apiRoute');
+  private actionNodeToHandler(
+    props: FlowNodeProperties,
+    subs: FlowSubComponent[],
+  ) {
+    const apiRoute = subs.find((s: FlowSubComponent) => s.type === 'apiRoute');
     const apiCall = subs.find(
-      (s: any) => s.type === 'apiCall' || s.type === 'webhook',
+      (s: FlowSubComponent) => s.type === 'apiCall' || s.type === 'webhook',
     );
-    const integration = subs.find((s: any) => s.type === 'integration');
-    const setVar = subs.find((s: any) => s.type === 'setVariable');
+    const integration = subs.find(
+      (s: FlowSubComponent) => s.type === 'integration',
+    );
+    const setVar = subs.find((s: FlowSubComponent) => s.type === 'setVariable');
 
     if (apiRoute) {
       const p = apiRoute.properties || {};
@@ -381,7 +528,7 @@ export class FlowConverterService {
     }
 
     if (apiCall) {
-      const p = apiCall.properties || {};
+      const p = (apiCall.properties || {}) as FlowNodeProperties;
       return {
         handler: '_handlerRequisicao',
         config: {
@@ -396,8 +543,8 @@ export class FlowConverterService {
     }
 
     if (integration) {
-      const p = integration.properties || {};
-      const cfg = p.config || {};
+      const p = (integration.properties || {}) as FlowNodeProperties;
+      const cfg = (p.config || {}) as FlowNodeProperties;
       return {
         handler: '_handlerRequisicao',
         config: {
@@ -412,8 +559,8 @@ export class FlowConverterService {
     }
 
     if (setVar) {
-      const rawAssignments = setVar.properties?.assignments || [];
-      const assignments = rawAssignments.map((a: any) => ({
+      const rawAssignments = (setVar.properties?.assignments as ChoiceItem[]) || [];
+      const assignments = rawAssignments.map((a: ChoiceItem) => ({
         key: a.key || a.name || 'valor',
         value: a.value || '',
       }));
@@ -442,8 +589,8 @@ export class FlowConverterService {
     };
   }
 
-  private connectionToEntrada(conn: any, nodes: any[]): string {
-    const sourceNode = nodes.find((n: any) => n.id === conn.sourceNodeId);
+  private connectionToEntrada(conn: FlowConnection, nodes: FlowNode[]): string {
+    const sourceNode = nodes.find((n: FlowNode) => n.id === conn.sourceNodeId);
     if (!sourceNode) return '*';
 
     if (sourceNode.type === 'decision') {
@@ -488,15 +635,19 @@ export class FlowConverterService {
 
   // ─── Backend → Frontend ──────────────────────────────────────────────────
 
-  stateMachineToFlow(estados: any[], transicoes: any[], variaveis: any[] = []) {
+  stateMachineToFlow(
+    estados: EstadoConfigOutput[],
+    transicoes: TransicaoOutput[],
+    variaveis: FlowVariable[] = [],
+  ) {
     const estadoToNodeId = new Map<string, string>();
 
-    const nodes = estados.map((e: any, idx: number) => {
+    const nodes: FlowNode[] = estados.map((e: EstadoConfigOutput, idx: number) => {
       const nodeId = e.node_id || `node-imported-${idx}`;
       estadoToNodeId.set(e.estado, nodeId);
 
       const nodeType =
-        e.node_type || this.handlerToNodeType(e.handler, e.config);
+        e.node_type || this.handlerToNodeType(e.handler, e.config as FlowNodeProperties);
       const position = e.position || { x: 200, y: idx * 150 };
       const properties = this.handlerConfigToProperties(
         nodeType,
@@ -512,18 +663,18 @@ export class FlowConverterService {
         properties: this.convertVariablesDeep(
           properties,
           this.convertVariablesBtoF.bind(this),
-        ),
+        ) as FlowNodeProperties,
       };
     });
 
     let connIdx = 0;
-    const connections = transicoes
-      .map((t: any) => {
+    const connections: FlowConnection[] = transicoes
+      .map((t: TransicaoOutput): FlowConnection | null => {
         const sourceNodeId = estadoToNodeId.get(t.estado_origem);
         const targetNodeId = estadoToNodeId.get(t.estado_destino);
         if (!sourceNodeId || !targetNodeId) return null;
 
-        const sourceNode = nodes.find((n: any) => n.id === sourceNodeId);
+        const sourceNode = nodes.find((n: FlowNode) => n.id === sourceNodeId);
         const sourcePort = this.transicaoToSourcePort(
           t,
           sourceNode,
@@ -540,9 +691,9 @@ export class FlowConverterService {
           condition: null,
         };
       })
-      .filter(Boolean);
+      .filter((conn): conn is FlowConnection => conn !== null);
 
-    const vars = variaveis.map((v: any, idx: number) => ({
+    const vars = variaveis.map((v: FlowVariable, idx: number) => ({
       id: `var-imported-${idx}`,
       key: v.chave,
       value: v.valor_padrao || '',
@@ -551,7 +702,7 @@ export class FlowConverterService {
     return { nodes, connections, variables: vars };
   }
 
-  private handlerToNodeType(handler: string, config: any): string {
+  private handlerToNodeType(handler: string, config: FlowNodeProperties): string {
     switch (handler) {
       case '_handlerMensagem':
         if (
@@ -581,7 +732,7 @@ export class FlowConverterService {
   private handlerConfigToProperties(
     nodeType: string,
     handler: string,
-    config: any,
+    config: FlowNodeProperties,
     estadoName: string,
   ) {
     config = config || {};
@@ -597,11 +748,13 @@ export class FlowConverterService {
         };
 
       case 'buttons': {
-        const botoes = (config.botoes || []).map((b: any, i: number) => ({
-          id: `btn-${Date.now()}-${i}`,
-          label: b.label || b.entrada || '',
-          entrada: b.entrada || b.label || '',
-        }));
+        const botoes = (config.botoes || []).map(
+          (b: ChoiceItem, i: number) => ({
+            id: `btn-${Date.now()}-${i}`,
+            label: b.label || b.entrada || '',
+            entrada: b.entrada || b.label || '',
+          }),
+        );
         return {
           label: estadoName || 'Botões',
           titulo: config.titulo || '',
@@ -612,12 +765,14 @@ export class FlowConverterService {
       }
 
       case 'listMenu': {
-        const opcoes = (config.opcoes || []).map((o: any, i: number) => ({
-          id: `opt-${Date.now()}-${i}`,
-          label: o.label || o.entrada || '',
-          entrada: o.entrada || o.label || '',
-          descricao: o.descricao || '',
-        }));
+        const opcoes = (config.opcoes || []).map(
+          (o: ChoiceItem, i: number) => ({
+            id: `opt-${Date.now()}-${i}`,
+            label: o.label || o.entrada || '',
+            entrada: o.entrada || o.label || '',
+            descricao: o.descricao || '',
+          }),
+        );
         return {
           label: estadoName || 'Menu de Lista',
           titulo: config.titulo || '',
@@ -630,7 +785,7 @@ export class FlowConverterService {
 
       case 'message': {
         if (handler === '_handlerCapturar') {
-          const subComponents: any[] = [];
+          const subComponents: FlowSubComponent[] = [];
           if (config.mensagemPedir) {
             subComponents.push({
               id: `sub-${Date.now()}-sm`,
@@ -672,7 +827,7 @@ export class FlowConverterService {
 
       case 'decision': {
         const items = config.opcoes || config.botoes || [];
-        const conditions = items.map((item: any, i: number) => ({
+        const conditions = items.map((item: ChoiceItem, i: number) => ({
           id: `cond-${Date.now()}-${i}`,
           field: '',
           operator: 'equals',
@@ -681,12 +836,11 @@ export class FlowConverterService {
         return { label: config.titulo || estadoName || 'Decision', conditions };
       }
 
-
       case 'action': {
         // setVariable handler → reconstruct setVariable sub-component
         if (handler === '_handlerSetVariable') {
           const assignments = (config.assignments || []).map(
-            (a: any, i: number) => ({
+            (a: ChoiceItem, i: number) => ({
               key: a.key,
               name: a.key,
               value: a.value || '',
@@ -753,25 +907,28 @@ export class FlowConverterService {
   }
 
   private transicaoToSourcePort(
-    transicao: any,
-    sourceNode: any,
-    todasTransicoes: any[],
+    transicao: TransicaoOutput,
+    sourceNode: FlowNode | undefined,
+    todasTransicoes: TransicaoOutput[],
   ): string {
-    const isMultiOutput =
-      ['decision', 'buttons', 'listMenu'].includes(sourceNode?.type);
+    const isMultiOutput = ['decision', 'buttons', 'listMenu'].includes(
+      sourceNode?.type || '',
+    );
 
     if (!sourceNode || !isMultiOutput) return 'output';
     if (transicao.entrada === '*') return 'output-default';
 
     const transicoesDoEstado = todasTransicoes
       .filter(
-        (t: any) =>
+        (t: TransicaoOutput) =>
           t.estado_origem === transicao.estado_origem && t.entrada !== '*',
       )
-      .sort((a: any, b: any) => a.entrada.localeCompare(b.entrada));
+      .sort((a: TransicaoOutput, b: TransicaoOutput) =>
+        a.entrada.localeCompare(b.entrada),
+      );
 
     const idx = transicoesDoEstado.findIndex(
-      (t: any) => t.entrada === transicao.entrada,
+      (t: TransicaoOutput) => t.entrada === transicao.entrada,
     );
     return `output-${idx >= 0 ? idx : 0}`;
   }

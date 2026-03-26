@@ -8,10 +8,60 @@ import { ConversationService } from '../../conversation/conversation.service';
 import { StateMachineEngine } from '../state-machine.engine';
 import { HandlerService } from './handler.service';
 
+type WppMessage = {
+  isGroupMsg?: boolean;
+  from?: string;
+  fromMe?: boolean;
+  to?: string;
+  chatId?: string;
+  type?: string;
+  body?: string;
+  content?: string;
+  timestamp?: number;
+  t?: number;
+  id?: {
+    remote?: string;
+    [key: string]: unknown;
+  };
+  sender?: {
+    pushname?: string;
+    name?: string;
+    [key: string]: unknown;
+  };
+  listResponse?: {
+    singleSelectReply?: {
+      selectedRowId?: string;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
+  selectedRowId?: string;
+  buttonsResponse?: {
+    selectedButtonId?: string;
+    [key: string]: unknown;
+  };
+  templateButtonReplyMessage?: {
+    selectedId?: string;
+    [key: string]: unknown;
+  };
+  selectedButtonId?: string;
+  [key: string]: unknown;
+};
+
+type WppClient = {
+  close: () => Promise<unknown>;
+  sendText: (destino: string, texto: string) => Promise<unknown>;
+  onMessage: (callback: (message: WppMessage) => Promise<void> | void) => void;
+};
+
+type WppConnectModule = {
+  create: (options: Record<string, unknown>) => Promise<WppClient>;
+};
+
 @Injectable()
 export class BotService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BotService.name);
-  private client: any = null;
+  private client: WppClient | null = null;
   private sessao: string;
   private iniciadoEm = 0;
 
@@ -23,6 +73,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.sessao = process.env.BOT_SESSAO || 'sessao-bot-wpp';
   }
 
+  private getErrorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    return String(err);
+  }
+
   onModuleInit() {
     if (process.env.NODE_ENV === 'production') {
       this.logger.log(
@@ -30,8 +85,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
-    this.iniciar().catch((err) => {
-      this.logger.error(`Falha ao iniciar o bot: ${err.message}`);
+    this.iniciar().catch((err: unknown) => {
+      this.logger.error(`Falha ao iniciar o bot: ${this.getErrorMessage(err)}`);
     });
   }
 
@@ -40,8 +95,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       try {
         await this.client.close();
         this.logger.log('Navegador do WPPConnect fechado.');
-      } catch (err: any) {
-        this.logger.error(`Erro ao fechar WPPConnect: ${err.message}`);
+      } catch (err: unknown) {
+        this.logger.error(
+          `Erro ao fechar WPPConnect: ${this.getErrorMessage(err)}`,
+        );
       }
     }
   }
@@ -52,7 +109,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     try {
       // Import dinâmico do WPPConnect para economizar memória em produção
-      const wppconnect = await import('@wppconnect-team/wppconnect');
+      const wppconnect =
+        (await import('@wppconnect-team/wppconnect')) as unknown as WppConnectModule;
 
       this.client = await wppconnect.create({
         session: this.sessao,
@@ -68,14 +126,16 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
         ],
-      } as any);
+      });
 
       // Set client on handler so it can send messages
       this.handler.client = this.client;
 
       await this.aoConectar();
-    } catch (error: any) {
-      this.logger.error(`Erro ao iniciar WPPConnect: ${error.message}`);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Erro ao iniciar WPPConnect: ${this.getErrorMessage(error)}`,
+      );
     }
   }
 
@@ -87,6 +147,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async enviarMensagemDeInicializacao() {
+    if (!this.client) return;
+
     const numero = process.env.BOT_NUMERO_ADMIN || '5514998089672@c.us';
     const texto = '🚀 Bot online e operante via NestJS + WPPConnect!';
 
@@ -96,15 +158,17 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         texto,
       );
       this.logger.log('Mensagem de inicialização enviada.');
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.logger.error(
-        `Erro ao enviar mensagem de inicialização: ${err.message}`,
+        `Erro ao enviar mensagem de inicialização: ${this.getErrorMessage(err)}`,
       );
     }
   }
 
   private ouvirMensagens() {
-    this.client.onMessage(async (message: any) => {
+    if (!this.client) return;
+
+    this.client.onMessage(async (message: WppMessage) => {
       if (
         !message ||
         message.isGroupMsg ||
@@ -129,32 +193,31 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           .split('@')[0]
           .replace(/\D/g, '');
 
-
         const isAdmin =
           numeroRemetente === numeroAdmin ||
           (lidAdmin && numeroRemetente === lidAdmin);
 
-        console.log(isAdmin ? 'true' : 'false')
+        console.log(isAdmin ? 'true' : 'false');
         if (!isAdmin) return;
       }
 
       this.logger.log(
-        `Mensagem de ${message.from} [${message.type}]: ${message.body ?? ''}`,
+        `Mensagem de ${message.from ?? 'desconhecido'} [${message.type ?? 'unknown'}]: ${message.body ?? ''}`,
       );
 
       try {
         await this.salvarNoBanco(message);
         await this.processarMensagem(message);
-      } catch (err: any) {
+      } catch (err: unknown) {
         this.logger.error(
-          `Erro ao processar mensagem de ${message.from}: ${err.message}`,
+          `Erro ao processar mensagem de ${message.from ?? 'desconhecido'}: ${this.getErrorMessage(err)}`,
         );
       }
     });
   }
 
-  private async processarMensagem(message: any) {
-    const chatId = message.chatId || message.from;
+  private async processarMensagem(message: WppMessage) {
+    const chatId = message.chatId || message.from || '';
     const nome = message.sender?.pushname || message.sender?.name || null;
 
     let corpo = '';
@@ -165,8 +228,13 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         message.body ||
         message.content ||
         ''
-      ).trim().toLowerCase();
-    } else if (message.type === 'buttons_response' || message.type === 'template_button_reply') {
+      )
+        .trim()
+        .toLowerCase();
+    } else if (
+      message.type === 'buttons_response' ||
+      message.type === 'template_button_reply'
+    ) {
       corpo = (
         message.buttonsResponse?.selectedButtonId ||
         message.templateButtonReplyMessage?.selectedId ||
@@ -174,7 +242,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         message.body ||
         message.content ||
         ''
-      ).trim().toLowerCase();
+      )
+        .trim()
+        .toLowerCase();
     } else {
       corpo = (message.body || message.content || '').trim();
     }
@@ -182,7 +252,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     await this.engine.process(message, chatId, corpo, nome, this.handler);
   }
 
-  private async salvarNoBanco(message: any) {
+  private async salvarNoBanco(message: WppMessage) {
     const nome = message.sender?.pushname || message.sender?.name || null;
     const quemEnviou = this.extrairNumero(message.from);
     const paraQuem = this.extrairNumero(message.to);
@@ -195,8 +265,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         paraQuem,
         message.body || message.content || '',
       );
-    } catch (err: any) {
-      this.logger.error(`Falha ao salvar mensagem: ${err.message}`);
+    } catch (err: unknown) {
+      this.logger.error(
+        `Falha ao salvar mensagem: ${this.getErrorMessage(err)}`,
+      );
     }
   }
 

@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { IoAdapter } from '@nestjs/platform-socket.io';
+import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import * as express from 'express';
@@ -18,11 +19,13 @@ async function bootstrap() {
       : Number.isNaN(Number(trustProxyEnv))
         ? trustProxyEnv
         : Number(trustProxyEnv);
+
   const authRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 20,
     message: { erro: 'Muitas tentativas. Tente novamente em 15 minutos.' },
   });
+
   const apiRateLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
     max: 100,
@@ -49,38 +52,36 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Rate limiting (same as Express backend)
   app.use('/api/auth', authRateLimiter);
-
-  // Rate limiting em /api — EXCLUI o webhook da Meta para ele nunca ser bloqueado
   app.use('/api', apiRateLimiter);
 
   app.useWebSocketAdapter(new IoAdapter(app));
   app.setGlobalPrefix('api', { exclude: ['health'] });
 
-  // Serve frontend em produção (dist do Vue) e painel legado
   const frontendPath = path.join(__dirname, '../../telebots-frontend/dist');
   app.useStaticAssets(frontendPath);
   app.useStaticAssets(path.join(__dirname, '../telas'), { prefix: '/telas/' });
 
-  // SPA fallback — serve index.html para rotas do Vue Router
-  app.getHttpAdapter().get('/{*path}', (req: any, res: any, next: any) => {
-    if (
-      req.path.startsWith('/api') ||
-      req.path.startsWith('/admin') ||
-      req.path.startsWith('/telas')
-    ) {
-      return next();
-    }
-    res.sendFile(path.join(frontendPath, 'index.html'), (err: any) => {
-      if (err) next();
+  app
+    .getHttpAdapter()
+    .get('/{*path}', (req: Request, res: Response, next: NextFunction) => {
+      if (
+        req.path.startsWith('/api') ||
+        req.path.startsWith('/admin') ||
+        req.path.startsWith('/telas')
+      ) {
+        return next();
+      }
+
+      res.sendFile(path.join(frontendPath, 'index.html'), (err) => {
+        if (err) next();
+      });
     });
-  });
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   console.log(
-    `[API] Servidor NestJS rodando na porta ${port} → http://localhost:${port}`,
+    `[API] Servidor NestJS rodando na porta ${port} -> http://localhost:${port}`,
   );
 }
 

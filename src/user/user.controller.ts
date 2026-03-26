@@ -14,6 +14,8 @@ import {
 import { UserService } from './user.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MasterGuard } from '../auth/master.guard';
+import type { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
+import type { UpdateUserData } from './interfaces/update-user.interface';
 
 @Controller('auth/usuarios')
 @UseGuards(JwtAuthGuard)
@@ -21,7 +23,7 @@ export class UserController {
   constructor(private userService: UserService) {}
 
   @Get()
-  listar(@Req() req: any) {
+  listar(@Req() req: RequestWithUser) {
     if (req.user.master) {
       return this.userService.listar();
     }
@@ -42,7 +44,7 @@ export class UserController {
       organizacaoId?: string;
       subOrganizacaoId?: string;
     },
-    @Req() req: any,
+    @Req() req: RequestWithUser,
   ) {
     if (!req.user.master && req.user.papel !== 'admin') {
       throw new ForbiddenException('Sem permissão para criar usuários');
@@ -51,15 +53,17 @@ export class UserController {
       throw new BadRequestException('Email e senha são obrigatórios');
     }
 
-    // Admin só pode criar 'user'
-    const papel = req.user.master ? (body.papel || 'user') : 'user';
+    const papel = req.user.master ? body.papel || 'user' : 'user';
 
-    // Admin precisa de subOrganizacaoId; Master criando admin precisa de organizacaoId
     if (!req.user.master && !body.subOrganizacaoId) {
-      throw new BadRequestException('Sub-organização é obrigatória ao criar usuário comum');
+      throw new BadRequestException(
+        'Sub-organização é obrigatória ao criar usuário comum',
+      );
     }
     if (req.user.master && papel === 'admin' && !body.organizacaoId) {
-      throw new BadRequestException('Organização é obrigatória ao criar usuário admin');
+      throw new BadRequestException(
+        'Organização é obrigatória ao criar usuário admin',
+      );
     }
 
     return this.userService.criar(
@@ -75,13 +79,13 @@ export class UserController {
 
   @Put(':id')
   @UseGuards(MasterGuard)
-  atualizar(@Param('id') id: string, @Body() body: any) {
+  atualizar(@Param('id') id: string, @Body() body: UpdateUserData) {
     return this.userService.atualizar(id, body);
   }
 
   @Delete(':id')
   @UseGuards(MasterGuard)
-  excluir(@Param('id') id: string, @Req() req: any) {
+  excluir(@Param('id') id: string, @Req() req: RequestWithUser) {
     return this.userService.excluir(id, req.user.id);
   }
 }

@@ -10,6 +10,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import type { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { OrganizationService } from './organization.service';
 
@@ -21,52 +22,72 @@ export class OrganizationController {
   // ─── Sub-orgs acessíveis pelo usuário ────────────────────────────────────
 
   @Get('minhas-sub-orgs')
-  minhasSubOrgs(@Req() req: any) {
+  minhasSubOrgs(@Req() req: RequestWithUser) {
     return this.orgService.getSubOrgsAcessiveis(req.user.id, req.user.master);
   }
 
   // ─── Organizações ─────────────────────────────────────────────────────────
 
   @Get('organizacoes')
-  listar(@Req() req: any) {
-    return this.orgService.listarOrganizacoes(req.user.id, req.user.master, req.user.papel);
+  listar(@Req() req: RequestWithUser) {
+    return this.orgService.listarOrganizacoes(
+      req.user.id,
+      req.user.master,
+      req.user.papel,
+    );
   }
 
   @Post('organizacoes')
-  criar(@Req() req: any, @Body() body: { nome: string; slug?: string }) {
+  criar(
+    @Req() req: RequestWithUser,
+    @Body() body: { nome: string; slug?: string },
+  ) {
     return this.orgService.criarOrganizacao(req.user.id, body);
   }
 
   @Get('organizacoes/:orgId')
-  obter(@Param('orgId') orgId: string, @Req() req: any) {
-    return this.orgService.obterOrganizacao(orgId, req.user.id, req.user.master);
+  obter(@Param('orgId') orgId: string, @Req() req: RequestWithUser) {
+    return this.orgService.obterOrganizacao(
+      orgId,
+      req.user.id,
+      req.user.master,
+    );
   }
 
   @Put('organizacoes/:orgId')
   atualizar(
     @Param('orgId') orgId: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
     @Body() body: { nome?: string },
   ) {
-    return this.orgService.atualizarOrganizacao(orgId, req.user.id, body, req.user.master);
+    return this.orgService.atualizarOrganizacao(
+      orgId,
+      req.user.id,
+      body,
+      req.user.master,
+    );
   }
 
   @Delete('organizacoes/:orgId')
-  excluir(@Param('orgId') orgId: string, @Req() req: any) {
-    return this.orgService.excluirOrganizacao(orgId, req.user.id, req.user.master);
+  excluir(@Param('orgId') orgId: string, @Req() req: RequestWithUser) {
+    return this.orgService.excluirOrganizacao(
+      orgId,
+      req.user.id,
+      req.user.master,
+    );
   }
 
   // ─── Membros da organização ───────────────────────────────────────────────
 
   @Get('organizacoes/:orgId/membros')
-  listarMembros(@Param('orgId') orgId: string, @Req() req: any) {
+  listarMembros(@Param('orgId') orgId: string, @Req() req: RequestWithUser) {
     return this.orgService.listarMembros(orgId, req.user.id, req.user.master);
   }
 
   @Post('organizacoes/:orgId/membros')
   adicionarMembro(
     @Param('orgId') orgId: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
     @Body() body: { email: string; papel?: string },
   ) {
     return this.orgService.adicionarMembro(
@@ -82,50 +103,71 @@ export class OrganizationController {
   removerMembro(
     @Param('orgId') orgId: string,
     @Param('membroId') membroId: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
   ) {
-    return this.orgService.removerMembro(orgId, req.user.id, membroId, req.user.master);
+    return this.orgService.removerMembro(
+      orgId,
+      req.user.id,
+      membroId,
+      req.user.master,
+    );
   }
 
   // ─── Sub-organizações ─────────────────────────────────────────────────────
 
   @Get('organizacoes/:orgId/sub-orgs')
-  listarSubOrgs(@Param('orgId') orgId: string, @Req() req: any) {
+  listarSubOrgs(@Param('orgId') orgId: string, @Req() req: RequestWithUser) {
     return this.orgService.listarSubOrgs(orgId, req.user.id, req.user.master);
   }
 
   @Post('organizacoes/:orgId/sub-orgs')
   criarSubOrg(
     @Param('orgId') orgId: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
     @Body() body: { nome: string; slug?: string },
   ) {
-    return this.orgService.criarSubOrg(orgId, req.user.id, body, req.user.master);
+    return this.orgService.criarSubOrg(
+      orgId,
+      req.user.id,
+      body,
+      req.user.master,
+    );
   }
 
   @Put('organizacoes/:orgId/sub-orgs/:subOrgId')
   atualizarSubOrg(
     @Param('orgId') orgId: string,
     @Param('subOrgId') subOrgId: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
     @Body() body: { nome?: string },
   ) {
-    return this.orgService.atualizarSubOrg(orgId, subOrgId, req.user.id, body, req.user.master);
+    return this.orgService.atualizarSubOrg(
+      orgId,
+      subOrgId,
+      req.user.id,
+      body,
+      req.user.master,
+    );
   }
 
   @Delete('organizacoes/:orgId/sub-orgs/:subOrgId')
   excluirSubOrg(
     @Param('orgId') orgId: string,
     @Param('subOrgId') subOrgId: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
   ) {
-    return this.orgService.excluirSubOrg(orgId, subOrgId, req.user.id, req.user.master);
+    return this.orgService.excluirSubOrg(
+      orgId,
+      subOrgId,
+      req.user.id,
+      req.user.master,
+    );
   }
 
   @Post('organizacoes/:orgId/sub-orgs/:subOrgId/transferir')
   transferirSubOrg(
     @Param('subOrgId') subOrgId: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
     @Body() body: { novaOrgId: string },
   ) {
     return this.orgService.transferirSubOrg(
@@ -142,7 +184,7 @@ export class OrganizationController {
   adicionarMembroSubOrg(
     @Param('orgId') orgId: string,
     @Param('subOrgId') subOrgId: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
     @Body() body: { email: string; papel?: string },
   ) {
     return this.orgService.adicionarMembroSubOrg(
@@ -160,7 +202,7 @@ export class OrganizationController {
     @Param('orgId') orgId: string,
     @Param('subOrgId') subOrgId: string,
     @Param('membroId') membroId: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
   ) {
     return this.orgService.removerMembroSubOrg(
       orgId,
@@ -175,18 +217,29 @@ export class OrganizationController {
   listarMembrosSubOrg(
     @Param('orgId') orgId: string,
     @Param('subOrgId') subOrgId: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
   ) {
-    return this.orgService.listarMembrosSubOrg(orgId, subOrgId, req.user.id, req.user.master);
+    return this.orgService.listarMembrosSubOrg(
+      orgId,
+      subOrgId,
+      req.user.id,
+      req.user.master,
+    );
   }
 
   @Post('organizacoes/:orgId/convites')
   criarConviteOrg(
     @Param('orgId') orgId: string,
     @Body() body: { email: string; papel?: string },
-    @Req() req: any,
+    @Req() req: RequestWithUser,
   ) {
-    return this.orgService.criarConviteOrg(orgId, req.user.id, body.email, body.papel, req.user.master);
+    return this.orgService.criarConviteOrg(
+      orgId,
+      req.user.id,
+      body.email,
+      body.papel,
+      req.user.master,
+    );
   }
 
   @Post('organizacoes/:orgId/sub-orgs/:subOrgId/convites')
@@ -194,23 +247,30 @@ export class OrganizationController {
     @Param('orgId') orgId: string,
     @Param('subOrgId') subOrgId: string,
     @Body() body: { email: string; papel?: string },
-    @Req() req: any,
+    @Req() req: RequestWithUser,
   ) {
-    return this.orgService.criarConviteSubOrg(orgId, subOrgId, req.user.id, body.email, body.papel, req.user.master);
+    return this.orgService.criarConviteSubOrg(
+      orgId,
+      subOrgId,
+      req.user.id,
+      body.email,
+      body.papel,
+      req.user.master,
+    );
   }
 
   @Get('convites/meus')
-  listarMeusConvites(@Req() req: any) {
+  listarMeusConvites(@Req() req: RequestWithUser) {
     return this.orgService.listarMeusConvites(req.user.id);
   }
 
   @Patch('convites/:id/aceitar')
-  aceitarConvite(@Param('id') id: string, @Req() req: any) {
+  aceitarConvite(@Param('id') id: string, @Req() req: RequestWithUser) {
     return this.orgService.aceitarConvite(id, req.user.id);
   }
 
   @Patch('convites/:id/rejeitar')
-  rejeitarConvite(@Param('id') id: string, @Req() req: any) {
+  rejeitarConvite(@Param('id') id: string, @Req() req: RequestWithUser) {
     return this.orgService.rejeitarConvite(id, req.user.id);
   }
 }

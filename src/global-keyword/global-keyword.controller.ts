@@ -8,11 +8,11 @@ import {
   Post,
   Put,
 } from '@nestjs/common';
-import { GlobalKeywordService } from './global-keyword.service';
+import { GlobalKeywordService, GlobalKeywordDto } from './global-keyword.service';
 
 @Controller('admin/keywords-globais')
 export class GlobalKeywordController {
-  constructor(private readonly service: GlobalKeywordService) {}
+  constructor(private readonly service: GlobalKeywordService) { }
 
   @Get()
   listar() {
@@ -20,17 +20,17 @@ export class GlobalKeywordController {
   }
 
   @Post()
-  criar(@Body() body: any) {
+  criar(@Body() body: GlobalKeywordDto) {
     return this.service.criar(body);
   }
 
   @Put(':id')
-  atualizar(@Param('id') id: string, @Body() body: any) {
+  atualizar(@Param('id') id: string, @Body() body: GlobalKeywordDto) {
     return this.service.atualizar(id, body);
   }
 
   @Patch(':id/ativo')
-  atualizarAtivo(@Param('id') id: string, @Body() body: any) {
+  atualizarAtivo(@Param('id') id: string, @Body() body: { ativo: boolean }) {
     return this.service.atualizarAtivo(id, body?.ativo !== false);
   }
 

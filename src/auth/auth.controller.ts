@@ -7,9 +7,11 @@ import {
   Req,
   BadRequestException,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import type { RequestWithUser } from './interfaces/request-with-user.interface';
 
 @Controller('auth')
 export class AuthController {
@@ -25,7 +27,10 @@ export class AuthController {
   }
 
   @Post('login')
-  async login(@Body() body: { email: string; senha: string }, @Req() req: any) {
+  async login(
+    @Body() body: { email: string; senha: string },
+    @Req() req: Request,
+  ) {
     if (!body.email || !body.senha) {
       throw new BadRequestException('Email e senha são obrigatórios');
     }
@@ -52,7 +57,7 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  async me(@Req() req: any) {
+  async me(@Req() req: RequestWithUser) {
     return this.authService.getMe(req.user.id);
   }
 }

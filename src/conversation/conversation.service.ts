@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -6,7 +7,7 @@ export class ConversationService {
   private readonly logger = new Logger(ConversationService.name);
   private indisponibilidadeAvisada = false;
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   private avisarBancoIndisponivel() {
     if (this.indisponibilidadeAvisada) {
@@ -30,7 +31,7 @@ export class ConversationService {
 
   async salvarMensagem(
     nome: string | null,
-    dados: any,
+    dados: unknown,
     quemEnviou: string | null,
     paraQuem: string | null,
     mensagem: string | null,
@@ -40,7 +41,13 @@ export class ConversationService {
       return null;
     }
     return this.prisma.conversa.create({
-      data: { nome, dados, quemEnviou, paraQuem, mensagem },
+      data: {
+        nome,
+        dados: dados as Prisma.InputJsonValue,
+        quemEnviou,
+        paraQuem,
+        mensagem,
+      },
     });
   }
 }

@@ -1,7 +1,14 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as Y from 'yjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { FlowService } from '../flow/flow.service';
+import type {
+  FlowConnection,
+  FlowJsonPayload,
+  FlowNode,
+  FlowVariable,
+} from '../flow/flow-converter.service';
 
 const PERSIST_DEBOUNCE_MS = 2000;
 const RECOMPILE_DEBOUNCE_MS = 10000; // Recompile bot state less often (every 10s max)
@@ -21,6 +28,11 @@ interface Room {
   entityId: string;
 }
 
+type ComponentJsonPayload = {
+  nodes?: FlowNode[];
+  connections?: FlowConnection[];
+};
+
 @Injectable()
 export class CollaborationService implements OnModuleDestroy {
   private readonly logger = new Logger(CollaborationService.name);
@@ -30,6 +42,47 @@ export class CollaborationService implements OnModuleDestroy {
     private prisma: PrismaService,
     private flowService: FlowService,
   ) {}
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private parseFlowJsonPayload(
+    value: Prisma.JsonValue | null,
+  ): FlowJsonPayload {
+    if (!this.isRecord(value)) {
+      return {};
+    }
+
+    return {
+      nodes: Array.isArray(value.nodes) ? (value.nodes as FlowNode[]) : [],
+      connections: Array.isArray(value.connections)
+        ? (value.connections as FlowConnection[])
+        : [],
+      variables: Array.isArray(value.variables)
+        ? (value.variables as FlowVariable[])
+        : [],
+    };
+  }
+
+  private parseComponentJsonPayload(
+    value: Prisma.JsonValue | null,
+  ): ComponentJsonPayload {
+    if (!this.isRecord(value)) {
+      return {};
+    }
+
+    return {
+      nodes: Array.isArray(value.nodes) ? (value.nodes as FlowNode[]) : [],
+      connections: Array.isArray(value.connections)
+        ? (value.connections as FlowConnection[])
+        : [],
+    };
+  }
+
+  private getMapValues<T>(map: Y.Map<unknown>): T[] {
+    return Array.from(map.values()) as T[];
+  }
 
   async onModuleDestroy() {
     for (const [roomKey, room] of this.rooms) {
@@ -176,11 +229,16 @@ export class CollaborationService implements OnModuleDestroy {
     try {
       if (room.roomType === 'component') {
         await this.prisma.yjsComponentUpdate.create({
-          data: { componentId: room.entityId, update: Buffer.from(mergedUpdate) },
+          data: {
+            componentId: room.entityId,
+            update: Buffer.from(mergedUpdate),
+          },
         });
         await this.syncComponentJsonFromDoc(room.entityId, room.doc);
         await this.compactComponentUpdatesIfNeeded(room.entityId);
-        this.logger.debug(`Updates persistidos para componente ${room.entityId}`);
+        this.logger.debug(
+          `Updates persistidos para componente ${room.entityId}`,
+        );
       } else {
         const flowId = room.entityId;
         await this.prisma.yjsUpdate.create({
@@ -214,12 +272,16 @@ export class CollaborationService implements OnModuleDestroy {
       const nodesMap = room.doc.getMap('nodes');
       const connectionsMap = room.doc.getMap('connections');
       const variablesMap = room.doc.getMap('variables');
-      const nodes = Array.from(nodesMap.values()) as any[];
-      const connections = Array.from(connectionsMap.values()) as any[];
-      const variables = Array.from(variablesMap.values()) as any[];
+      const nodes = this.getMapValues<FlowNode>(nodesMap);
+      const connections = this.getMapValues<FlowConnection>(connectionsMap);
+      const variables = this.getMapValues<FlowVariable>(variablesMap);
 
       if (nodes.length > 0 || connections.length > 0) {
-        await this.flowService.recompilarFluxo(flowId, { nodes, connections, variables });
+        await this.flowService.recompilarFluxo(flowId, {
+          nodes,
+          connections,
+          variables,
+        });
         this.logger.debug(`Fluxo ${flowId} recompilado`);
       }
     } catch (error) {
@@ -234,16 +296,18 @@ export class CollaborationService implements OnModuleDestroy {
     const variablesMap = doc.getMap('variables');
     const metaMap = doc.getMap('meta');
 
-    const nodes = Array.from(nodesMap.values()) as any[];
-    const connections = Array.from(connectionsMap.values()) as any[];
-    const variables = Array.from(variablesMap.values()) as any[];
+    const nodes = this.getMapValues<FlowNode>(nodesMap);
+    const connections = this.getMapValues<FlowConnection>(connectionsMap);
+    const variables = this.getMapValues<FlowVariable>(variablesMap);
 
     const nome = metaMap.get('name') as string | undefined;
     const descricao = metaMap.get('description') as string | undefined;
 
     if (nodes.length > 0 || connections.length > 0) {
-      const flowJson = { nodes, connections, variables };
-      const updateData: any = { flowJson: flowJson as any };
+      const flowJson: FlowJsonPayload = { nodes, connections, variables };
+      const updateData: Prisma.BotFluxoUpdateInput = {
+        flowJson: flowJson as Prisma.InputJsonValue,
+      };
 
       if (nome !== undefined && nome.trim() !== '') {
         updateData.nome = nome;
@@ -258,9 +322,12 @@ export class CollaborationService implements OnModuleDestroy {
       });
     } else if (nome !== undefined && nome.trim() !== '') {
       // Persiste ao menos o nome/descrição mesmo quando o fluxo ainda está vazio
-      const updateData: any = { nome };
+      const updateData: Prisma.BotFluxoUpdateInput = { nome };
       if (descricao !== undefined) updateData.descricao = descricao;
-      await this.prisma.botFluxo.update({ where: { id: flowId }, data: updateData });
+      await this.prisma.botFluxo.update({
+        where: { id: flowId },
+        data: updateData,
+      });
     }
   }
 
@@ -316,21 +383,25 @@ export class CollaborationService implements OnModuleDestroy {
     });
 
     if (fluxo?.flowJson) {
-      const flowData = fluxo.flowJson as any;
+      const flowData = this.parseFlowJsonPayload(fluxo.flowJson);
       const nodesMap = doc.getMap('nodes');
       const connectionsMap = doc.getMap('connections');
       const variablesMap = doc.getMap('variables');
       const metaMap = doc.getMap('meta');
 
       doc.transact(() => {
-        for (const node of flowData.nodes || []) {
+        for (const node of flowData.nodes ?? []) {
           nodesMap.set(node.id, node);
         }
-        for (const conn of flowData.connections || []) {
+        for (const conn of flowData.connections ?? []) {
           connectionsMap.set(conn.id, conn);
         }
-        for (const v of flowData.variables || []) {
-          variablesMap.set(v.id || v.key, v);
+        for (const [index, v] of (flowData.variables ?? []).entries()) {
+          const variableKey =
+            (typeof v.id === 'string' && v.id) ||
+            (typeof v.key === 'string' && v.key) ||
+            `var_${index}`;
+          variablesMap.set(variableKey, v);
         }
         metaMap.set('name', fluxo.nome);
         metaMap.set('description', fluxo.descricao || '');
@@ -365,16 +436,16 @@ export class CollaborationService implements OnModuleDestroy {
     });
 
     if (comp?.nodesJson) {
-      const data = comp.nodesJson as any;
+      const data = this.parseComponentJsonPayload(comp.nodesJson);
       const nodesMap = doc.getMap('nodes');
       const connectionsMap = doc.getMap('connections');
       const metaMap = doc.getMap('meta');
 
       doc.transact(() => {
-        for (const node of data.nodes || []) {
+        for (const node of data.nodes ?? []) {
           nodesMap.set(node.id, node);
         }
-        for (const conn of data.connections || []) {
+        for (const conn of data.connections ?? []) {
           connectionsMap.set(conn.id, conn);
         }
         metaMap.set('name', comp.nome);
@@ -390,15 +461,17 @@ export class CollaborationService implements OnModuleDestroy {
     const connectionsMap = doc.getMap('connections');
     const metaMap = doc.getMap('meta');
 
-    const nodes = Array.from(nodesMap.values()) as any[];
-    const connections = Array.from(connectionsMap.values()) as any[];
+    const nodes = this.getMapValues<FlowNode>(nodesMap);
+    const connections = this.getMapValues<FlowConnection>(connectionsMap);
 
     const nome = metaMap.get('name') as string | undefined;
     const descricao = metaMap.get('description') as string | undefined;
 
     if (nodes.length > 0 || connections.length > 0) {
-      const nodesJson = { nodes, connections };
-      const updateData: any = { nodesJson: nodesJson as any };
+      const nodesJson: ComponentJsonPayload = { nodes, connections };
+      const updateData: Prisma.ComponentePersonalizadoUpdateInput = {
+        nodesJson: nodesJson as Prisma.InputJsonValue,
+      };
 
       if (nome !== undefined && nome.trim() !== '') {
         updateData.nome = nome;
@@ -415,7 +488,9 @@ export class CollaborationService implements OnModuleDestroy {
   }
 
   private async compactComponentUpdatesIfNeeded(componentId: string) {
-    const count = await this.prisma.yjsComponentUpdate.count({ where: { componentId } });
+    const count = await this.prisma.yjsComponentUpdate.count({
+      where: { componentId },
+    });
     if (count < 50) return;
 
     const allUpdates = await this.prisma.yjsComponentUpdate.findMany({

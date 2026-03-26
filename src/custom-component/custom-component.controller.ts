@@ -10,6 +10,7 @@ import {
   UseGuards,
   Headers,
 } from '@nestjs/common';
+import type { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CustomComponentService } from './custom-component.service';
 
@@ -23,18 +24,21 @@ export class CustomComponentController {
   }
 
   @Get()
-  listar(@Req() req: any, @Headers() headers: Record<string, string>) {
+  listar(
+    @Req() req: RequestWithUser,
+    @Headers() headers: Record<string, string>,
+  ) {
     return this.service.listar(req.user.id, this.getSubOrgId(headers));
   }
 
   @Get(':id')
-  obter(@Param('id') id: string, @Req() req: any) {
+  obter(@Param('id') id: string, @Req() req: RequestWithUser) {
     return this.service.obter(id, req.user.id);
   }
 
   @Post()
   criar(
-    @Req() req: any,
+    @Req() req: RequestWithUser,
     @Headers() headers: Record<string, string>,
     @Body()
     body: {
@@ -50,7 +54,7 @@ export class CustomComponentController {
   @Put(':id')
   atualizar(
     @Param('id') id: string,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
     @Body()
     body: {
       nome?: string;
@@ -63,7 +67,7 @@ export class CustomComponentController {
   }
 
   @Delete(':id')
-  excluir(@Param('id') id: string, @Req() req: any) {
+  excluir(@Param('id') id: string, @Req() req: RequestWithUser) {
     return this.service.excluir(id, req.user.id);
   }
 }

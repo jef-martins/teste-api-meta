@@ -10,16 +10,104 @@ import * as crypto from 'crypto';
  * Handlers: _handlerMensagem, _handlerCapturar, _handlerLista,
  *           _handlerBotoes, _handlerRequisicao, _handlerDelay
  */
+type ItemInterativoNormalizado = {
+  entrada: string;
+  label: string;
+  descricao: string;
+};
+
+type ItemInterativoObjeto = {
+  entrada?: unknown;
+  label?: unknown;
+  descricao?: unknown;
+  description?: unknown;
+  id?: unknown;
+  rowId?: unknown;
+  value?: unknown;
+  payload?: unknown;
+  title?: unknown;
+  text?: unknown;
+  [key: string]: unknown;
+};
+type HandlerMessage = {
+  from: string;
+  [key: string]: unknown;
+};
+
+type Assignment = {
+  key?: string;
+  value?: unknown;
+  [key: string]: unknown;
+};
+
+type CampoCaptura = {
+  nome: string;
+  mensagemPedir: string;
+  valoresAceitos?: string[];
+  mensagemInvalida?: string;
+  [key: string]: unknown;
+};
+
+type HandlerConfig = Record<string, unknown> & {
+  mensagens?: string[];
+  assignments?: Assignment[];
+  transicaoAutomatica?: boolean;
+  transicao_automatica?: boolean;
+  campos?: CampoCaptura[];
+  mensagemPedir?: string;
+  mensagemInvalida?: string;
+  campoSalvar?: string;
+  campoEnviar?: string;
+  mensagemConfirmacao?: string;
+  opcoes?: ItemInterativoObjeto[] | ItemInterativoNormalizado[];
+  botoes?: ItemInterativoObjeto[] | ItemInterativoNormalizado[];
+  titulo?: string;
+  botaoTexto?: string;
+  secaoTitulo?: string;
+  rodape?: string;
+  cabecalho?: string;
+  body?: Record<string, unknown>;
+  camposEnviar?: string[];
+  palavraSair?: string;
+  apiId?: string;
+  routeId?: string;
+  url?: string;
+  metodo?: string;
+  headers?: Record<string, string>;
+  campoResposta?: string;
+  variavelResposta?: string;
+  mensagemErro?: string;
+  mensagemNaoEncontrado?: string;
+  mensagemSucesso?: string;
+  separador?: string;
+  limparDados?: boolean;
+  duracao?: number;
+  unidade?: string;
+  mensagem?: string;
+};
+
+type WppClient = {
+  sendText: (destino: string, texto: string) => Promise<unknown>;
+  sendListMessage?: (destino: string, payload: unknown) => Promise<unknown>;
+};
+
+type DynamicHandler = (
+  message: HandlerMessage,
+  chatId: string,
+  corpo: string,
+  engine: StateMachineEngine,
+) => Promise<unknown> | unknown;
+
 @Injectable()
 export class HandlerService {
   private readonly logger = new Logger(HandlerService.name);
 
   /** Set by BotService after WPPConnect initialization */
-  client: any = null;
+  client: WppClient = { sendText: async () => undefined };
 
-  constructor(private estadoRepo: EstadoRepository) { }
+  constructor(private estadoRepo: EstadoRepository) {}
 
-  private parseConfig(config: any) {
+  private parseConfig(config: unknown): HandlerConfig {
     if (typeof config === 'string') {
       try {
         return JSON.parse(config);
@@ -27,14 +115,41 @@ export class HandlerService {
         return {};
       }
     }
-    return config && typeof config === 'object' ? config : {};
+    return config && typeof config === 'object'
+      ? (config as HandlerConfig)
+      : {};
+  }
+  private getErrorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    return String(err);
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private getHandler(handlerName: string): DynamicHandler | null {
+    const candidato = (this as Record<string, unknown>)[handlerName];
+    if (typeof candidato !== 'function') return null;
+    return candidato as DynamicHandler;
+  }
+
+  private async executarHandler(
+    handlerName: string,
+    message: HandlerMessage,
+    chatId: string,
+    engine: StateMachineEngine,
+  ): Promise<void> {
+    const handler = this.getHandler(handlerName);
+    if (!handler) return;
+    await handler.call(this, message, chatId, '', engine);
   }
 
   private normalizarItensInterativos(
-    bruto: any,
+    bruto: unknown,
     campo: 'opcoes' | 'botoes',
-  ): Array<{ entrada: string; label: string; descricao: string }> {
-    let itens = bruto;
+  ): ItemInterativoNormalizado[] {
+    let itens: unknown = bruto;
 
     if (typeof itens === 'string') {
       try {
@@ -45,22 +160,18 @@ export class HandlerService {
     }
 
     if (itens && typeof itens === 'object' && !Array.isArray(itens)) {
-      if (Array.isArray(itens[campo])) {
-        itens = itens[campo];
-      } else if (Array.isArray(itens.rows)) {
-        itens = itens.rows;
-      } else if (Array.isArray(itens.buttons)) {
-        itens = itens.buttons;
-      } else if (
-        'entrada' in itens ||
-        'label' in itens ||
-        'id' in itens ||
-        'title' in itens ||
-        'text' in itens
-      ) {
-        itens = [itens];
+      const obj = itens as Record<string, unknown>;
+
+      if (Array.isArray(obj[campo])) {
+        itens = obj[campo];
+      } else if (Array.isArray(obj.rows)) {
+        itens = obj.rows;
+      } else if (Array.isArray(obj.buttons)) {
+        itens = obj.buttons;
+      } else if (this.pareceItemInterativo(obj)) {
+        itens = [obj];
       } else {
-        itens = Object.values(itens);
+        itens = Object.values(obj);
       }
     }
 
@@ -69,59 +180,72 @@ export class HandlerService {
     }
 
     return itens
-      .map((item) => {
-        if (typeof item === 'string' || typeof item === 'number') {
-          const valor = String(item).trim();
-          return valor ? { entrada: valor, label: valor, descricao: '' } : null;
-        }
+      .map((item) => this.normalizarItemInterativo(item))
+      .filter((item): item is ItemInterativoNormalizado => !!item);
+  }
 
-        if (!item || typeof item !== 'object') {
-          return null;
-        }
+  private pareceItemInterativo(obj: Record<string, unknown>): boolean {
+    return (
+      'entrada' in obj ||
+      'label' in obj ||
+      'id' in obj ||
+      'title' in obj ||
+      'text' in obj
+    );
+  }
 
-        const entrada = String(
-          item.entrada ??
-          item.id ??
-          item.rowId ??
-          item.value ??
-          item.payload ??
-          item.label ??
-          item.title ??
-          item.text ??
-          '',
-        ).trim();
-        const label = String(
-          item.label ??
-          item.title ??
-          item.text ??
-          item.entrada ??
-          item.id ??
-          item.value ??
-          item.payload ??
-          '',
-        ).trim();
+  private normalizarItemInterativo(
+    item: unknown,
+  ): ItemInterativoNormalizado | null {
+    if (typeof item === 'string' || typeof item === 'number') {
+      const valor = String(item).trim();
+      return valor ? { entrada: valor, label: valor, descricao: '' } : null;
+    }
 
-        if (!entrada && !label) {
-          return null;
-        }
+    if (!item || typeof item !== 'object') {
+      return null;
+    }
 
-        return {
-          entrada: entrada || label,
-          label: label || entrada,
-          descricao: String(item.descricao ?? item.description ?? '').trim(),
-        };
-      })
-      .filter(
-        (item): item is { entrada: string; label: string; descricao: string } =>
-          !!item,
-      );
+    const obj = item as ItemInterativoObjeto;
+
+    const entrada = String(
+      obj.entrada ??
+        obj.id ??
+        obj.rowId ??
+        obj.value ??
+        obj.payload ??
+        obj.label ??
+        obj.title ??
+        obj.text ??
+        '',
+    ).trim();
+    const label = String(
+      obj.label ??
+        obj.title ??
+        obj.text ??
+        obj.entrada ??
+        obj.id ??
+        obj.value ??
+        obj.payload ??
+        '',
+    ).trim();
+
+    if (!entrada && !label) {
+      return null;
+    }
+
+    return {
+      entrada: entrada || label,
+      label: label || entrada,
+      descricao: String(obj.descricao ?? obj.description ?? '').trim(),
+    };
   }
 
   // ─── Helper: advance to next state and execute its handler ──────────────
 
   private async avancarEExecutar(
     proximo: string,
-    message: any,
+    message: HandlerMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
@@ -129,18 +253,20 @@ export class HandlerService {
   ) {
     await engine.avancarEstado(chatId, proximo, gatilho ?? corpo);
     const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-    if (
-      configProximo &&
-      typeof (this as any)[configProximo.handler] === 'function'
-    ) {
-      await (this as any)[configProximo.handler](message, chatId, '', engine);
+    if (configProximo) {
+      await this.executarHandler(
+        configProximo.handler,
+        message,
+        chatId,
+        engine,
+      );
     }
   }
 
   // ─── Helper: strip HTML tags from object values ──────────────────────────
 
-  private limparHtml(obj: any): any {
-    if (typeof obj !== 'object' || obj === null) return obj;
+  private limparHtml(obj: unknown): Record<string, unknown> {
+    if (!this.isRecord(obj)) return {};
     return Object.fromEntries(
       Object.entries(obj).map(([k, v]) => [
         k,
@@ -151,8 +277,8 @@ export class HandlerService {
 
   // ─── Helper: send response and save to DB ────────────────────────────────
 
-  private async enviarResposta(message: any, texto: string) {
-    if (!this.client) {
+  private async enviarResposta(message: HandlerMessage, texto: string) {
+    if (!this.client?.sendText) {
       this.logger.error('Client não inicializado');
       return;
     }
@@ -160,15 +286,17 @@ export class HandlerService {
       const destino = message.from;
       await this.client.sendText(destino, texto);
       this.logger.log(`Resposta enviada para ${destino}`);
-    } catch (err: any) {
-      this.logger.error(`Erro ao enviar resposta: ${err.message}`);
+    } catch (err: unknown) {
+      this.logger.error(
+        `Erro ao enviar resposta: ${this.getErrorMessage(err)}`,
+      );
     }
   }
 
   // ─── _handlerMensagem ────────────────────────────────────────────────────
 
   async _handlerMensagem(
-    message: any,
+    message: HandlerMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
@@ -207,15 +335,23 @@ export class HandlerService {
         const key = assignment.key;
         const rawValue = assignment.value ?? '';
         const interpolado = engine.interpolar(String(rawValue), dadosAtuais);
-        engine.salvarDado(chatId, key, interpolado);
+        if (key) engine.salvarDado(chatId, key, interpolado);
       }
       this.logger.log(
-        `[${chatId}] mensagem+setVariable: ${assignments.map((a: any) => a.key).join(', ')}`,
+        `[${chatId}] mensagem+setVariable: ${assignments.map((a: Assignment) => a.key).join(', ')}`,
       );
     }
 
     if (config.transicaoAutomatica || config.transicao_automatica) {
-      await engine.transitarPorEntrada(chatId, estadoAtual, '*', message, true, null, this);
+      await engine.transitarPorEntrada(
+        chatId,
+        estadoAtual,
+        '*',
+        message,
+        true,
+        null,
+        this,
+      );
       return;
     }
 
@@ -224,9 +360,19 @@ export class HandlerService {
     // chamados via auto-transição (corpo vazio). Isso evita que o bot fique aguardando
     // input do usuário ao sair de um componente que não tem "Aguardar resposta".
     if (!corpo) {
-      const proximoAuto = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+      const proximoAuto = await this.estadoRepo.buscarProximoEstado(
+        estadoAtual,
+        '*',
+      );
       if (proximoAuto) {
-        await this.avancarEExecutar(proximoAuto, message, chatId, '', engine, '[auto-exit]');
+        await this.avancarEExecutar(
+          proximoAuto,
+          message,
+          chatId,
+          '',
+          engine,
+          '[auto-exit]',
+        );
       }
     }
   }
@@ -234,14 +380,15 @@ export class HandlerService {
   // ─── _handlerCapturar ────────────────────────────────────────────────────
 
   async _handlerCapturar(
-    message: any,
+    message: HandlerMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
 
     // Multi-field mode
     if (Array.isArray(config.campos) && config.campos.length > 0) {
@@ -259,7 +406,10 @@ export class HandlerService {
     if (!corpo) {
       if (config.mensagemPedir) {
         const dadosChat = engine.obterDados(chatId);
-        const textoInterpolado = engine.interpolar(config.mensagemPedir, dadosChat);
+        const textoInterpolado = engine.interpolar(
+          config.mensagemPedir,
+          dadosChat,
+        );
         await this.enviarResposta(message, textoInterpolado);
       }
       return;
@@ -291,7 +441,7 @@ export class HandlerService {
         const key = assignment.key;
         const rawValue = assignment.value ?? '';
         const interpolado = engine.interpolar(String(rawValue), dadosAtuais);
-        engine.salvarDado(chatId, key, interpolado);
+        if (key) engine.salvarDado(chatId, key, interpolado);
       }
     }
 
@@ -306,21 +456,24 @@ export class HandlerService {
   }
 
   private async _handlerCapturarMulti(
-    message: any,
+    message: HandlerMessage,
     chatId: string,
     corpo: string,
     estadoAtual: string,
-    config: any,
+    config: HandlerConfig,
     engine: StateMachineEngine,
   ) {
-    const campos = config.campos;
+    const campos = config.campos ?? [];
     const dados = engine.obterDados(chatId);
-    const proximoCampo = campos.find((c: any) => !(c.nome in dados));
+    const proximoCampo = campos.find((c: CampoCaptura) => !(c.nome in dados));
 
     if (!proximoCampo) return;
 
     if (!corpo) {
-      const textoInterpolado = engine.interpolar(proximoCampo.mensagemPedir, dados);
+      const textoInterpolado = engine.interpolar(
+        proximoCampo.mensagemPedir,
+        dados,
+      );
       await this.enviarResposta(message, textoInterpolado);
       return;
     }
@@ -340,7 +493,7 @@ export class HandlerService {
     engine.salvarDado(chatId, proximoCampo.nome, corpo);
     const dadosAtualizados = engine.obterDados(chatId);
     const proximoCampoRestante = campos.find(
-      (c: any) => !(c.nome in dadosAtualizados),
+      (c: CampoCaptura) => !(c.nome in dadosAtualizados),
     );
 
     if (proximoCampoRestante) {
@@ -359,13 +512,20 @@ export class HandlerService {
     const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
     if (!proximo) return;
 
-    await this.avancarEExecutar(proximo, message, chatId, corpo, engine, '[multi-captura concluída]');
+    await this.avancarEExecutar(
+      proximo,
+      message,
+      chatId,
+      corpo,
+      engine,
+      '[multi-captura concluída]',
+    );
   }
 
   // ─── _handlerLista ───────────────────────────────────────────────────────
 
   async _handlerLista(
-    message: any,
+    message: HandlerMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
@@ -383,9 +543,13 @@ export class HandlerService {
 
       // Fallback: match by option label (for clients that return label text instead of rowId)
       if (!proximo) {
-        const opcoes: any[] = config.opcoes ?? [];
+        const opcoes = this.normalizarItensInterativos(
+          config.opcoes ?? [],
+          'opcoes',
+        );
         const match = opcoes.find(
-          (o: any) => (o.label || '').toLowerCase() === corpo.toLowerCase(),
+          (o: ItemInterativoNormalizado) =>
+            (o.label || '').toLowerCase() === corpo.toLowerCase(),
         );
         if (match) {
           proximo = await this.estadoRepo.buscarProximoEstado(
@@ -396,16 +560,36 @@ export class HandlerService {
       }
 
       if (proximo) {
-        return await this.avancarEExecutar(proximo, message, chatId, '', engine, corpo);
+        return await this.avancarEExecutar(
+          proximo,
+          message,
+          chatId,
+          '',
+          engine,
+          corpo,
+        );
       }
 
       // Fallback: try the default/padrão (*) transition
-      const proximoPadrao = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+      const proximoPadrao = await this.estadoRepo.buscarProximoEstado(
+        estadoAtual,
+        '*',
+      );
       if (proximoPadrao) {
-        return await this.avancarEExecutar(proximoPadrao, message, chatId, '', engine, corpo);
+        return await this.avancarEExecutar(
+          proximoPadrao,
+          message,
+          chatId,
+          '',
+          engine,
+          corpo,
+        );
       }
 
-      return await this.enviarResposta(message, config.mensagemInvalida ?? '⚠️ Opção inválida.');
+      return await this.enviarResposta(
+        message,
+        config.mensagemInvalida ?? '⚠️ Opção inválida.',
+      );
     }
 
     const destino = message.from;
@@ -429,13 +613,13 @@ export class HandlerService {
 
     try {
       await Promise.race([
-        this.client.sendListMessage(destino, {
+        this.client.sendListMessage!(destino, {
           buttonText: config.botaoTexto || 'Selecione:',
           description: titulo,
           sections: [
             {
               title: config.secaoTitulo || 'Opções',
-              rows: opcoes.map((op: any) => ({
+              rows: opcoes.map((op: ItemInterativoNormalizado) => ({
                 rowId: String(op.entrada),
                 title: op.label,
                 description: op.descricao || '',
@@ -446,10 +630,12 @@ export class HandlerService {
         }),
         timeout,
       ]);
-    } catch (err: any) {
-      this.logger.warn(`[${chatId}] Fallback texto — motivo: ${err.message}`);
+    } catch (err: unknown) {
+      this.logger.warn(
+        `[${chatId}] Fallback texto — motivo: ${this.getErrorMessage(err)}`,
+      );
       const linhas = opcoes
-        .map((o: any) => `*${o.entrada}* - ${o.label}`)
+        .map((o: ItemInterativoNormalizado) => `*${o.entrada}* - ${o.label}`)
         .join('\n');
       await this.enviarResposta(message, `${titulo}\n\n${linhas}`);
     }
@@ -458,7 +644,7 @@ export class HandlerService {
   // ─── _handlerBotoes ──────────────────────────────────────────────────────
 
   async _handlerBotoes(
-    message: any,
+    message: HandlerMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
@@ -476,9 +662,13 @@ export class HandlerService {
 
       // Fallback: match by button label (for text replies of buttons)
       if (!proximo) {
-        const botoes: any[] = config.botoes ?? [];
+        const botoes = this.normalizarItensInterativos(
+          config.botoes ?? [],
+          'botoes',
+        );
         const match = botoes.find(
-          (b: any) => (b.label || '').toLowerCase() === corpo.toLowerCase(),
+          (b: ItemInterativoNormalizado) =>
+            (b.label || '').toLowerCase() === corpo.toLowerCase(),
         );
         if (match) {
           proximo = await this.estadoRepo.buscarProximoEstado(
@@ -489,14 +679,31 @@ export class HandlerService {
       }
 
       if (proximo) {
-        await this.avancarEExecutar(proximo, message, chatId, '', engine, corpo);
+        await this.avancarEExecutar(
+          proximo,
+          message,
+          chatId,
+          '',
+          engine,
+          corpo,
+        );
         return;
       }
 
       // Fallback: try the default/padrão (*) transition
-      const proximoPadrao = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+      const proximoPadrao = await this.estadoRepo.buscarProximoEstado(
+        estadoAtual,
+        '*',
+      );
       if (proximoPadrao) {
-        await this.avancarEExecutar(proximoPadrao, message, chatId, '', engine, corpo);
+        await this.avancarEExecutar(
+          proximoPadrao,
+          message,
+          chatId,
+          '',
+          engine,
+          corpo,
+        );
         return;
       }
     }
@@ -512,17 +719,21 @@ export class HandlerService {
     }
 
     try {
-      const linhas = (config.botoes ?? []).map((b: any) => `*${b.entrada}* - ${b.label}`).join('\n');
+      const linhas = (config.botoes ?? [])
+        .map((b: ItemInterativoNormalizado) => `*${b.entrada}* - ${b.label}`)
+        .join('\n');
       const rodape = config.rodape ? `\n\n_${config.rodape}_` : '';
       const cabecalho = config.cabecalho ? `*${config.cabecalho}*\n\n` : '';
 
       await this.client.sendText(
         message.from,
-        `${cabecalho}${config.titulo ?? 'Escolha uma opção:'}\n\n${linhas}${rodape}`
+        `${cabecalho}${config.titulo ?? 'Escolha uma opção:'}\n\n${linhas}${rodape}`,
       );
-    } catch (err: any) {
-      this.logger.error(`Erro ao enviar botões: ${err.message}`);
-      const linhas = (config.botoes ?? []).map((b: any) => `*${b.entrada}* - ${b.label}`).join('\n');
+    } catch (err: unknown) {
+      this.logger.error(`Erro ao enviar botões: ${this.getErrorMessage(err)}`);
+      const linhas = (config.botoes ?? [])
+        .map((b: ItemInterativoNormalizado) => `*${b.entrada}* - ${b.label}`)
+        .join('\n');
       await this.enviarResposta(message, `${config.titulo ?? ''}\n\n${linhas}`);
     }
   }
@@ -530,14 +741,15 @@ export class HandlerService {
   // ─── _handlerRequisicao ──────────────────────────────────────────────────
 
   async _handlerRequisicao(
-    message: any,
+    message: HandlerMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    let config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
+    let config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
 
     const dadosMemoria = engine.obterDados(chatId);
     const usandoBodyFixo =
@@ -558,14 +770,11 @@ export class HandlerService {
         engine.limparDados(chatId);
         await engine.avancarEstado(chatId, proximo, corpo);
         const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
-        if (
-          configProximo &&
-          typeof (this as any)[configProximo.handler] === 'function'
-        ) {
-          await (this as any)[configProximo.handler](
+        if (configProximo) {
+          await this.executarHandler(
+            configProximo.handler,
             message,
             chatId,
-            '',
             engine,
           );
         }
@@ -589,9 +798,15 @@ export class HandlerService {
 
     // Resolver apiRoute registrada (apiId + routeId) em runtime
     if (config.apiId && config.routeId) {
-      const rota = await this.estadoRepo.obterRotaApi(config.apiId, config.routeId);
+      const rota = await this.estadoRepo.obterRotaApi(
+        config.apiId,
+        config.routeId,
+      );
       if (!rota) {
-        await this.enviarResposta(message, config.mensagemErro ?? '❌ Rota de API não encontrada.');
+        await this.enviarResposta(
+          message,
+          config.mensagemErro ?? '❌ Rota de API não encontrada.',
+        );
         return;
       }
       config = {
@@ -606,7 +821,7 @@ export class HandlerService {
       const metodo = (config.metodo ?? 'GET').toUpperCase();
       const from = message.from ?? chatId;
       const numero = from.split('@')[0];
-      const tudo: Record<string, any> = {
+      const tudo: Record<string, unknown> = {
         id: crypto.randomUUID(),
         valor: corpo,
         chatId,
@@ -620,7 +835,7 @@ export class HandlerService {
         ...(config.headers ?? {}),
       };
 
-      const interpolarDeep = (obj: any): any => {
+      const interpolarDeep = (obj: unknown): unknown => {
         if (typeof obj === 'string') return engine.interpolar(obj, tudo);
         if (Array.isArray(obj)) return obj.map((item) => interpolarDeep(item));
         if (typeof obj === 'object' && obj !== null) {
@@ -631,12 +846,12 @@ export class HandlerService {
         return obj;
       };
 
-      let bodyObj: any;
+      let bodyObj: Record<string, unknown>;
       if (usandoBodyFixo) {
-        bodyObj = interpolarDeep(config.body);
+        bodyObj = interpolarDeep(config.body) as Record<string, unknown>;
       } else if (usandoMulti) {
         bodyObj = Object.fromEntries(
-          config.camposEnviar.map((chave: string) => [
+          (config.camposEnviar ?? []).map((chave: string) => [
             chave,
             dadosMemoria[chave] ?? '',
           ]),
@@ -649,7 +864,7 @@ export class HandlerService {
         bodyObj = { valor: corpo };
       }
 
-      let resposta: any;
+      let respostaBody: unknown;
       let statusHttp: number;
 
       if (metodo === 'GET') {
@@ -666,7 +881,7 @@ export class HandlerService {
         }
         const res = await fetch(urlFinal, { headers });
         statusHttp = res.status;
-        resposta = await res.json();
+        respostaBody = await res.json();
       } else {
         const res = await fetch(urlBase, {
           method: metodo,
@@ -674,15 +889,15 @@ export class HandlerService {
           body: JSON.stringify(bodyObj),
         });
         statusHttp = res.status;
-        resposta = await res.json();
+        respostaBody = await res.json();
       }
 
-      resposta = JSON.stringify(resposta);
+      const respostaTexto = JSON.stringify(respostaBody);
 
       // Salva a resposta completa na variável nomeada (acessível em estados seguintes)
       const nomeVariavel = config.variavelResposta || config.campoResposta;
       if (nomeVariavel) {
-        engine.salvarDado(chatId, nomeVariavel, resposta);
+        engine.salvarDado(chatId, nomeVariavel, respostaTexto);
       }
 
       if (statusHttp !== 200) {
@@ -692,8 +907,8 @@ export class HandlerService {
         );
       } else {
         const valorExtraido = engine.extrairValorPath(
-          resposta,
-          config.campoResposta,
+          respostaBody,
+          config.campoResposta ?? '',
         );
 
         if (
@@ -713,7 +928,7 @@ export class HandlerService {
             );
           } else {
             const separador = config.separador ?? '➖➖➖➖➖';
-            const partes = valorExtraido.map((item: any) => {
+            const partes = valorExtraido.map((item: unknown) => {
               const objLimpo = this.limparHtml(item);
               const vars = {
                 resposta: item,
@@ -722,7 +937,7 @@ export class HandlerService {
                 ...objLimpo,
               };
               return engine.interpolar(
-                config.mensagemSucesso ?? '✅ \n {resposta}',
+                config.mensagemSucesso ?? '✅ {{resposta}}',
                 vars,
               );
             });
@@ -735,7 +950,7 @@ export class HandlerService {
           if (typeof valorExtraido !== 'object') {
             valorParaTransicao = String(valorExtraido).toLowerCase();
           }
-          let variaveis: Record<string, any> = {
+          let variaveis: Record<string, unknown> = {
             resposta: valorExtraido,
             valor: corpo,
             ...dadosMemoria,
@@ -744,14 +959,14 @@ export class HandlerService {
             variaveis = { ...variaveis, ...this.limparHtml(valorExtraido) };
           }
           const msgSucesso = engine.interpolar(
-            config.mensagemSucesso ?? '✅ Resposta:  \n {resposta}',
+            config.mensagemSucesso ?? '✅ Resposta: {{resposta}}',
             variaveis,
           );
           await this.enviarResposta(message, msgSucesso);
         }
       }
-    } catch (err: any) {
-      this.logger.error(`Erro na requisição: ${err.message}`);
+    } catch (err: unknown) {
+      this.logger.error(`Erro na requisição: ${this.getErrorMessage(err)}`);
       await this.enviarResposta(
         message,
         config.mensagemErro ?? '❌ Erro ao processar a solicitação.',
@@ -766,12 +981,22 @@ export class HandlerService {
     }
 
     if (config.transicaoAutomatica || config.transicao_automatica) {
-      let proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, valorParaTransicao);
+      let proximo = await this.estadoRepo.buscarProximoEstado(
+        estadoAtual,
+        valorParaTransicao,
+      );
       if (!proximo && valorParaTransicao !== '*') {
         proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
       }
       if (proximo) {
-        await this.avancarEExecutar(proximo, message, chatId, '', engine, corpo);
+        await this.avancarEExecutar(
+          proximo,
+          message,
+          chatId,
+          '',
+          engine,
+          corpo,
+        );
       }
     }
   }
@@ -779,14 +1004,15 @@ export class HandlerService {
   // ─── _handlerSetVariable ────────────────────────────────────────────────
 
   async _handlerSetVariable(
-    message: any,
+    message: HandlerMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
 
     const assignments = config.assignments ?? [];
     const dadosChat = engine.obterDados(chatId);
@@ -795,33 +1021,41 @@ export class HandlerService {
       const key = assignment.key;
       const rawValue = assignment.value ?? '';
       const interpolado = engine.interpolar(String(rawValue), dadosChat);
-      engine.salvarDado(chatId, key, interpolado);
+      if (key) engine.salvarDado(chatId, key, interpolado);
     }
 
     if (assignments.length > 0) {
       this.logger.log(
-        `[${chatId}] setVariable: ${assignments.map((a: any) => a.key).join(', ')}`,
+        `[${chatId}] setVariable: ${assignments.map((a: Assignment) => a.key).join(', ')}`,
       );
     }
 
     // Transição automática
     const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
     if (proximo) {
-      await this.avancarEExecutar(proximo, message, chatId, '', engine, '[setVariable]');
+      await this.avancarEExecutar(
+        proximo,
+        message,
+        chatId,
+        '',
+        engine,
+        '[setVariable]',
+      );
     }
   }
 
   // ─── _handlerDelay ───────────────────────────────────────────────────────
 
   async _handlerDelay(
-    message: any,
+    message: HandlerMessage,
     chatId: string,
     corpo: string,
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config =
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {};
+    const config = this.parseConfig(
+      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+    );
 
     const duracao = config.duracao || 1;
     const unidade = config.unidade || 'seconds';
@@ -837,7 +1071,14 @@ export class HandlerService {
 
     const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
     if (proximo) {
-      await this.avancarEExecutar(proximo, message, chatId, '', engine, '[delay]');
+      await this.avancarEExecutar(
+        proximo,
+        message,
+        chatId,
+        '',
+        engine,
+        '[delay]',
+      );
     }
   }
 }
