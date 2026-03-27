@@ -2,8 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { DEFAULT_ESTADOS } from '../bot/meta/default-state-machine.config';
@@ -25,13 +28,44 @@ export class GlobalKeywordDto {
 }
 
 @Injectable()
-export class GlobalKeywordService {
+export class GlobalKeywordService implements OnModuleInit {
+  private readonly logger = new Logger(GlobalKeywordService.name);
+
+  /**
+   * keywordsMemoria: usado exclusivamente no modo BOT_STATE_MACHINE_PADRAO=true.
+   * Para o modo normal (banco), o cache é mantido no GlobalKeywordRepository.
+   */
   private readonly keywordsMemoria: KeywordMemoria[] = [];
 
   constructor(
     private prisma: PrismaService,
     private repository: GlobalKeywordRepository,
-  ) { }
+  ) {}
+
+  async onModuleInit() {
+    // Pré-carrega o cache do repositório na inicialização
+    await this._sincronizarCacheRepositorio();
+  }
+
+  /**
+   * Sincroniza o cache interno do repositório com o banco.
+   * Seguro mesmo se o banco estiver indisponível (repositório mantém stale cache).
+   */
+  @OnEvent('db.reconnected')
+  @OnEvent('flow.updated')
+  async _sincronizarCacheRepositorio() {
+    try {
+      await this.repository.recarregarCache();
+      this.logger.log(
+        '{"event":"cache_refresh_ok","msg":"Cache de keywords sincronizado com o banco."}',
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `{"event":"cache_refresh_failed","msg":"Falha ao sincronizar cache de keywords — cache anterior mantido","error":"${msg}"}`,
+      );
+    }
+  }
 
   private isDefaultMode() {
     return process.env.BOT_STATE_MACHINE_PADRAO === 'true';
@@ -232,14 +266,32 @@ export class GlobalKeywordService {
     return { ok: true };
   }
 
+  /**
+   * Lookup de keyword ativa com fallback total:
+   * 1. Modo padrão (memória volátil)
+   * 2. Repositório (banco → cache stale, nunca lança exceção)
+   *
+   * NUNCA propaga erro para o chamador — retorna null em qualquer falha.
+   */
   async buscarKeywordAtiva(keywordInformada: string) {
     const keyword = this.normalizarKeyword(keywordInformada);
     if (!keyword) return null;
 
-    if (this.isDefaultMode()) {
-      const item = this.keywordsMemoria.find(
-        (registro) => registro.ativo && registro.keyword === keyword,
-      );
+    try {
+      if (this.isDefaultMode()) {
+        const item = this.keywordsMemoria.find(
+          (registro) => registro.ativo && registro.keyword === keyword,
+        );
+        return item
+          ? {
+              id: item.id,
+              keyword: item.keyword,
+              estadoDestino: item.estadoDestino,
+            }
+          : null;
+      }
+
+      const item = await this.repository.buscarKeywordAtiva(keyword);
       return item
         ? {
             id: item.id,
@@ -247,15 +299,12 @@ export class GlobalKeywordService {
             estadoDestino: item.estadoDestino,
           }
         : null;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `{"event":"db_down","msg":"Erro inesperado em buscarKeywordAtiva '${keyword}' — retornando null para não interromper o fluxo","error":"${msg}"}`,
+      );
+      return null;
     }
-
-    const item = await this.repository.buscarKeywordAtiva(keyword);
-    return item
-      ? {
-          id: item.id,
-          keyword: item.keyword,
-          estadoDestino: item.estadoDestino,
-        }
-      : null;
   }
 }

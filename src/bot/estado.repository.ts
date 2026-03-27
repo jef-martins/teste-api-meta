@@ -24,11 +24,12 @@ type SessaoCache = {
 export class EstadoRepository implements OnModuleInit {
   private readonly logger = new Logger(EstadoRepository.name);
 
-  // Cache de configurações de nós
+  /**
+   * Cache imutável — JAMAIS zerado em erro.
+   * Só é substituído em caso de sucesso no warmUpCache (Stale-While-Revalidate).
+   */
   private configCache = new Map<string, EstadoConfigCacheItem>();
-  // Cache de transições indexado pelo estado de origem
   private transicoesCache = new Map<string, TransicaoCacheItem[]>();
-  // Cache do estado inicial
   private estadoInicialCache: string | null = null;
 
   constructor(
@@ -87,11 +88,13 @@ export class EstadoRepository implements OnModuleInit {
   }
 
   /**
-   * Carrega todas as definições ativas para a memória
+   * Carrega todas as definições ativas para a memória.
+   * Cache anterior é preservado se o banco falhar (Stale-While-Revalidate).
    */
   @OnEvent('flow.updated')
+  @OnEvent('db.reconnected')
   async warmUpCache() {
-    this.logger.log('Atualizando cache de fluxos (warmUpCache)...');
+    this.logger.log('{"event":"cache_refresh_start","msg":"Atualizando cache de fluxos (warmUpCache)..."}');
     try {
       const [configs, transicoes, estadoInicialNode] = await Promise.all([
         this.prisma.botEstadoConfig.findMany({ where: { ativo: true } }),
@@ -106,31 +109,36 @@ export class EstadoRepository implements OnModuleInit {
         }),
       ]);
 
-      this.configCache.clear();
+      // Constrói novos maps antes de substituir — evita estado parcialmente atualizado
+      const novoConfigCache = new Map<string, EstadoConfigCacheItem>();
       configs.forEach((c) =>
-        this.configCache.set(c.estado, {
+        novoConfigCache.set(c.estado, {
           handler: c.handler,
           descricao: c.descricao,
           config: c.config,
         }),
       );
 
-      this.transicoesCache.clear();
+      const novaTransicoesCache = new Map<string, TransicaoCacheItem[]>();
       transicoes.forEach((t) => {
-        const lista = this.transicoesCache.get(t.estadoOrigem) ?? [];
+        const lista = novaTransicoesCache.get(t.estadoOrigem) ?? [];
         lista.push({ entrada: t.entrada, estadoDestino: t.estadoDestino });
-        this.transicoesCache.set(t.estadoOrigem, lista);
+        novaTransicoesCache.set(t.estadoOrigem, lista);
       });
 
-      this.estadoInicialCache = estadoInicialNode?.estado ?? null;
+      // Substitui apenas em caso de sucesso completo
+      this.configCache = novoConfigCache;
+      this.transicoesCache = novaTransicoesCache;
+      this.estadoInicialCache = estadoInicialNode?.estado || 'NOVO';
 
       this.logger.log(
-        `Cache atualizado: ${this.configCache.size} estados, ${this.transicoesCache.size} origens de transição.`,
+        `{"event":"cache_refresh_ok","states":${this.configCache.size},"transitions":${this.transicoesCache.size},"msg":"Cache de fluxos atualizado com sucesso."}`,
       );
     } catch (err: unknown) {
       this.logger.error(
-        `Erro ao carregar cache de fluxos: ${this.getErrorMessage(err)}`,
+        `{"event":"cache_refresh_failed","msg":"Erro ao carregar cache — mantendo dados anteriores","error":"${this.getErrorMessage(err)}"}`,
       );
+      // NUNCA zeramos o cache em erro — dados antigos continuam servindo o fluxo
     }
   }
 
@@ -139,17 +147,18 @@ export class EstadoRepository implements OnModuleInit {
     descricao: string | null;
     config: Record<string, unknown>;
   } | null> {
-    try {
-      const cached = this.configCache.get(estado);
-      if (cached) {
-        return {
-          handler: cached.handler,
-          descricao: cached.descricao,
-          config: this.toUnknownRecord(cached.config),
-        };
-      }
+    // 1. Tenta cache imutável primeiro
+    const cached = this.configCache.get(estado);
+    if (cached) {
+      return {
+        handler: cached.handler,
+        descricao: cached.descricao,
+        config: this.toUnknownRecord(cached.config),
+      };
+    }
 
-      // Fallback
+    // 2. Tenta banco como fallback (somente se cache vazio para esse estado)
+    try {
       const row = await this.prisma.botEstadoConfig.findFirst({
         where: { estado, ativo: true },
         select: { handler: true, descricao: true, config: true },
@@ -162,7 +171,7 @@ export class EstadoRepository implements OnModuleInit {
       };
     } catch (err: unknown) {
       this.logger.error(
-        `Erro ao consultar estado ${estado}: ${this.getErrorMessage(err)}`,
+        `{"event":"db_down","msg":"Erro ao consultar estado ${estado} no banco — sem fallback de cache disponível","error":"${this.getErrorMessage(err)}"}`,
       );
       return null;
     }
@@ -219,8 +228,10 @@ export class EstadoRepository implements OnModuleInit {
       }
       return null;
     } catch (err: unknown) {
-      this.logger.error(
-        `Erro ao buscar próximo estado de ${estadoAtual} via ${entrada}: ${this.getErrorMessage(err)}`,
+      // Banco indisponível — retorna resultado somente do cache (já verificado acima),
+      // portanto aqui null é correto (cache não cobriu e banco falhou)
+      this.logger.warn(
+        `{"event":"db_down","msg":"Erro ao buscar próximo estado de ${estadoAtual} via '${entrada}' no banco — usando apenas cache","error":"${this.getErrorMessage(err)}"}`,
       );
       return null;
     }
@@ -228,7 +239,7 @@ export class EstadoRepository implements OnModuleInit {
 
   async obterEstadoUsuario(chatId: string): Promise<string | null> {
     try {
-      // 1. Try Redis first
+      // 1. Tenta Redis primeiro
       const sessaoRaw = await this.redis.get(`session:${chatId}`);
       if (sessaoRaw) {
         const sessao = JSON.parse(sessaoRaw) as unknown;
@@ -240,7 +251,7 @@ export class EstadoRepository implements OnModuleInit {
         }
       }
 
-      // 2. Fallback to DB
+      // 2. Fallback ao banco
       const row = await this.prisma.botEstadoUsuario.findUnique({
         where: { chatId },
         select: { estadoAtual: true },
@@ -248,7 +259,7 @@ export class EstadoRepository implements OnModuleInit {
       return row?.estadoAtual ?? null;
     } catch (err: unknown) {
       this.logger.error(
-        `Erro ao obter estado do usuário: ${this.getErrorMessage(err)}`,
+        `{"event":"db_down","msg":"Erro ao obter estado do usuário ${chatId}","error":"${this.getErrorMessage(err)}"}`,
       );
       return null;
     }
@@ -260,7 +271,7 @@ export class EstadoRepository implements OnModuleInit {
     nome?: string | null,
   ) {
     try {
-      // 1. Atualizar Redis (Expira em 7 dias se o usuário sumir = 604800 segundos)
+      // 1. Atualizar Redis (Expira em 7 dias = 604800 segundos)
       await this.redis.set(
         `session:${chatId}`,
         JSON.stringify({ estado, nome }),
@@ -268,7 +279,7 @@ export class EstadoRepository implements OnModuleInit {
         604800,
       );
 
-      // 2. Atualizar PG em background
+      // 2. Atualizar PG em background (falha silenciosa)
       this.prisma.botEstadoUsuario
         .upsert({
           where: { chatId },
@@ -288,7 +299,7 @@ export class EstadoRepository implements OnModuleInit {
         });
     } catch (err: unknown) {
       this.logger.error(
-        `Erro ao salvar estado do usuário no Redis/DB: ${this.getErrorMessage(err)}`,
+        `{"event":"db_down","msg":"Erro ao salvar estado do usuário ${chatId} no Redis/DB","error":"${this.getErrorMessage(err)}"}`,
       );
     }
   }
@@ -315,13 +326,12 @@ export class EstadoRepository implements OnModuleInit {
     mensagemGatilho?: string | null,
   ) {
     try {
-      // Registrar no banco (historico pode ser importante, não vale a pena por no redis apenas)
       await this.prisma.botEstadoHistorico.create({
         data: { chatId, estadoAnterior, estadoNovo, mensagemGatilho },
       });
     } catch (err: unknown) {
       this.logger.error(
-        `Erro ao registrar transição: ${this.getErrorMessage(err)}`,
+        `{"event":"db_down","msg":"Erro ao registrar transição ${estadoAnterior}->${estadoNovo} para ${chatId}","error":"${this.getErrorMessage(err)}"}`,
       );
     }
   }
@@ -361,7 +371,9 @@ export class EstadoRepository implements OnModuleInit {
         bodyTemplate: rota.bodyTemplate ?? null,
       };
     } catch (err: unknown) {
-      this.logger.error(`Erro ao obter rota API: ${this.getErrorMessage(err)}`);
+      this.logger.error(
+        `{"event":"db_down","msg":"Erro ao obter rota API ${apiId}/${routeId}","error":"${this.getErrorMessage(err)}"}`,
+      );
       return null;
     }
   }
@@ -388,7 +400,7 @@ export class EstadoRepository implements OnModuleInit {
       return resultado;
     } catch (err: unknown) {
       this.logger.error(
-        `Erro ao obter variáveis do fluxo ativo: ${this.getErrorMessage(err)}`,
+        `{"event":"db_down","msg":"Erro ao obter variáveis do fluxo ativo","error":"${this.getErrorMessage(err)}"}`,
       );
       return {};
     }
@@ -400,7 +412,8 @@ export class EstadoRepository implements OnModuleInit {
         return this.estadoInicialCache;
       }
 
-      // Fallback
+    // 2. Fallback ao banco
+    try {
       const row = await this.prisma.botEstadoConfig.findFirst({
         where: {
           ativo: true,
