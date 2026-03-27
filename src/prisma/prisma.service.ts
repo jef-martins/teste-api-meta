@@ -15,8 +15,8 @@ export class PrismaService
   private readonly logger = new Logger(PrismaService.name);
   public isConnected = false;
 
-  /** Intervalo do health-check em ms (padrão: 30s) */
-  private readonly healthCheckIntervalMs = 30_000;
+  /** Intervalo do health-check em ms (padrão: 1 min) */
+  private readonly healthCheckIntervalMs = 60_000;
 
   /** Timer do health-check periódico */
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
