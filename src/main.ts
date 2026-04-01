@@ -34,7 +34,9 @@ async function bootstrap() {
     },
     skip: (req) =>
       req.path.startsWith('/webhook-meta') ||
-      req.originalUrl.startsWith('/api/webhook-meta'),
+      req.originalUrl.startsWith('/api/webhook-meta') ||
+      req.path.startsWith('/zenvia/webhook') ||
+      req.originalUrl.startsWith('/api/zenvia/webhook'),
   });
 
   app.set('trust proxy', trustProxy);

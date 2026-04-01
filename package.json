@@ -34,6 +34,7 @@
     "@swc/cli": "^0.7.10",
     "@swc/core": "^1.15.18",
     "@wppconnect-team/wppconnect": "^1.41.0",
+    "@zenvia/sdk": "^2.4.4",
     "bcrypt": "^6.0.0",
     "express-rate-limit": "^8.3.0",
     "helmet": "^8.1.0",
