@@ -27,7 +27,15 @@ export interface TransicaoDefault {
   estadoDestino: string;
 }
 
-// ─── Definição dos Estados ────────────────────────────────────────────────────
+// ─── Suporte para Sessões Temporárias (Em Memória) ──────────────────────────
+
+export const MEMORY_SESSIONS: Record<string, {
+  nome: string;
+  configs: Record<string, EstadoConfigDefault>;
+  transicoes: Record<string, TransicaoDefault[]>;
+}> = {};
+
+// ─── Definição dos Estados Originais (Bot Padrão) ─────────────────────────
 
 export const DEFAULT_ESTADOS: Record<string, EstadoConfigDefault> = {
   // 1. Estado inicial — solicita aceite LGPD via botões

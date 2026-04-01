@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   DEFAULT_ESTADOS,
   DEFAULT_TRANSICOES,
+  MEMORY_SESSIONS,
 } from '../bot/meta/default-state-machine.config';
 
 export class EstadoInput {
@@ -100,7 +101,13 @@ export class AdminService {
   
   async listarFluxos() {
     if (this.isDefaultMode()) {
-       return [{ id: '', nome: 'Memória (Padrão)', ativo: true }];
+       const fluxos: Array<{ id: string; nome: string; descricao?: string; ativo: boolean }> = [
+         { id: '', nome: 'Memória (Padrão)', ativo: true }
+       ];
+       for (const [id, session] of Object.entries(MEMORY_SESSIONS)) {
+         fluxos.push({ id, nome: session.nome, descricao: 'Sessão temporária via Zenvia API', ativo: true });
+       }
+       return fluxos;
     }
     return this.prisma.botFluxo.findMany({
       select: { id: true, nome: true, descricao: true, ativo: true },
@@ -112,7 +119,13 @@ export class AdminService {
 
   async listarEstados(flowId?: string) {
     if (this.isDefaultMode()) {
-      return Object.entries(DEFAULT_ESTADOS)
+      let source = DEFAULT_ESTADOS;
+      if (flowId && MEMORY_SESSIONS[flowId]) {
+        source = MEMORY_SESSIONS[flowId].configs;
+      } else if (flowId && flowId !== '') {
+        return [];
+      }
+      return Object.entries(source)
         .map(([estado, data]) => ({
           estado,
           handler: data.handler,
@@ -201,6 +214,13 @@ export class AdminService {
 
   async listarTransicoes(flowId?: string) {
     if (this.isDefaultMode()) {
+      let source = DEFAULT_TRANSICOES;
+      if (flowId && MEMORY_SESSIONS[flowId]) {
+        source = MEMORY_SESSIONS[flowId].transicoes;
+      } else if (flowId && flowId !== '') {
+        return [];
+      }
+      
       const transicoes: Array<{
         id: string | undefined;
         estado_origem: string;
@@ -208,7 +228,7 @@ export class AdminService {
         estado_destino: string;
         ativo: boolean;
       }> = [];
-      for (const [estadoOrigem, lista] of Object.entries(DEFAULT_TRANSICOES)) {
+      for (const [estadoOrigem, lista] of Object.entries(source)) {
         for (const t of lista) {
           transicoes.push({
             id: t.id,
