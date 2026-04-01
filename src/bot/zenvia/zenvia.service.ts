@@ -1056,7 +1056,7 @@ export class ZenviaService implements OnModuleDestroy {
       config: {
         mensagens: [],
         transicaoAutomatica: false,
-        aguardarEntrada: true,
+        aguardarEntrada: false,
       },
     });
 
@@ -1090,7 +1090,7 @@ export class ZenviaService implements OnModuleDestroy {
       const idx = stateToIndex.get(estadoAtual);
       const item = typeof idx === 'number' ? sessao.itens[idx] : null;
       this.logger.log(
-        `[Zenvia][FLOW][${source}] executionId=${sessao.executionId} estado=${estadoAtual} idx=${typeof idx === 'number' ? idx : 'null'} itemId=${item ? String(item.id) : 'null'} from=${this.maskPhone(sessao.from)} to=${this.maskPhone(sessao.to)} text=${this.stringifySafe(texto, 500)}`,
+        `[Zenvia][FLOW][${source}] executionId=${sessao.executionId} estado=${estadoAtual} idx=${typeof idx === 'number' ? idx : 'null'} itemId=${item ? String(item.id) : 'null'} itemTipo=${item?.tipo ?? 'null'} from=${this.maskPhone(sessao.from)} to=${this.maskPhone(sessao.to)} text=${this.stringifySafe(texto, 500)}`,
       );
 
       const sent = await this.enviarMensagem(
@@ -1112,6 +1112,9 @@ export class ZenviaService implements OnModuleDestroy {
         if (!sessao.encerramentoExecutadoEm) {
           sessao.encerramentoExecutadoEm = this.nowIso();
         }
+        this.logger.log(
+          `[Zenvia][FLOW][encerramento] executionId=${sessao.executionId} estado=${estadoAtual} idx=${typeof idx === 'number' ? idx : 'null'} itemId=${String(item.id)}`,
+        );
       }
 
       this.logger.log(
@@ -1286,10 +1289,48 @@ export class ZenviaService implements OnModuleDestroy {
     }));
   }
 
+  private reconciliarEncerramentoExecutado(sessao: SessaoMemoria, motivo: string) {
+    if (sessao.encerramentoExecutado) return;
+
+    const itemEncerramento = sessao.itens.find((item) => item.tipo === 'encerramento');
+    if (!itemEncerramento) return;
+
+    const encerramentoEnviado = Boolean(
+      itemEncerramento.perguntaMessageId || itemEncerramento.perguntaProviderResponse,
+    );
+    if (!encerramentoEnviado) return;
+
+    sessao.encerramentoExecutado = true;
+    if (!sessao.encerramentoExecutadoEm) {
+      sessao.encerramentoExecutadoEm = this.nowIso();
+    }
+
+    this.logger.warn(
+      `[Zenvia][NPS][reconcile] executionId=${sessao.executionId} motivo=${motivo} encerramento_marcado_por_snapshot`,
+    );
+  }
+
   private async enviarResultadoNps(sessao: SessaoMemoria, motivo: string) {
-    if (!sessao.encerramentoExecutado) return;
-    if (sessao.resultadoNpsEnviado) return;
-    if (sessao.npsEmEnvio) return;
+    this.reconciliarEncerramentoExecutado(sessao, motivo);
+
+    if (!sessao.encerramentoExecutado) {
+      this.logger.log(
+        `[Zenvia][NPS][skip] executionId=${sessao.executionId} motivo=${motivo} reason=encerramento-nao-executado`,
+      );
+      return;
+    }
+    if (sessao.resultadoNpsEnviado) {
+      this.logger.log(
+        `[Zenvia][NPS][skip] executionId=${sessao.executionId} motivo=${motivo} reason=ja-enviado`,
+      );
+      return;
+    }
+    if (sessao.npsEmEnvio) {
+      this.logger.log(
+        `[Zenvia][NPS][skip] executionId=${sessao.executionId} motivo=${motivo} reason=envio-em-andamento`,
+      );
+      return;
+    }
 
     const agoraIso = this.nowIso();
     if (!sessao.npsPrimeiraTentativaEm) {
@@ -1325,16 +1366,20 @@ export class ZenviaService implements OnModuleDestroy {
     }
 
     try {
+      this.logger.log(
+        `[Zenvia][NPS][attempt] executionId=${sessao.executionId} motivo=${motivo} endpoint=${this.npsEndpointUrl} payload=${this.stringifySafe(payload, 1200)}`,
+      );
+
       const res = await fetch(this.npsEndpointUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
       });
+      const body = await res.text().catch(() => '');
 
       const sucessoNps =
         res.status === 200 || res.status === 201 || res.status === 204;
       if (!sucessoNps) {
-        const body = await res.text().catch(() => '');
         this.logger.warn(
           `[Zenvia][NPS][retry] executionId=${sessao.executionId} motivo=${motivo} status=${res.status} body=${this.stringifySafe(body, 800)}`,
         );
@@ -1343,7 +1388,7 @@ export class ZenviaService implements OnModuleDestroy {
 
       sessao.resultadoNpsEnviado = true;
       this.logger.log(
-        `[Zenvia][NPS][sent] executionId=${sessao.executionId} motivo=${motivo} status=${res.status} endpoint=${this.npsEndpointUrl}`,
+        `[Zenvia][NPS][sent] executionId=${sessao.executionId} motivo=${motivo} status=${res.status} endpoint=${this.npsEndpointUrl} body=${this.stringifySafe(body, 800)}`,
       );
       this.removerSessao(sessao.executionId, `nps-success-${res.status}`);
     } catch (err: unknown) {
