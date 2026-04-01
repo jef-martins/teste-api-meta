@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
 } from '@nestjs/common';
 import {
   AdminService,
@@ -27,9 +28,14 @@ export class AdminController {
 
   // ─── Estados ─────────────────────────────────────────────────────────────
 
+  @Get('fluxos')
+  listarFluxos() {
+    return this.adminService.listarFluxos();
+  }
+
   @Get('estados')
-  listarEstados() {
-    return this.adminService.listarEstados();
+  listarEstados(@Query('flowId') flowId?: string) {
+    return this.adminService.listarEstados(flowId);
   }
 
   @Post('estados')
@@ -50,8 +56,8 @@ export class AdminController {
   // ─── Transições ──────────────────────────────────────────────────────────
 
   @Get('transicoes')
-  listarTransicoes() {
-    return this.adminService.listarTransicoes();
+  listarTransicoes(@Query('flowId') flowId?: string) {
+    return this.adminService.listarTransicoes(flowId);
   }
 
   @Post('transicoes')

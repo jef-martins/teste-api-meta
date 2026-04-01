@@ -59,9 +59,67 @@ async function api(method, path) {
   return r.json();
 }
 
+function obterFlowIdUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('flowId');
+}
+
+function escapeHtml(s) {
+  return typeof s === 'string' ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : String(s);
+}
+
+function atualizarLinksTabs() {
+  const flowId = obterFlowIdUrl();
+  if (flowId) {
+    const elEstados = document.getElementById('link-estados');
+    if (elEstados) elEstados.href = `/telas/estados/index.html?flowId=${flowId}`;
+    const elTransicoes = document.getElementById('link-transicoes');
+    if (elTransicoes) elTransicoes.href = `/telas/transicoes/tabela/index.html?flowId=${flowId}`;
+    
+    // O botão de "Tabela" também deve manter o flowId
+    const linksTabela = document.querySelectorAll('a[href="/telas/transicoes/tabela/index.html"]');
+    linksTabela.forEach(l => l.href = `/telas/transicoes/tabela/index.html?flowId=${flowId}`);
+  }
+}
+
+async function carregarFluxos() {
+  document.getElementById('page-fluxos').style.display = 'block';
+  document.getElementById('page-visual').style.display = 'none';
+  
+  const dados = await api('GET', '/fluxos');
+  const tb = document.getElementById('body-fluxos');
+  
+  if (!dados || dados.length === 0) {
+    tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">Nenhum fluxo encontrado.</td></tr>';
+    return;
+  }
+  
+  tb.innerHTML = dados.map(f => `
+    <tr>
+      <td><code>${f.id || 'padrão'}</code></td>
+      <td><strong>${escapeHtml(f.nome || 'Sem Nome')}</strong></td>
+      <td style="color:var(--muted)">${escapeHtml(f.descricao || '—')}</td>
+      <td><span class="badge ${f.ativo ? 'badge-green' : 'badge-gray'}">${f.ativo ? 'Ativo' : 'Inativo'}</span></td>
+      <td>
+        <button class="btn btn-primary btn-sm" onclick="window.location.href='index.html?flowId=${f.id || ''}'">Ver Transições</button>
+      </td>
+    </tr>`).join('');
+}
+
 async function carregarDadosERenderizar() {
-  estadosCache = await api('GET', '/estados');
-  const rawTransicoes = await api('GET', '/transicoes');
+  const flowId = obterFlowIdUrl();
+  if (flowId === null) {
+      return carregarFluxos();
+  }
+
+  document.getElementById('page-fluxos').style.display = 'none';
+  document.getElementById('page-visual').style.display = 'block';
+  atualizarLinksTabs();
+
+  const urlParams = flowId ? `?flowId=${flowId}` : '';
+
+  estadosCache = await api('GET', '/estados' + urlParams);
+  const rawTransicoes = await api('GET', '/transicoes' + urlParams);
   transicoesCache = Array.isArray(rawTransicoes) ? rawTransicoes.map(normalizarTransicao) : [];
   
   const container = document.getElementById('mermaid-container');

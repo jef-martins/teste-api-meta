@@ -96,9 +96,21 @@ export class AdminService {
     };
   }
 
+  // ─── Fluxos ─────────────────────────────────────────────────────────────
+  
+  async listarFluxos() {
+    if (this.isDefaultMode()) {
+       return [{ id: '', nome: 'Memória (Padrão)', ativo: true }];
+    }
+    return this.prisma.botFluxo.findMany({
+      select: { id: true, nome: true, descricao: true, ativo: true },
+      orderBy: { nome: 'asc' }
+    });
+  }
+
   // ─── Estados ─────────────────────────────────────────────────────────────
 
-  async listarEstados() {
+  async listarEstados(flowId?: string) {
     if (this.isDefaultMode()) {
       return Object.entries(DEFAULT_ESTADOS)
         .map(([estado, data]) => ({
@@ -119,6 +131,7 @@ export class AdminService {
         ativo: true,
         config: true,
       },
+      where: flowId ? { flowId } : { flowId: null },
       orderBy: { estado: 'asc' },
     });
   }
@@ -186,7 +199,7 @@ export class AdminService {
 
   // ─── Transições ──────────────────────────────────────────────────────────
 
-  async listarTransicoes() {
+  async listarTransicoes(flowId?: string) {
     if (this.isDefaultMode()) {
       const transicoes: Array<{
         id: string | undefined;
@@ -219,6 +232,7 @@ export class AdminService {
         estadoDestino: true,
         ativo: true,
       },
+      where: flowId ? { origem: { flowId } } : { origem: { flowId: null } },
       orderBy: [{ estadoOrigem: 'asc' }, { entrada: 'asc' }],
     });
   }
