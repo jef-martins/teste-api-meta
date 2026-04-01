@@ -1288,12 +1288,17 @@ export class ZenviaService implements OnModuleDestroy {
     return this.getPublicSnapshot(sessao);
   }
 
-  obterSessao(executionId: string) {
+  encerrarSessao(executionId: string) {
     const sessao = this.sessoes.get(executionId);
-    if (!sessao) {
-      throw new NotFoundException('executionId não encontrado.');
+    if (sessao) {
+      this.removerSessao(executionId, 'manual-api-delete');
     }
-    return this.getPublicSnapshot(sessao);
+
+    return {
+      ok: true,
+      executionId,
+      mensagem: 'apagado com sucesso',
+    };
   }
 
   obterResultadoArray(executionId: string, limparAposRetorno = true) {

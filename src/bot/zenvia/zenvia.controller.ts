@@ -1,7 +1,7 @@
 import {
   Body,
   Controller,
-  Get,
+  Delete,
   Headers,
   Param,
   Post,
@@ -64,8 +64,8 @@ export class ZenviaController {
     );
   }
 
-  @Get(':executionId')
-  obter(@Param('executionId') executionId: string) {
-    return this.zenviaService.obterSessao(executionId);
+  @Delete(':executionId')
+  encerrar(@Param('executionId') executionId: string) {
+    return this.zenviaService.encerrarSessao(executionId);
   }
 }
