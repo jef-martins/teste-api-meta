@@ -96,6 +96,7 @@ export class BotMetaService {
       );
     }
     this.handler.access_token = accessToken;
+    this.handler.configureChannel(this.handler.phone_id, this.handler.access_token);
 
     // Modo de teste: responde apenas ao número do admin
     if (process.env.BOT_MODO_TESTE === 'true') {

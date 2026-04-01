@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { EstadoRepository } from '../estado.repository';
-import { StateMachineEngine } from '../state-machine.engine';
+import { EstadoRepository } from './estado.repository';
+import { StateMachineEngine } from './state-machine.engine';
 import * as crypto from 'crypto';
 
 /**
@@ -88,13 +88,14 @@ type HandlerConfig = Record<string, unknown> & {
 
 type WppClient = {
   sendText: (destino: string, texto: string) => Promise<unknown>;
-  sendListMessage: (destino: string, payload: unknown) => Promise<unknown>;
-  sendButtons: (
+  sendListMessage?: (destino: string, payload: unknown) => Promise<unknown>;
+  sendButtons?: (
     destino: string,
     titulo: string,
     botoes: Array<{ id: string; text: string }>,
     rodape: string,
   ) => Promise<unknown>;
+  sendButtonsMessage?: (destino: string, payload: unknown) => Promise<unknown>;
 };
 
 type DynamicHandler = (
@@ -110,10 +111,13 @@ export class HandlerService {
 
   /** Set by BotService after WPPConnect initialization */
   client: WppClient = {
-    sendText: () => Promise.resolve(undefined),
-    sendListMessage: () => Promise.resolve(undefined),
-    sendButtons: () => Promise.resolve(undefined),
+    sendText: async () => undefined,
+    sendListMessage: async () => undefined,
+    sendButtons: async () => undefined,
+    sendButtonsMessage: async () => undefined,
   };
+  /** When true, rethrow send errors instead of only logging. */
+  failOnSendError = false;
 
   constructor(private estadoRepo: EstadoRepository) {}
 
@@ -309,6 +313,9 @@ export class HandlerService {
   private async enviarResposta(message: HandlerMessage, texto: string) {
     if (!this.client?.sendText) {
       this.logger.error('Client não inicializado');
+      if (this.failOnSendError) {
+        throw new Error('Client não inicializado');
+      }
       return;
     }
     try {
@@ -319,6 +326,9 @@ export class HandlerService {
       this.logger.error(
         `Erro ao enviar resposta: ${this.getErrorMessage(err)}`,
       );
+      if (this.failOnSendError) {
+        throw err;
+      }
     }
   }
 
@@ -771,18 +781,40 @@ export class HandlerService {
     );
 
     try {
-      await Promise.race([
-        this.client.sendButtons(
+      if (this.client.sendButtons) {
+        await Promise.race([
+          this.client.sendButtons(
+            destino,
+            titulo,
+            botoes.map((b: ItemInterativoNormalizado) => ({
+              id: String(b.entrada),
+              text: String(b.label || b.entrada),
+            })),
+            rodape,
+          ),
+          timeout,
+        ]);
+      } else if (this.client.sendButtonsMessage) {
+        const botoesPayload = botoes.slice(0, 3).map((b) => ({
+          id: String(b.entrada),
+          title: b.label,
+        }));
+        await this.client.sendButtonsMessage(destino, {
+          body: titulo,
+          buttons: botoesPayload,
+        });
+      } else {
+        const linhas = (config.botoes ?? [])
+          .map((b: ItemInterativoNormalizado) => `*${b.entrada}* - ${b.label}`)
+          .join('\n');
+        const cabecalho = config.cabecalho ? `*${config.cabecalho}*\n\n` : '';
+        const rodapeStr = config.rodape ? `\n\n_${config.rodape}_` : '';
+
+        await this.client.sendText(
           destino,
-          titulo,
-          botoes.map((b: ItemInterativoNormalizado) => ({
-            id: String(b.entrada),
-            text: String(b.label || b.entrada),
-          })),
-          rodape,
-        ),
-        timeout,
-      ]);
+          `${cabecalho}${titulo}\n\n${linhas}${rodapeStr}`,
+        );
+      }
     } catch (err: unknown) {
       this.logger.warn(
         `[${chatId}] Fallback texto botões — motivo: ${this.getErrorMessage(err)}`,

@@ -47,11 +47,7 @@ describe('HandlerMetaService', () => {
       ],
     };
 
-    const resultado = service['normalizarItensInterativos'](
-      bruto,
-      'chat-meta-1',
-      'botoes',
-    );
+    const resultado = service['normalizarItensInterativos'](bruto, 'botoes');
 
     expect(resultado).toEqual([
       { entrada: 'sim', label: 'Sim', descricao: '' },

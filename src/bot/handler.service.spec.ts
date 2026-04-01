@@ -1,12 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HandlerService } from './handler.service';
-import { EstadoRepository } from '../estado.repository';
-import { StateMachineEngine } from '../state-machine.engine';
+import { EstadoRepository } from './estado.repository';
+import { StateMachineEngine } from './state-machine.engine';
 import {
   createEngineMock,
   createEstadoRepoMock,
   createFetchMock,
-} from '../../test/helpers/handler-test.helpers';
+} from '../test/helpers/handler-test.helpers';
 
 describe('HandlerService', () => {
   let service: HandlerService;

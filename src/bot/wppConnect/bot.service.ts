@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConversationService } from '../../conversation/conversation.service';
 import { StateMachineEngine } from '../state-machine.engine';
-import { HandlerService } from './handler.service';
+import { HandlerService } from '../handler.service';
 import { EstadoRepository } from '../estado.repository';
 
 type WppMessage = {

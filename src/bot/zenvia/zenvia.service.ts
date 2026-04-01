@@ -6,7 +6,7 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { Client, TextContent } from '@zenvia/sdk';
-import { HandlerService } from '../wppConnect/handler.service';
+import { HandlerService } from '../handler.service';
 import { StateMachineEngine } from '../state-machine.engine';
 import { MEMORY_SESSIONS } from '../meta/default-state-machine.config';
 
@@ -185,6 +185,37 @@ type FetchJsonResult = {
   payload: unknown;
 };
 
+type ZenviaButtonItem = {
+  id: string;
+  title: string;
+};
+
+type ButtonsClientPayload = {
+  body?: unknown;
+  titulo?: unknown;
+  buttons?: unknown;
+};
+
+type ZenviaListRow = {
+  id: string;
+  title: string;
+  description?: string;
+};
+
+type ZenviaListSection = {
+  title: string;
+  rows: ZenviaListRow[];
+};
+
+type ZenviaListContent = {
+  type: 'list';
+  body: string;
+  button: string;
+  sections: ZenviaListSection[];
+  header?: string;
+  footer?: string;
+};
+
 type StartQueryInput = {
   to?: string;
   from?: string;
@@ -315,7 +346,11 @@ export class ZenviaService implements OnModuleDestroy {
   }
 
   private normalizeEntrada(value: string): string {
-    return value.trim().toLowerCase();
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase();
   }
 
   private parseOpcoesValidacao(value: unknown): string[] {
@@ -574,6 +609,80 @@ export class ZenviaService implements OnModuleDestroy {
     return `${titulo}\n\n${linhas.join('\n')}`;
   }
 
+  private normalizarListPayload(payload: unknown): ZenviaListContent | null {
+    if (!this.isRecord(payload)) return null;
+
+    const body =
+      this.toStringOrNull(payload.body) ||
+      this.toStringOrNull(payload.description) ||
+      this.toStringOrNull(payload.title) ||
+      'Menu';
+    const button =
+      this.toStringOrNull(payload.button) ||
+      this.toStringOrNull(payload.buttonText) ||
+      'Ver opções';
+
+    const secoesRaw = Array.isArray(payload.sections) ? payload.sections : [];
+    const sections: ZenviaListSection[] = [];
+
+    for (const secaoRaw of secoesRaw) {
+      if (!this.isRecord(secaoRaw)) continue;
+      const rowsRaw = Array.isArray(secaoRaw.rows) ? secaoRaw.rows : [];
+      const rows: ZenviaListRow[] = [];
+
+      for (const rowRaw of rowsRaw) {
+        if (!this.isRecord(rowRaw)) continue;
+
+        const idOriginal =
+          this.toStringOrNull(rowRaw.id) ||
+          this.toStringOrNull(rowRaw.rowId) ||
+          this.toStringOrNull(rowRaw.value) ||
+          this.toStringOrNull(rowRaw.payload) ||
+          '';
+        const idNormalizado = this.normalizeEntrada(idOriginal);
+        const id = idNormalizado || idOriginal;
+
+        const title =
+          this.toStringOrNull(rowRaw.title) ||
+          this.toStringOrNull(rowRaw.text) ||
+          this.toStringOrNull(rowRaw.label) ||
+          id;
+        if (!id || !title) continue;
+
+        const description = this.toStringOrNull(rowRaw.description) || undefined;
+        rows.push({ id, title, description });
+      }
+
+      if (!rows.length) continue;
+
+      const title =
+        this.toStringOrNull(secaoRaw.title) ||
+        this.toStringOrNull(secaoRaw.name) ||
+        'Opções';
+      sections.push({ title, rows: rows.slice(0, 10) });
+    }
+
+    if (!sections.length) return null;
+
+    const content: ZenviaListContent = {
+      type: 'list',
+      body,
+      button,
+      sections: sections.slice(0, 10),
+    };
+
+    const header =
+      this.toStringOrNull(payload.header) ||
+      this.toStringOrNull(payload.cabecalho);
+    if (header) content.header = header;
+
+    const footer =
+      this.toStringOrNull(payload.footer) || this.toStringOrNull(payload.rodape);
+    if (footer) content.footer = footer;
+
+    return content;
+  }
+
   private normalizarWebhook(body: unknown): NormalizedInbound | null {
     if (!this.isRecord(body)) return null;
 
@@ -659,22 +768,23 @@ export class ZenviaService implements OnModuleDestroy {
     return { messageId, payload: response };
   }
 
-  private async enviarMensagemViaHttp(
+  private async enviarConteudoViaHttp(
     from: string,
     to: string,
-    mensagem: string,
+    content: Record<string, unknown>,
     tokenLimpo: string,
     zenviaBaseUrl: string,
     zenviaHeaders: Record<string, string>,
+    logTag: string,
   ): Promise<FetchJsonResult> {
     const payload = {
       from,
       to,
-      contents: [{ type: 'text', text: mensagem }],
+      contents: [content],
     };
 
     this.logger.log(
-      `[Zenvia][HTTP][attempt] url=${zenviaBaseUrl} from=${this.maskPhone(from)} to=${this.maskPhone(to)} token=${this.maskToken(tokenLimpo)} headers=${this.stringifySafe(this.maskHeaders(zenviaHeaders))} textLen=${mensagem.length}`,
+      `[Zenvia][HTTP][${logTag}][attempt] url=${zenviaBaseUrl} from=${this.maskPhone(from)} to=${this.maskPhone(to)} token=${this.maskToken(tokenLimpo)} headers=${this.stringifySafe(this.maskHeaders(zenviaHeaders))} payload=${this.stringifySafe(payload, 1000)}`,
     );
 
     const res = await fetch(zenviaBaseUrl, {
@@ -682,7 +792,6 @@ export class ZenviaService implements OnModuleDestroy {
       headers: {
         'Content-Type': 'application/json',
         'X-API-TOKEN': tokenLimpo,
-        Authorization: `Bearer ${tokenLimpo}`,
         ...zenviaHeaders,
       },
       body: JSON.stringify(payload),
@@ -690,10 +799,13 @@ export class ZenviaService implements OnModuleDestroy {
 
     const json = (await res.json().catch(() => ({}))) as unknown;
     if (!res.ok) {
+      const detalhes = this.stringifySafe(json, 600);
       this.logger.error(
-        `[Zenvia][HTTP][error] status=${res.status} from=${this.maskPhone(from)} to=${this.maskPhone(to)} payload=${this.stringifySafe(json)}`,
+        `[Zenvia][HTTP][${logTag}][error] status=${res.status} from=${this.maskPhone(from)} to=${this.maskPhone(to)} payload=${detalhes}`,
       );
-      throw new BadRequestException('Falha ao enviar mensagem via Zenvia.');
+      throw new BadRequestException(
+        `Falha ao enviar mensagem via Zenvia. status=${res.status} detalhes=${detalhes}`,
+      );
     }
 
     const messageId =
@@ -702,10 +814,72 @@ export class ZenviaService implements OnModuleDestroy {
       this.extrairString(json, ['message', 'id']);
 
     this.logger.log(
-      `[Zenvia][HTTP][success] status=${res.status} from=${this.maskPhone(from)} to=${this.maskPhone(to)} messageId=${messageId ?? 'null'} payload=${this.stringifySafe(json)}`,
+      `[Zenvia][HTTP][${logTag}][success] status=${res.status} from=${this.maskPhone(from)} to=${this.maskPhone(to)} messageId=${messageId ?? 'null'} payload=${this.stringifySafe(json)}`,
     );
 
     return { messageId, payload: json };
+  }
+
+  private async enviarMensagemViaHttp(
+    from: string,
+    to: string,
+    mensagem: string,
+    tokenLimpo: string,
+    zenviaBaseUrl: string,
+    zenviaHeaders: Record<string, string>,
+  ): Promise<FetchJsonResult> {
+    return this.enviarConteudoViaHttp(
+      from,
+      to,
+      { type: 'text', text: mensagem },
+      tokenLimpo,
+      zenviaBaseUrl,
+      zenviaHeaders,
+      'text',
+    );
+  }
+
+  private async enviarBotoesViaHttp(
+    from: string,
+    to: string,
+    body: string,
+    buttons: ZenviaButtonItem[],
+    tokenLimpo: string,
+    zenviaBaseUrl: string,
+    zenviaHeaders: Record<string, string>,
+  ): Promise<FetchJsonResult> {
+    return this.enviarConteudoViaHttp(
+      from,
+      to,
+      {
+        type: 'button',
+        body,
+        buttons,
+      },
+      tokenLimpo,
+      zenviaBaseUrl,
+      zenviaHeaders,
+      'button',
+    );
+  }
+
+  private async enviarListaViaHttp(
+    from: string,
+    to: string,
+    content: ZenviaListContent,
+    tokenLimpo: string,
+    zenviaBaseUrl: string,
+    zenviaHeaders: Record<string, string>,
+  ): Promise<FetchJsonResult> {
+    return this.enviarConteudoViaHttp(
+      from,
+      to,
+      content,
+      tokenLimpo,
+      zenviaBaseUrl,
+      zenviaHeaders,
+      'list',
+    );
   }
 
   private async enviarMensagem(
@@ -723,13 +897,7 @@ export class ZenviaService implements OnModuleDestroy {
     );
 
     try {
-      return await this.enviarMensagemViaSdk(from, to, mensagem, tokenLimpo);
-    } catch (sdkErr: unknown) {
-      const sdkMsg = this.errorToString(sdkErr);
-      this.logger.warn(
-        `[Zenvia][SEND][sdk-failed] ${sdkMsg}. Tentando fallback HTTP.`,
-      );
-      return this.enviarMensagemViaHttp(
+      return await this.enviarMensagemViaHttp(
         from,
         to,
         mensagem,
@@ -737,6 +905,12 @@ export class ZenviaService implements OnModuleDestroy {
         zenviaBaseUrl,
         zenviaHeaders,
       );
+    } catch (httpErr: unknown) {
+      const httpMsg = this.errorToString(httpErr);
+      this.logger.warn(
+        `[Zenvia][SEND][http-failed] ${httpMsg}. Tentando fallback SDK.`,
+      );
+      return this.enviarMensagemViaSdk(from, to, mensagem, tokenLimpo);
     }
   }
 
@@ -903,6 +1077,7 @@ export class ZenviaService implements OnModuleDestroy {
     } as never);
 
     const handler = new HandlerService(repo as never);
+    handler.failOnSendError = true;
     const chatId = `zenvia:${sessao.executionId}`;
     const messageContext = { from: `${sessao.to}@zenvia` };
 
@@ -945,13 +1120,109 @@ export class ZenviaService implements OnModuleDestroy {
       return sent.payload;
     };
 
+    const enviarBotoesNoCanal = async (payload: unknown) => {
+      const estadoAtual =
+        engine.estadosUsuarios.get(chatId) ?? repo.getEstadoInicialSync();
+      const idx = stateToIndex.get(estadoAtual);
+      const item = typeof idx === 'number' ? sessao.itens[idx] : null;
+      const raw = (payload ?? {}) as ButtonsClientPayload;
+      const body =
+        this.toStringOrNull(raw.body) ||
+        this.toStringOrNull(raw.titulo) ||
+        'Escolha uma opção:';
+
+      const botoesBrutos = Array.isArray(raw.buttons) ? raw.buttons : [];
+      const buttons = botoesBrutos
+        .map((b) => {
+          if (!this.isRecord(b)) return null;
+          const id = this.toStringOrNull(b.id);
+          const title = this.toStringOrNull(b.title);
+          if (!id || !title) return null;
+          return { id, title };
+        })
+        .filter((b): b is ZenviaButtonItem => !!b)
+        .slice(0, 3);
+
+      if (!buttons.length) {
+        return enviarTextoNoCanal(body, 'sendText');
+      }
+
+      this.logger.log(
+        `[Zenvia][FLOW][sendButtonsMessage] executionId=${sessao.executionId} estado=${estadoAtual} idx=${typeof idx === 'number' ? idx : 'null'} itemId=${item ? String(item.id) : 'null'} from=${this.maskPhone(sessao.from)} to=${this.maskPhone(sessao.to)} buttons=${this.stringifySafe(buttons, 300)}`,
+      );
+
+      const tokenLimpo = sessao.zenviaToken.trim().replace(/^"(.*)"$/, '$1');
+      const sent = await this.enviarBotoesViaHttp(
+        sessao.from,
+        sessao.to,
+        body,
+        buttons,
+        tokenLimpo,
+        sessao.zenviaBaseUrl,
+        sessao.zenviaHeaders,
+      );
+
+      if (item && !item.perguntaMessageId) {
+        item.perguntaMessageId = sent.messageId;
+        item.perguntaProviderResponse = sent.payload;
+      }
+
+      this.logger.log(
+        `[Zenvia][FLOW][sendButtonsMessage:done] executionId=${sessao.executionId} estado=${estadoAtual} messageId=${sent.messageId ?? 'null'}`,
+      );
+      return sent.payload;
+    };
+
+    const enviarListaNoCanal = async (payload: unknown) => {
+      const estadoAtual =
+        engine.estadosUsuarios.get(chatId) ?? repo.getEstadoInicialSync();
+      const idx = stateToIndex.get(estadoAtual);
+      const item = typeof idx === 'number' ? sessao.itens[idx] : null;
+
+      const content = this.normalizarListPayload(payload);
+      if (!content) {
+        const textoLista = this.formatarListPayloadComoTexto(payload);
+        return enviarTextoNoCanal(textoLista, 'sendListMessage');
+      }
+
+      const totalRows = content.sections.reduce(
+        (acc, sec) => acc + sec.rows.length,
+        0,
+      );
+      this.logger.log(
+        `[Zenvia][FLOW][sendListMessage] executionId=${sessao.executionId} estado=${estadoAtual} idx=${typeof idx === 'number' ? idx : 'null'} itemId=${item ? String(item.id) : 'null'} from=${this.maskPhone(sessao.from)} to=${this.maskPhone(sessao.to)} sections=${content.sections.length} rows=${totalRows}`,
+      );
+
+      const tokenLimpo = sessao.zenviaToken.trim().replace(/^"(.*)"$/, '$1');
+      const sent = await this.enviarListaViaHttp(
+        sessao.from,
+        sessao.to,
+        content,
+        tokenLimpo,
+        sessao.zenviaBaseUrl,
+        sessao.zenviaHeaders,
+      );
+
+      if (item && !item.perguntaMessageId) {
+        item.perguntaMessageId = sent.messageId;
+        item.perguntaProviderResponse = sent.payload;
+      }
+
+      this.logger.log(
+        `[Zenvia][FLOW][sendListMessage:done] executionId=${sessao.executionId} estado=${estadoAtual} messageId=${sent.messageId ?? 'null'}`,
+      );
+      return sent.payload;
+    };
+
     handler.client = {
       sendText: async (_destino: string, texto: string) => {
         await enviarTextoNoCanal(texto, 'sendText');
       },
       sendListMessage: async (_destino: string, payload: unknown) => {
-        const textoLista = this.formatarListPayloadComoTexto(payload);
-        return enviarTextoNoCanal(textoLista, 'sendListMessage');
+        return enviarListaNoCanal(payload);
+      },
+      sendButtonsMessage: async (_destino: string, payload: unknown) => {
+        return enviarBotoesNoCanal(payload);
       },
     };
 
@@ -1089,10 +1360,12 @@ export class ZenviaService implements OnModuleDestroy {
       `[Zenvia][FLOW][start] executionId=${sessao.executionId} from=${this.maskPhone(sessao.from)} to=${this.maskPhone(sessao.to)} perguntas=${sessao.itens.length}`,
     );
 
+    const estadoInicial = sessao.runtime.repo.getEstadoInicialSync();
     await sessao.runtime.repo.salvarEstadoUsuario(
       sessao.runtime.chatId,
-      sessao.runtime.repo.getEstadoInicialSync(),
+      estadoInicial,
     );
+    sessao.runtime.engine.estadosUsuarios.set(sessao.runtime.chatId, estadoInicial);
 
     await sessao.runtime.engine.process(
       sessao.runtime.messageContext,
@@ -1101,6 +1374,29 @@ export class ZenviaService implements OnModuleDestroy {
       null,
       sessao.runtime.handler,
     );
+
+    const configInicial = await sessao.runtime.repo.obterConfigEstado(estadoInicial);
+    const nomeHandlerInicial = configInicial?.handler;
+    const handlerInicial =
+      nomeHandlerInicial && typeof nomeHandlerInicial === 'string'
+        ? (sessao.runtime.handler as unknown as Record<string, unknown>)[
+            nomeHandlerInicial
+          ]
+        : null;
+
+    if (typeof handlerInicial === 'function') {
+      await (handlerInicial as (...args: unknown[]) => Promise<void>).call(
+        sessao.runtime.handler,
+        sessao.runtime.messageContext,
+        sessao.runtime.chatId,
+        '',
+        sessao.runtime.engine,
+      );
+    } else {
+      this.logger.warn(
+        `[Zenvia][FLOW][start] handler inicial inválido/no-op: estado=${estadoInicial} handler=${String(nomeHandlerInicial ?? '')}`,
+      );
+    }
 
     this.atualizarStatusSessao(sessao);
     await this.enviarResultadoNps(sessao, 'start');
@@ -1393,6 +1689,23 @@ export class ZenviaService implements OnModuleDestroy {
       return this.getPublicSnapshot(sessao);
     }
 
+    const idxProximoEstado = sessao.runtime.promptStateToIndex.get(estadoDepois);
+    if (
+      typeof idxProximoEstado === 'number' &&
+      idxProximoEstado !== idx &&
+      sessao.itens[idxProximoEstado]
+    ) {
+      const itemProximo = sessao.itens[idxProximoEstado];
+      const proximaPerguntaEnviada = Boolean(
+        itemProximo.perguntaMessageId || itemProximo.perguntaProviderResponse,
+      );
+      if (!proximaPerguntaEnviada) {
+        throw new BadRequestException(
+          `Falha ao enviar próxima etapa do fluxo. executionId=${executionId} estado=${estadoDepois}`,
+        );
+      }
+    }
+
     if (respostaKey) {
       sessao.runtime.engine.salvarDado(
         sessao.runtime.chatId,
@@ -1442,10 +1755,10 @@ export class ZenviaService implements OnModuleDestroy {
       `[Zenvia][webhook][normalized] from=${this.maskPhone(inbound.from)} to=${this.maskPhone(inbound.to)} executionId=${inbound.executionId ?? 'null'} sourceType=${inbound.sourceType} textLen=${inbound.text.length}`,
     );
 
-    const executionId =
-      inbound.executionId ||
+    const executionIdPorPar =
       this.sessoesAtivasPorPar.get(this.normalizarPar(inbound.to, inbound.from)) ||
       null;
+    let executionId = inbound.executionId || executionIdPorPar || null;
 
     if (!executionId) {
       this.logger.log(
@@ -1454,10 +1767,18 @@ export class ZenviaService implements OnModuleDestroy {
       return { ok: true, ignored: true, reason: 'sessão ativa não encontrada' };
     }
 
-    const sessao = this.sessoes.get(executionId);
+    let sessao = this.sessoes.get(executionId);
+    if (!sessao && executionIdPorPar && executionIdPorPar !== executionId) {
+      this.logger.warn(
+        `[Zenvia][webhook][fallback] executionId_inbound=${executionId} não encontrado; usando executionId_ativo_par=${executionIdPorPar}`,
+      );
+      executionId = executionIdPorPar;
+      sessao = this.sessoes.get(executionId);
+    }
+
     if (!sessao) {
       this.logger.log(
-        `[Zenvia][webhook][ignored] reason=sessao-nao-encontrada executionId=${executionId}`,
+        `[Zenvia][webhook][ignored] reason=sessao-nao-encontrada executionId=${executionId} executionIdPar=${executionIdPorPar ?? 'null'}`,
       );
       return { ok: true, ignored: true, reason: 'sessão não encontrada' };
     }
