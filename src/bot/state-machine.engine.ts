@@ -12,6 +12,7 @@ type DelegateHandler = (
 type EstadoConfig = {
   handler: string;
   descricao?: string | null;
+  flowId?: string | null;
   config?: unknown;
 };
 
@@ -167,8 +168,19 @@ export class StateMachineEngine {
     this.mensagemAtual = entradaNormalizada;
     this.nomeAtual = nome;
 
-    const keywordGlobal =
-      await this.globalKeywordService.buscarKeywordAtiva(entradaBruta);
+    const estadoAtualContexto = this.estadosUsuarios.get(chatId) ?? estadoPadrao;
+    const configEstadoAtual = (await this.estadoRepo.obterConfigEstado(
+      estadoAtualContexto,
+    )) as EstadoConfig | null;
+    const flowIdContexto =
+      typeof configEstadoAtual?.flowId === 'string'
+        ? configEstadoAtual.flowId
+        : null;
+
+    const keywordGlobal = await this.globalKeywordService.buscarKeywordAtiva(
+      entradaBruta,
+      flowIdContexto,
+    );
     if (keywordGlobal) {
       const configDestino = (await this.estadoRepo.obterConfigEstado(
         keywordGlobal.estadoDestino,
@@ -208,14 +220,12 @@ export class StateMachineEngine {
     }
 
     const estadoAtual = this.estadosUsuarios.get(chatId) ?? estadoPadrao;
-    // Se não há estado atual nem estado padrão (sem fluxo ativo), ignora a mensagem
-    if (!estadoAtual) {
-      this.logger.warn(`[${chatId}] nenhum fluxo ativo — mensagem ignorada.`);
-      return;
-    }
-    const config = (await this.estadoRepo.obterConfigEstado(
-      estadoAtual,
-    )) as EstadoConfig | null;
+    const config =
+      estadoAtual === estadoAtualContexto
+        ? configEstadoAtual
+        : ((await this.estadoRepo.obterConfigEstado(
+            estadoAtual,
+          )) as EstadoConfig | null);
 
     if (!config) {
       this.logger.warn(

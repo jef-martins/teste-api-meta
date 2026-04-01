@@ -8,6 +8,8 @@ import { PrismaService } from '../prisma/prisma.service';
 const makeKeyword = (overrides: Partial<{
   id: string;
   keyword: string;
+  flowId: string | null;
+  flowNome: string | null;
   estadoDestino: string;
   ativo: boolean;
   criadoEm: Date;
@@ -15,6 +17,8 @@ const makeKeyword = (overrides: Partial<{
 }> = {}) => ({
   id: 'kw-1',
   keyword: 'oi',
+  flowId: 'flow-1',
+  flowNome: 'Fluxo Principal',
   estadoDestino: 'MENU',
   ativo: true,
   criadoEm: new Date(),
@@ -28,6 +32,13 @@ const makeKeyword = (overrides: Partial<{
 const makePrismaMock = (isConnected: boolean) =>
   ({
     isConnected,
+    botFluxo: {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+    },
+    botEstadoConfig: {
+      findFirst: jest.fn(),
+    },
     botKeywordGlobal: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
@@ -57,7 +68,7 @@ describe('GlobalKeywordRepository — resiliência offline', () => {
     // Agora simula banco offline
     (prisma as unknown as { isConnected: boolean }).isConnected = false;
 
-    const resultado = await repo.buscarKeywordAtiva('oi');
+    const resultado = await repo.buscarKeywordAtiva('oi', 'flow-1');
     expect(resultado).not.toBeNull();
     expect(resultado?.keyword).toBe('oi');
     expect(resultado?.estadoDestino).toBe('MENU');
@@ -67,7 +78,7 @@ describe('GlobalKeywordRepository — resiliência offline', () => {
     const prisma = makePrismaMock(false);
     const repo = new GlobalKeywordRepository(prisma);
 
-    const resultado = await repo.buscarKeywordAtiva('oi');
+    const resultado = await repo.buscarKeywordAtiva('oi', 'flow-1');
     expect(resultado).toBeNull();
   });
 
@@ -117,7 +128,12 @@ describe('GlobalKeywordRepository — resiliência offline', () => {
     (prisma.botKeywordGlobal.create as jest.Mock).mockResolvedValueOnce(kw);
 
     const repo = new GlobalKeywordRepository(prisma);
-    await repo.criar({ keyword: 'oi', estadoDestino: 'MENU', ativo: true });
+    await repo.criar({
+      keyword: 'oi',
+      flowId: 'flow-1',
+      estadoDestino: 'MENU',
+      ativo: true,
+    });
 
     expect(repo.getCacheSnapshot().length).toBe(1);
     expect(repo.getCacheSnapshot()[0].keyword).toBe('oi');
@@ -167,7 +183,7 @@ describe('GlobalKeywordService.buscarKeywordAtiva — nunca lança exceção', (
 
     const service = new GlobalKeywordService(prisma, repo);
 
-    await expect(service.buscarKeywordAtiva('oi')).resolves.toBeNull();
+    await expect(service.buscarKeywordAtiva('oi', 'flow-1')).resolves.toBeNull();
   });
 
   it('retorna keyword do cache do repositório quando banco caiu', async () => {
@@ -178,7 +194,7 @@ describe('GlobalKeywordService.buscarKeywordAtiva — nunca lança exceção', (
     (repo.buscarKeywordAtiva as jest.Mock).mockResolvedValue(kw);
 
     const service = new GlobalKeywordService(prisma, repo);
-    const result = await service.buscarKeywordAtiva('oi');
+    const result = await service.buscarKeywordAtiva('oi', 'flow-1');
 
     expect(result).not.toBeNull();
     expect(result?.estadoDestino).toBe('MENU');
@@ -189,7 +205,86 @@ describe('GlobalKeywordService.buscarKeywordAtiva — nunca lança exceção', (
     const repo = makeRepoMock();
     const service = new GlobalKeywordService(prisma, repo);
 
-    await expect(service.buscarKeywordAtiva('')).resolves.toBeNull();
-    await expect(service.buscarKeywordAtiva('  ')).resolves.toBeNull();
+    await expect(service.buscarKeywordAtiva('', 'flow-1')).resolves.toBeNull();
+    await expect(service.buscarKeywordAtiva('  ', 'flow-1')).resolves.toBeNull();
+  });
+});
+
+describe('GlobalKeywordService.criar — vínculo obrigatório com fluxo', () => {
+  let envAnterior: string | undefined;
+
+  beforeEach(() => {
+    envAnterior = process.env.BOT_STATE_MACHINE_PADRAO;
+    delete process.env.BOT_STATE_MACHINE_PADRAO;
+  });
+
+  afterEach(() => {
+    if (envAnterior !== undefined) {
+      process.env.BOT_STATE_MACHINE_PADRAO = envAnterior;
+    } else {
+      delete process.env.BOT_STATE_MACHINE_PADRAO;
+    }
+  });
+
+  const makeRepoMock = () =>
+    ({
+      recarregarCache: jest.fn().mockResolvedValue(undefined),
+      buscarKeywordAtiva: jest.fn().mockResolvedValue(null),
+      listar: jest.fn().mockResolvedValue([]),
+      buscarPorId: jest.fn().mockResolvedValue(null),
+      buscarPorKeyword: jest.fn().mockResolvedValue(null),
+      criar: jest.fn(),
+      atualizar: jest.fn(),
+      atualizarAtivo: jest.fn(),
+      excluir: jest.fn(),
+    }) as unknown as GlobalKeywordRepository;
+
+  it('rejeita criação sem flow_nome/flow_id', async () => {
+    const prisma = makePrismaMock(true);
+    const repo = makeRepoMock();
+    const service = new GlobalKeywordService(prisma, repo);
+
+    await expect(
+      service.criar({
+        keyword: 'oi',
+        estado_destino: 'MENU',
+      }),
+    ).rejects.toThrow('Fluxo é obrigatório');
+  });
+
+  it('resolve flow_nome para flow_id e persiste no repositório', async () => {
+    const prisma = makePrismaMock(true);
+    const repo = makeRepoMock();
+    (prisma.botFluxo.findMany as jest.Mock).mockResolvedValueOnce([
+      { id: 'flow-1', nome: 'Fluxo Principal' },
+    ]);
+    (prisma.botEstadoConfig.findFirst as jest.Mock).mockResolvedValueOnce({
+      estado: 'MENU',
+    });
+    (repo.criar as jest.Mock).mockResolvedValueOnce(
+      makeKeyword({
+        id: 'kw-2',
+        keyword: 'oi',
+        flowId: 'flow-1',
+        flowNome: 'Fluxo Principal',
+        estadoDestino: 'MENU',
+      }),
+    );
+
+    const service = new GlobalKeywordService(prisma, repo);
+    const resultado = await service.criar({
+      keyword: 'oi',
+      flow_nome: 'Fluxo Principal',
+      estado_destino: 'MENU',
+    });
+
+    expect(repo.criar).toHaveBeenCalledWith({
+      keyword: 'oi',
+      flowId: 'flow-1',
+      estadoDestino: 'MENU',
+      ativo: true,
+    });
+    expect(resultado.flow_id).toBe('flow-1');
+    expect(resultado.flow_nome).toBe('Fluxo Principal');
   });
 });

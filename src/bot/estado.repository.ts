@@ -7,6 +7,7 @@ import { RedisService } from '../redis/redis.service';
 type EstadoConfigCacheItem = {
   handler: string;
   descricao: string | null;
+  flowId: string | null;
   config: Prisma.JsonValue;
 };
 
@@ -115,6 +116,7 @@ export class EstadoRepository implements OnModuleInit {
         novoConfigCache.set(c.estado, {
           handler: c.handler,
           descricao: c.descricao,
+          flowId: c.flowId ?? null,
           config: c.config,
         }),
       );
@@ -145,6 +147,7 @@ export class EstadoRepository implements OnModuleInit {
   async obterConfigEstado(estado: string): Promise<{
     handler: string;
     descricao: string | null;
+    flowId?: string | null;
     config: Record<string, unknown>;
   } | null> {
     // 1. Tenta cache imutável primeiro
@@ -153,6 +156,7 @@ export class EstadoRepository implements OnModuleInit {
       return {
         handler: cached.handler,
         descricao: cached.descricao,
+        flowId: cached.flowId ?? null,
         config: this.toUnknownRecord(cached.config),
       };
     }
@@ -161,12 +165,13 @@ export class EstadoRepository implements OnModuleInit {
     try {
       const row = await this.prisma.botEstadoConfig.findFirst({
         where: { estado, ativo: true },
-        select: { handler: true, descricao: true, config: true },
+        select: { handler: true, descricao: true, flowId: true, config: true },
       });
       if (!row) return null;
       return {
         handler: row.handler,
         descricao: row.descricao,
+        flowId: row.flowId ?? null,
         config: this.toUnknownRecord(row.config),
       };
     } catch (err: unknown) {

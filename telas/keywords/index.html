@@ -36,6 +36,7 @@
       <thead>
         <tr>
           <th>Keyword</th>
+          <th>Fluxo</th>
           <th>Estado Destino</th>
           <th>Status</th>
           <th>Atualizado em</th>
@@ -43,7 +44,7 @@
         </tr>
       </thead>
       <tbody id="body-keywords">
-        <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">Carregando...</td></tr>
+        <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">Carregando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -63,8 +64,14 @@
             <small style="color:var(--muted); display:block; margin-top:6px; line-height:1.4;">A comparação é <strong>case-sensitive</strong>. Espaços extras no início e fim são removidos automaticamente.</small>
           </div>
           <div class="form-row">
+            <label>Fluxo</label>
+            <select id="f-flow-id"></select>
+            <small style="color:var(--muted); display:block; margin-top:6px; line-height:1.4;">Selecione o fluxo para vincular a keyword.</small>
+          </div>
+          <div class="form-row">
             <label>Estado de Destino</label>
             <select id="f-estado-destino"></select>
+            <small style="color:var(--muted); display:block; margin-top:6px; line-height:1.4;">Mostra apenas os estados (steps) do fluxo selecionado.</small>
           </div>
         </div>
         <div class="form-row" style="display:flex; gap:8px; align-items:center; margin-top:18px;">

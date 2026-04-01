@@ -9,12 +9,17 @@ import {
 import { OnEvent } from '@nestjs/event-emitter';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_ESTADOS } from '../bot/meta/default-state-machine.config';
+import {
+  DEFAULT_ESTADOS,
+  MEMORY_SESSIONS,
+} from '../bot/meta/default-state-machine.config';
 import { GlobalKeywordRepository } from './global-keyword.repository';
 
 type KeywordMemoria = {
   id: string;
   keyword: string;
+  flowId: string;
+  flowNome: string;
   estadoDestino: string;
   ativo: boolean;
   criadoEm: Date;
@@ -23,6 +28,8 @@ type KeywordMemoria = {
 
 export class GlobalKeywordDto {
   keyword!: string;
+  flow_nome?: string;
+  flow_id?: string;
   estado_destino!: string;
   ativo?: boolean;
 }
@@ -79,9 +86,23 @@ export class GlobalKeywordService implements OnModuleInit {
     return typeof estado === 'string' ? estado.trim().toUpperCase() : '';
   }
 
+  private normalizarFlowNome(flowNome: string | undefined) {
+    return typeof flowNome === 'string' ? flowNome.trim() : '';
+  }
+
+  private normalizarFlowId(flowId: string | undefined) {
+    return typeof flowId === 'string' ? flowId.trim() : '';
+  }
+
+  private normalizarFlowContexto(flowId: string | null | undefined) {
+    return typeof flowId === 'string' ? flowId.trim() : null;
+  }
+
   private serializar(registro: {
     id: string;
     keyword: string;
+    flowId: string | null;
+    flowNome?: string | null;
     estadoDestino: string;
     ativo: boolean;
     criadoEm: Date;
@@ -90,6 +111,8 @@ export class GlobalKeywordService implements OnModuleInit {
     return {
       id: registro.id,
       keyword: registro.keyword,
+      flow_id: registro.flowId,
+      flow_nome: registro.flowNome ?? null,
       estado_destino: registro.estadoDestino,
       ativo: registro.ativo,
       created_at: registro.criadoEm,
@@ -97,30 +120,141 @@ export class GlobalKeywordService implements OnModuleInit {
     };
   }
 
-  private async validarEstadoDestino(estadoDestino: string) {
+  private async resolverFluxo(
+    flowNomeInformado: string,
+    flowIdInformado: string,
+  ): Promise<{ flowId: string; flowNome: string }> {
+    if (this.isDefaultMode()) {
+      const porId = flowIdInformado
+        ? flowIdInformado === ''
+          ? { id: '', nome: 'Memória (Padrão)' }
+          : MEMORY_SESSIONS[flowIdInformado]
+            ? { id: flowIdInformado, nome: MEMORY_SESSIONS[flowIdInformado].nome }
+            : null
+        : null;
+
+      const nomeNormalizado = flowNomeInformado.toLowerCase();
+      const porNome = flowNomeInformado
+        ? nomeNormalizado === 'memória (padrão)' ||
+            nomeNormalizado === 'memoria (padrão)' ||
+            nomeNormalizado === 'memória' ||
+            nomeNormalizado === 'memoria'
+          ? { id: '', nome: 'Memória (Padrão)' }
+          : Object.entries(MEMORY_SESSIONS)
+              .map(([id, sessao]) => ({ id, nome: sessao.nome }))
+              .find((sessao) => sessao.nome.toLowerCase() === nomeNormalizado) ??
+            null
+        : null;
+
+      const fluxo = porId ?? porNome;
+      if (!fluxo) {
+        throw new BadRequestException(
+          'Fluxo inválido. Informe flow_nome (ou flow_id) existente no modo padrão.',
+        );
+      }
+      if (porId && porNome && porId.id !== porNome.id) {
+        throw new BadRequestException(
+          'flow_id e flow_nome informados não pertencem ao mesmo fluxo.',
+        );
+      }
+      return { flowId: fluxo.id, flowNome: fluxo.nome };
+    }
+
+    if (!this.prisma.isConnected) {
+      throw new BadRequestException(
+        'Banco indisponível para resolver fluxo. Tente novamente.',
+      );
+    }
+
+    if (!flowNomeInformado && !flowIdInformado) {
+      throw new BadRequestException(
+        'Fluxo é obrigatório. Informe flow_nome (ou flow_id).',
+      );
+    }
+
+    let fluxoPorId: { id: string; nome: string } | null = null;
+    if (flowIdInformado) {
+      fluxoPorId = await this.prisma.botFluxo.findUnique({
+        where: { id: flowIdInformado },
+        select: { id: true, nome: true },
+      });
+      if (!fluxoPorId) {
+        throw new BadRequestException('flow_id inválido.');
+      }
+    }
+
+    let fluxoPorNome: { id: string; nome: string } | null = null;
+    if (flowNomeInformado) {
+      const candidatos = await this.prisma.botFluxo.findMany({
+        where: { nome: { equals: flowNomeInformado, mode: 'insensitive' } },
+        select: { id: true, nome: true },
+        take: 2,
+      });
+      if (candidatos.length === 0) {
+        throw new BadRequestException('flow_nome inválido.');
+      }
+      if (candidatos.length > 1) {
+        throw new BadRequestException(
+          'flow_nome não é único. Informe também flow_id.',
+        );
+      }
+      fluxoPorNome = candidatos[0];
+    }
+
+    const fluxo = fluxoPorId ?? fluxoPorNome;
+    if (!fluxo) {
+      throw new BadRequestException('Fluxo inválido.');
+    }
+
+    if (fluxoPorId && fluxoPorNome && fluxoPorId.id !== fluxoPorNome.id) {
+      throw new BadRequestException(
+        'flow_id e flow_nome informados não pertencem ao mesmo fluxo.',
+      );
+    }
+
+    return { flowId: fluxo.id, flowNome: fluxo.nome };
+  }
+
+  private async validarEstadoDestino(estadoDestino: string, flowId: string) {
     if (!estadoDestino) {
       throw new BadRequestException('Estado de destino é obrigatório.');
     }
 
-    if (this.isDefaultMode() || !this.prisma.isConnected) {
-      const estado = DEFAULT_ESTADOS[estadoDestino];
+    if (this.isDefaultMode()) {
+      const estadosDoFluxo =
+        flowId && MEMORY_SESSIONS[flowId]
+          ? MEMORY_SESSIONS[flowId].configs
+          : DEFAULT_ESTADOS;
+      const estado = estadosDoFluxo[estadoDestino];
       if (!estado || estado.ativo === false) {
-        throw new BadRequestException('Estado de destino inválido ou inativo.');
+        throw new BadRequestException(
+          'Estado de destino inválido, inativo ou fora do fluxo selecionado.',
+        );
       }
       return;
     }
 
+    if (!this.prisma.isConnected) {
+      throw new BadRequestException(
+        'Banco indisponível para validar estado de destino. Tente novamente.',
+      );
+    }
+
     const existe = await this.prisma.botEstadoConfig.findFirst({
-      where: { estado: estadoDestino, ativo: true },
+      where: { estado: estadoDestino, ativo: true, flowId },
       select: { estado: true },
     });
     if (!existe) {
-      throw new BadRequestException('Estado de destino inválido ou inativo.');
+      throw new BadRequestException(
+        'Estado de destino inválido, inativo ou fora do fluxo selecionado.',
+      );
     }
   }
 
   private validarPayload(data: GlobalKeywordDto) {
     const keyword = this.normalizarKeyword(data.keyword);
+    const flowNomeInformado = this.normalizarFlowNome(data.flow_nome);
+    const flowIdInformado = this.normalizarFlowId(data.flow_id);
     const estadoDestino = this.normalizarEstado(data.estado_destino);
     const ativo = data.ativo !== false;
 
@@ -128,7 +262,13 @@ export class GlobalKeywordService implements OnModuleInit {
       throw new BadRequestException('Keyword é obrigatória.');
     }
 
-    return { keyword, estadoDestino, ativo };
+    return {
+      keyword,
+      flowNomeInformado,
+      flowIdInformado,
+      estadoDestino,
+      ativo,
+    };
   }
 
   private buscarMemoriaPorId(id: string) {
@@ -153,8 +293,13 @@ export class GlobalKeywordService implements OnModuleInit {
   }
 
   async criar(data: GlobalKeywordDto) {
-    const { keyword, estadoDestino, ativo } = this.validarPayload(data);
-    await this.validarEstadoDestino(estadoDestino);
+    const { keyword, flowNomeInformado, flowIdInformado, estadoDestino, ativo } =
+      this.validarPayload(data);
+    const { flowId, flowNome } = await this.resolverFluxo(
+      flowNomeInformado,
+      flowIdInformado,
+    );
+    await this.validarEstadoDestino(estadoDestino, flowId);
 
     if (this.isDefaultMode()) {
       if (this.buscarMemoriaPorKeyword(keyword)) {
@@ -165,6 +310,8 @@ export class GlobalKeywordService implements OnModuleInit {
       const registro: KeywordMemoria = {
         id: randomUUID(),
         keyword,
+        flowId,
+        flowNome,
         estadoDestino,
         ativo,
         criadoEm: agora,
@@ -181,6 +328,7 @@ export class GlobalKeywordService implements OnModuleInit {
 
     const criado = await this.repository.criar({
       keyword,
+      flowId,
       estadoDestino,
       ativo,
     });
@@ -188,8 +336,13 @@ export class GlobalKeywordService implements OnModuleInit {
   }
 
   async atualizar(id: string, data: GlobalKeywordDto) {
-    const { keyword, estadoDestino, ativo } = this.validarPayload(data);
-    await this.validarEstadoDestino(estadoDestino);
+    const { keyword, flowNomeInformado, flowIdInformado, estadoDestino, ativo } =
+      this.validarPayload(data);
+    const { flowId, flowNome } = await this.resolverFluxo(
+      flowNomeInformado,
+      flowIdInformado,
+    );
+    await this.validarEstadoDestino(estadoDestino, flowId);
 
     if (this.isDefaultMode()) {
       const atual = this.buscarMemoriaPorId(id);
@@ -203,6 +356,8 @@ export class GlobalKeywordService implements OnModuleInit {
       }
 
       atual.keyword = keyword;
+      atual.flowId = flowId;
+      atual.flowNome = flowNome;
       atual.estadoDestino = estadoDestino;
       atual.ativo = ativo;
       atual.atualizadoEm = new Date();
@@ -221,6 +376,7 @@ export class GlobalKeywordService implements OnModuleInit {
 
     const atualizado = await this.repository.atualizar(id, {
       keyword,
+      flowId,
       estadoDestino,
       ativo,
     });
@@ -273,29 +429,39 @@ export class GlobalKeywordService implements OnModuleInit {
    *
    * NUNCA propaga erro para o chamador — retorna null em qualquer falha.
    */
-  async buscarKeywordAtiva(keywordInformada: string) {
+  async buscarKeywordAtiva(
+    keywordInformada: string,
+    flowIdContexto: string | null,
+  ) {
     const keyword = this.normalizarKeyword(keywordInformada);
     if (!keyword) return null;
+    const flowId = this.normalizarFlowContexto(flowIdContexto);
+    if (flowId === null) return null;
 
     try {
       if (this.isDefaultMode()) {
         const item = this.keywordsMemoria.find(
-          (registro) => registro.ativo && registro.keyword === keyword,
+          (registro) =>
+            registro.ativo &&
+            registro.keyword === keyword &&
+            this.normalizarFlowContexto(registro.flowId) === flowId,
         );
         return item
           ? {
               id: item.id,
               keyword: item.keyword,
+              flowId: item.flowId,
               estadoDestino: item.estadoDestino,
             }
           : null;
       }
 
-      const item = await this.repository.buscarKeywordAtiva(keyword);
+      const item = await this.repository.buscarKeywordAtiva(keyword, flowId);
       return item
         ? {
             id: item.id,
             keyword: item.keyword,
+            flowId: item.flowId,
             estadoDestino: item.estadoDestino,
           }
         : null;

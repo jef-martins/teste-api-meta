@@ -156,7 +156,7 @@ describe('StateMachineEngine — resiliência offline-first', () => {
 
     // O fluxo deve continuar normalmente mesmo sem DB
     expect(estadoRepo.obterConfigEstado).toHaveBeenCalledWith('INICIAL');
-    expect(globalKeyword.buscarKeywordAtiva).toHaveBeenCalledWith('menu');
+    expect(globalKeyword.buscarKeywordAtiva).toHaveBeenCalledWith('menu', null);
   });
 
   it('não lança exceção quando keyword service retorna null inesperadamente', async () => {

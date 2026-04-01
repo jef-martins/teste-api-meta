@@ -29,6 +29,7 @@ export class DefaultEstadoRepository {
   obterConfigEstado(estado: string): Promise<{
     handler: string;
     descricao: string;
+    flowId?: string;
     config: unknown;
   } | null> {
     const cfg = DEFAULT_ESTADOS[estado];
@@ -41,6 +42,7 @@ export class DefaultEstadoRepository {
     return Promise.resolve({
       handler: cfg.handler,
       descricao: cfg.descricao,
+      flowId: '',
       config: cfg.config,
     });
   }

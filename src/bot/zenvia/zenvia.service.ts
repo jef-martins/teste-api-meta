@@ -177,6 +177,7 @@ type NormalizedInbound = {
   to: string;
   text: string;
   executionId: string | null;
+  sourceType: 'interactive' | 'button' | 'text' | 'unknown';
 };
 
 type FetchJsonResult = {
@@ -534,6 +535,45 @@ export class ZenviaService implements OnModuleDestroy {
     return this.toStringOrNull(atual);
   }
 
+  private formatarListPayloadComoTexto(payload: unknown): string {
+    if (!this.isRecord(payload)) return 'Menu';
+
+    const titulo =
+      this.toStringOrNull(payload.description) ||
+      this.toStringOrNull(payload.title) ||
+      'Menu';
+    const secoesRaw = Array.isArray(payload.sections) ? payload.sections : [];
+    const linhas: string[] = [];
+
+    for (const secao of secoesRaw) {
+      if (!this.isRecord(secao)) continue;
+
+      const rows = Array.isArray(secao.rows) ? secao.rows : [];
+      for (const row of rows) {
+        if (!this.isRecord(row)) continue;
+        const entrada =
+          this.toStringOrNull(row.rowId) ||
+          this.toStringOrNull(row.id) ||
+          this.toStringOrNull(row.value) ||
+          '';
+        const label =
+          this.toStringOrNull(row.title) ||
+          this.toStringOrNull(row.text) ||
+          entrada ||
+          'Opcao';
+
+        if (entrada && entrada !== label) {
+          linhas.push(`*${entrada}* - ${label}`);
+        } else {
+          linhas.push(`*${label}*`);
+        }
+      }
+    }
+
+    if (linhas.length === 0) return titulo;
+    return `${titulo}\n\n${linhas.join('\n')}`;
+  }
+
   private normalizarWebhook(body: unknown): NormalizedInbound | null {
     if (!this.isRecord(body)) return null;
 
@@ -549,13 +589,38 @@ export class ZenviaService implements OnModuleDestroy {
       this.extrairString(body, ['message', 'to']) ||
       this.extrairString(firstMessage, ['to']);
 
-    const text =
+    const interactiveValue =
+      this.extrairString(body, ['interactive', 'list_reply', 'id']) ||
+      this.extrairString(body, ['interactive', 'button_reply', 'id']) ||
+      this.extrairString(body, ['message', 'interactive', 'list_reply', 'id']) ||
+      this.extrairString(body, ['message', 'interactive', 'button_reply', 'id']) ||
+      this.extrairString(firstMessage, ['interactive', 'list_reply', 'id']) ||
+      this.extrairString(firstMessage, ['interactive', 'button_reply', 'id']) ||
+      this.extrairString(body, ['message', 'contents', 0, 'payload']) ||
+      this.extrairString(firstMessage, ['contents', 0, 'payload']) ||
+      this.extrairString(body, ['content', 'payload']);
+
+    const buttonValue =
+      this.extrairString(body, ['button', 'payload']) ||
+      this.extrairString(body, ['message', 'button', 'payload']) ||
+      this.extrairString(firstMessage, ['button', 'payload']);
+
+    const textValue =
       this.extrairString(body, ['text']) ||
       this.extrairString(body, ['message', 'text']) ||
       this.extrairString(body, ['message', 'contents', 0, 'text']) ||
       this.extrairString(firstMessage, ['text']) ||
       this.extrairString(firstMessage, ['contents', 0, 'text']) ||
       this.extrairString(body, ['content', 'text']);
+
+    const text = interactiveValue || buttonValue || textValue;
+    const sourceType: NormalizedInbound['sourceType'] = interactiveValue
+      ? 'interactive'
+      : buttonValue
+        ? 'button'
+        : textValue
+          ? 'text'
+          : 'unknown';
 
     if (!from || !to || !text) return null;
 
@@ -565,7 +630,7 @@ export class ZenviaService implements OnModuleDestroy {
       this.extrairString(body, ['message', 'metadata', 'executionId']) ||
       this.extrairString(firstMessage, ['metadata', 'executionId']);
 
-    return { from, to, text, executionId };
+    return { from, to, text, executionId, sourceType };
   }
 
   private async enviarMensagemViaSdk(
@@ -841,40 +906,52 @@ export class ZenviaService implements OnModuleDestroy {
     const chatId = `zenvia:${sessao.executionId}`;
     const messageContext = { from: `${sessao.to}@zenvia` };
 
+    const enviarTextoNoCanal = async (
+      texto: string,
+      source: 'sendText' | 'sendListMessage',
+    ) => {
+      const estadoAtual =
+        engine.estadosUsuarios.get(chatId) ?? repo.getEstadoInicialSync();
+      const idx = stateToIndex.get(estadoAtual);
+      const item = typeof idx === 'number' ? sessao.itens[idx] : null;
+      this.logger.log(
+        `[Zenvia][FLOW][${source}] executionId=${sessao.executionId} estado=${estadoAtual} idx=${typeof idx === 'number' ? idx : 'null'} itemId=${item ? String(item.id) : 'null'} from=${this.maskPhone(sessao.from)} to=${this.maskPhone(sessao.to)} text=${this.stringifySafe(texto, 500)}`,
+      );
+
+      const sent = await this.enviarMensagem(
+        sessao.from,
+        sessao.to,
+        texto,
+        sessao.zenviaToken,
+        sessao.zenviaBaseUrl,
+        sessao.zenviaHeaders,
+      );
+
+      if (item && !item.perguntaMessageId) {
+        item.perguntaMessageId = sent.messageId;
+        item.perguntaProviderResponse = sent.payload;
+      }
+
+      if (item?.tipo === 'encerramento') {
+        sessao.encerramentoExecutado = true;
+        if (!sessao.encerramentoExecutadoEm) {
+          sessao.encerramentoExecutadoEm = this.nowIso();
+        }
+      }
+
+      this.logger.log(
+        `[Zenvia][FLOW][${source}:done] executionId=${sessao.executionId} estado=${estadoAtual} messageId=${sent.messageId ?? 'null'}`,
+      );
+      return sent.payload;
+    };
+
     handler.client = {
       sendText: async (_destino: string, texto: string) => {
-        const estadoAtual =
-          engine.estadosUsuarios.get(chatId) ?? repo.getEstadoInicialSync();
-        const idx = stateToIndex.get(estadoAtual);
-        const item = typeof idx === 'number' ? sessao.itens[idx] : null;
-        this.logger.log(
-          `[Zenvia][FLOW][sendText] executionId=${sessao.executionId} estado=${estadoAtual} idx=${typeof idx === 'number' ? idx : 'null'} itemId=${item ? String(item.id) : 'null'} from=${this.maskPhone(sessao.from)} to=${this.maskPhone(sessao.to)} text=${this.stringifySafe(texto, 500)}`,
-        );
-
-        const sent = await this.enviarMensagem(
-          sessao.from,
-          sessao.to,
-          texto,
-          sessao.zenviaToken,
-          sessao.zenviaBaseUrl,
-          sessao.zenviaHeaders,
-        );
-
-        if (item && !item.perguntaMessageId) {
-          item.perguntaMessageId = sent.messageId;
-          item.perguntaProviderResponse = sent.payload;
-        }
-
-        if (item?.tipo === 'encerramento') {
-          sessao.encerramentoExecutado = true;
-          if (!sessao.encerramentoExecutadoEm) {
-            sessao.encerramentoExecutadoEm = this.nowIso();
-          }
-        }
-
-        this.logger.log(
-          `[Zenvia][FLOW][sendText:done] executionId=${sessao.executionId} estado=${estadoAtual} messageId=${sent.messageId ?? 'null'}`,
-        );
+        await enviarTextoNoCanal(texto, 'sendText');
+      },
+      sendListMessage: async (_destino: string, payload: unknown) => {
+        const textoLista = this.formatarListPayloadComoTexto(payload);
+        return enviarTextoNoCanal(textoLista, 'sendListMessage');
       },
     };
 
@@ -1357,7 +1434,7 @@ export class ZenviaService implements OnModuleDestroy {
     }
 
     this.logger.log(
-      `[Zenvia][webhook][normalized] from=${this.maskPhone(inbound.from)} to=${this.maskPhone(inbound.to)} executionId=${inbound.executionId ?? 'null'} textLen=${inbound.text.length}`,
+      `[Zenvia][webhook][normalized] from=${this.maskPhone(inbound.from)} to=${this.maskPhone(inbound.to)} executionId=${inbound.executionId ?? 'null'} sourceType=${inbound.sourceType} textLen=${inbound.text.length}`,
     );
 
     const executionId =
