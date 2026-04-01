@@ -123,7 +123,7 @@ describe('StateMachineEngine', () => {
 // Testes de resiliência offline-first
 // ---------------------------------------------------------------------------
 describe('StateMachineEngine — resiliência offline-first', () => {
-  it('continua o fluxo via cache quando keyword global retorna null (DB down)', async () => {
+  it('continua o fluxo via cache quando atalho de navegação retorna null (DB down)', async () => {
     const { estadoRepo, globalKeyword } = createMocks();
 
     estadoRepo.obterEstadoInicial.mockResolvedValue('INICIAL');

@@ -188,11 +188,11 @@ export class StateMachineEngine {
 
       if (!configDestino) {
         this.logger.warn(
-          `[${chatId}] keyword global "${keywordGlobal.keyword}" aponta para estado inválido/inativo: ${keywordGlobal.estadoDestino}`,
+          `[${chatId}] atalho de navegação "${keywordGlobal.keyword}" aponta para estado inválido/inativo: ${keywordGlobal.estadoDestino}`,
         );
       } else {
         this.logger.log(
-          `[${chatId}] keyword global "${keywordGlobal.keyword}" -> ${keywordGlobal.estadoDestino}`,
+          `[${chatId}] atalho de navegação "${keywordGlobal.keyword}" -> ${keywordGlobal.estadoDestino}`,
         );
 
         await this.avancarEstado(

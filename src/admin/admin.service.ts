@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { EstadoRepository } from '../bot/estado.repository';
 import {
   DEFAULT_ESTADOS,
   DEFAULT_TRANSICOES,
@@ -37,9 +38,36 @@ export class TesteRequisicaoInput {
   variaveis?: Record<string, string>;
 }
 
+type FluxoBancoPainel = {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  ativo: boolean;
+  organizacaoId: string | null;
+  organizacaoNome: string | null;
+  subOrganizacaoId: string | null;
+  subOrganizacaoNome: string | null;
+};
+
+type FluxoMemoriaPainel = {
+  id: string;
+  nome: string;
+  descricao: string;
+  ativo: boolean;
+  origem: 'cache' | 'padrao' | 'sessao_zenvia';
+  estados: number;
+  transicoes: number;
+  organizacaoNome: string | null;
+  subOrganizacaoNome: string | null;
+  navegavel: boolean;
+};
+
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private estadoRepository: EstadoRepository,
+  ) {
     this.initMemoryTransitions();
   }
 
@@ -97,6 +125,150 @@ export class AdminService {
     };
   }
 
+  private contarTransicoesMemoria(
+    source: Record<string, { entrada: string; estadoDestino: string }[]>,
+  ): number {
+    let total = 0;
+    for (const lista of Object.values(source)) {
+      total += lista.length;
+    }
+    return total;
+  }
+
+  private async listarFluxosBancoComOrganizacao(): Promise<{
+    bancoConectado: boolean;
+    fluxos: FluxoBancoPainel[];
+  }> {
+    if (!process.env.DATABASE_URL) {
+      return { bancoConectado: false, fluxos: [] };
+    }
+
+    const bancoConectado = await this.prisma.isAlive();
+    if (!bancoConectado) {
+      return { bancoConectado: false, fluxos: [] };
+    }
+
+    try {
+      const rows = await this.prisma.botFluxo.findMany({
+        select: {
+          id: true,
+          nome: true,
+          descricao: true,
+          ativo: true,
+          subOrganizacao: {
+            select: {
+              id: true,
+              nome: true,
+              organizacao: { select: { id: true, nome: true } },
+            },
+          },
+        },
+      });
+
+      const fluxos = rows
+        .map((row) => ({
+          id: row.id,
+          nome: row.nome,
+          descricao: row.descricao ?? null,
+          ativo: row.ativo,
+          organizacaoId: row.subOrganizacao?.organizacao?.id ?? null,
+          organizacaoNome: row.subOrganizacao?.organizacao?.nome ?? null,
+          subOrganizacaoId: row.subOrganizacao?.id ?? null,
+          subOrganizacaoNome: row.subOrganizacao?.nome ?? null,
+        }))
+        .sort((a, b) => {
+          const orgA = a.organizacaoNome ?? '';
+          const orgB = b.organizacaoNome ?? '';
+          if (orgA !== orgB) return orgA.localeCompare(orgB);
+          const subA = a.subOrganizacaoNome ?? '';
+          const subB = b.subOrganizacaoNome ?? '';
+          if (subA !== subB) return subA.localeCompare(subB);
+          return a.nome.localeCompare(b.nome);
+        });
+
+      return { bancoConectado: true, fluxos };
+    } catch {
+      return { bancoConectado: false, fluxos: [] };
+    }
+  }
+
+  private montarFluxosMemoria(fluxosBanco: FluxoBancoPainel[]) {
+    const isPadrao = this.isDefaultMode();
+    const mapaBanco = new Map(fluxosBanco.map((f) => [f.id, f]));
+    const mapaMemoria = new Map<string, FluxoMemoriaPainel>();
+
+    for (const resumo of this.estadoRepository.listarResumoFluxosMemoria()) {
+      const id = resumo.flowId ?? '';
+      const refBanco = id ? mapaBanco.get(id) : null;
+      const eFluxoPadrao = id === '' && isPadrao;
+
+      mapaMemoria.set(id, {
+        id,
+        nome:
+          refBanco?.nome ??
+          (eFluxoPadrao ? 'Memória (Padrão)' : id ? `Fluxo ${id}` : 'Fluxo sem ID'),
+        descricao:
+          refBanco?.descricao ??
+          (eFluxoPadrao
+            ? 'Fluxo padrão carregado em memória'
+            : 'Fluxo carregado no cache da máquina de estados'),
+        ativo: true,
+        origem: eFluxoPadrao ? 'padrao' : 'cache',
+        estados: resumo.estados,
+        transicoes: resumo.transicoes,
+        organizacaoNome: refBanco?.organizacaoNome ?? null,
+        subOrganizacaoNome: refBanco?.subOrganizacaoNome ?? null,
+        navegavel: true,
+      });
+    }
+
+    for (const [id, session] of Object.entries(MEMORY_SESSIONS)) {
+      const estados = Object.keys(session.configs).length;
+      const transicoes = this.contarTransicoesMemoria(session.transicoes);
+      mapaMemoria.set(id, {
+        id,
+        nome: session.nome || 'Sessão em memória',
+        descricao: 'Sessão temporária carregada via Zenvia API',
+        ativo: true,
+        origem: 'sessao_zenvia',
+        estados,
+        transicoes,
+        organizacaoNome: null,
+        subOrganizacaoNome: null,
+        navegavel: true,
+      });
+    }
+
+    if (isPadrao && !mapaMemoria.has('')) {
+      mapaMemoria.set('', {
+        id: '',
+        nome: 'Memória (Padrão)',
+        descricao: 'Fluxo padrão carregado em memória',
+        ativo: true,
+        origem: 'padrao',
+        estados: Object.keys(DEFAULT_ESTADOS).length,
+        transicoes: this.contarTransicoesMemoria(DEFAULT_TRANSICOES),
+        organizacaoNome: null,
+        subOrganizacaoNome: null,
+        navegavel: true,
+      });
+    }
+
+    return Array.from(mapaMemoria.values()).sort((a, b) =>
+      a.nome.localeCompare(b.nome),
+    );
+  }
+
+  async listarFluxosPainel() {
+    const { bancoConectado, fluxos } =
+      await this.listarFluxosBancoComOrganizacao();
+    return {
+      bancoConectado,
+      fluxosBanco: fluxos,
+      fluxosMemoria: this.montarFluxosMemoria(fluxos),
+    };
+  }
+
   // ─── Fluxos ─────────────────────────────────────────────────────────────
   
   async listarFluxos() {
@@ -118,11 +290,21 @@ export class AdminService {
   // ─── Estados ─────────────────────────────────────────────────────────────
 
   async listarEstados(flowId?: string) {
+    if (flowId && MEMORY_SESSIONS[flowId]) {
+      return Object.entries(MEMORY_SESSIONS[flowId].configs)
+        .map(([estado, data]) => ({
+          estado,
+          handler: data.handler,
+          descricao: data.descricao,
+          ativo: data.ativo !== false,
+          config: data.config,
+        }))
+        .sort((a, b) => a.estado.localeCompare(b.estado));
+    }
+
     if (this.isDefaultMode()) {
       let source = DEFAULT_ESTADOS;
-      if (flowId && MEMORY_SESSIONS[flowId]) {
-        source = MEMORY_SESSIONS[flowId].configs;
-      } else if (flowId && flowId !== '') {
+      if (flowId && flowId !== '') {
         return [];
       }
       return Object.entries(source)
@@ -213,11 +395,35 @@ export class AdminService {
   // ─── Transições ──────────────────────────────────────────────────────────
 
   async listarTransicoes(flowId?: string) {
+    if (flowId && MEMORY_SESSIONS[flowId]) {
+      const transicoes: Array<{
+        id: string | undefined;
+        estado_origem: string;
+        entrada: string;
+        estado_destino: string;
+        ativo: boolean;
+      }> = [];
+      for (const [estadoOrigem, lista] of Object.entries(
+        MEMORY_SESSIONS[flowId].transicoes,
+      )) {
+        for (const t of lista) {
+          transicoes.push({
+            id: t.id,
+            estado_origem: estadoOrigem,
+            entrada: t.entrada,
+            estado_destino: t.estadoDestino,
+            ativo: t.ativo !== false,
+          });
+        }
+      }
+      return transicoes.sort((a, b) =>
+        a.estado_origem.localeCompare(b.estado_origem),
+      );
+    }
+
     if (this.isDefaultMode()) {
       let source = DEFAULT_TRANSICOES;
-      if (flowId && MEMORY_SESSIONS[flowId]) {
-        source = MEMORY_SESSIONS[flowId].transicoes;
-      } else if (flowId && flowId !== '') {
+      if (flowId && flowId !== '') {
         return [];
       }
       

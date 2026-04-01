@@ -1,5 +1,15 @@
 const API = '/api/admin';
+const FLUXOS_MODO_KEY = 'bot_admin_fluxos_modo';
 let MODO_PADRAO = false;
+let modoFluxos =
+  localStorage.getItem(FLUXOS_MODO_KEY) === 'cadastrados'
+    ? 'cadastrados'
+    : 'ativos';
+const ORIGEM_LABEL = {
+  cache: 'Cache Runtime',
+  padrao: 'Padrão',
+  sessao_zenvia: 'Sessão Zenvia',
+};
 
 async function verificarModo() {
   try {
@@ -59,28 +69,141 @@ function obterFlowIdUrl() {
   return params.get('flowId');
 }
 
+function montarUrlFluxo(flowId) {
+  const valor = flowId == null ? '' : String(flowId);
+  return `index.html?flowId=${encodeURIComponent(valor)}`;
+}
+
+function renderizarBotoesModoFluxo() {
+  const btnAtivos = document.getElementById('btn-modo-ativos');
+  const btnCadastrados = document.getElementById('btn-modo-cadastrados');
+  if (!btnAtivos || !btnCadastrados) return;
+
+  const ativosSelecionado = modoFluxos === 'ativos';
+  btnAtivos.className = `btn ${ativosSelecionado ? 'btn-primary' : 'btn-ghost'} btn-sm`;
+  btnCadastrados.className = `btn ${ativosSelecionado ? 'btn-ghost' : 'btn-primary'} btn-sm`;
+  btnAtivos.style.border = 'none';
+  btnCadastrados.style.border = 'none';
+}
+
+function aplicarModoFluxosNaListagem(bancoConectado) {
+  const ativosWrapper = document.getElementById('fluxos-ativos-wrapper');
+  const cadastradosWrapper = document.getElementById('fluxos-cadastrados-wrapper');
+  if (!ativosWrapper || !cadastradosWrapper) return;
+
+  const mostrarAtivos = modoFluxos === 'ativos';
+  ativosWrapper.style.display = mostrarAtivos ? 'block' : 'none';
+  cadastradosWrapper.style.display = mostrarAtivos ? 'none' : 'block';
+
+  if (!mostrarAtivos && !bancoConectado) {
+    const statusBanco = document.getElementById('fluxos-banco-status');
+    const tabelaBanco = document.getElementById('tbl-fluxos-banco');
+    if (statusBanco) {
+      statusBanco.style.display = 'block';
+      statusBanco.textContent =
+        'Banco indisponível no momento. A listagem de fluxos cadastrados será exibida quando houver conexão.';
+    }
+    if (tabelaBanco) {
+      tabelaBanco.style.display = 'none';
+    }
+  }
+}
+
+function definirModoFluxos(novoModo) {
+  if (novoModo !== 'ativos' && novoModo !== 'cadastrados') return;
+  modoFluxos = novoModo;
+  localStorage.setItem(FLUXOS_MODO_KEY, modoFluxos);
+  renderizarBotoesModoFluxo();
+
+  if (obterFlowIdUrl() !== null) {
+    window.location.href = 'index.html';
+    return;
+  }
+  carregarFluxos();
+}
+
+function atualizarStatusBanco(bancoConectado) {
+  const statusLabel = document.getElementById('status-label');
+  if (!statusLabel) return;
+
+  if (bancoConectado) {
+    statusLabel.textContent = '🟢 Banco Online';
+    statusLabel.style.background = 'rgba(35,134,54,0.2)';
+    statusLabel.style.color = '#3fb950';
+    statusLabel.style.border = '1px solid rgba(35,134,54,0.4)';
+    return;
+  }
+
+  statusLabel.textContent = '🟡 Somente Memória';
+  statusLabel.style.background = 'rgba(210,153,34,0.2)';
+  statusLabel.style.color = '#d2991a';
+  statusLabel.style.border = '1px solid rgba(210,153,34,0.4)';
+}
+
 async function carregarFluxos() {
   document.getElementById('page-fluxos').style.display = 'block';
   document.getElementById('page-estados').style.display = 'none';
-  
-  const dados = await api('GET', '/fluxos');
-  const tb = document.getElementById('body-fluxos');
-  
-  if (!dados || dados.length === 0) {
-    tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">Nenhum fluxo encontrado.</td></tr>';
-    return;
+
+  const dados = await api('GET', '/fluxos/painel');
+  const fluxosMemoria = Array.isArray(dados?.fluxosMemoria) ? dados.fluxosMemoria : [];
+  const fluxosBanco = Array.isArray(dados?.fluxosBanco) ? dados.fluxosBanco : [];
+  const bancoConectado = dados?.bancoConectado === true;
+  const tbMemoria = document.getElementById('body-fluxos-memoria');
+  const tbBanco = document.getElementById('body-fluxos-banco');
+  const tabelaBanco = document.getElementById('tbl-fluxos-banco');
+  const statusBanco = document.getElementById('fluxos-banco-status');
+
+  atualizarStatusBanco(bancoConectado);
+
+  if (!fluxosMemoria.length) {
+    tbMemoria.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px">Nenhum fluxo carregado em memória.</td></tr>';
+  } else {
+    tbMemoria.innerHTML = fluxosMemoria.map((f) => {
+      const orgLabel = f.subOrganizacaoNome || f.organizacaoNome || '—';
+      const origemLabel = ORIGEM_LABEL[f.origem] || f.origem || 'Memória';
+      const podeAbrir = f.navegavel !== false;
+      return `
+      <tr>
+        <td><code>${f.id || 'padrão'}</code></td>
+        <td><strong>${escapeHtml(f.nome || 'Sem Nome')}</strong></td>
+        <td><span class="badge badge-blue">${escapeHtml(origemLabel)}</span></td>
+        <td style="color:var(--muted)">${escapeHtml(orgLabel)}</td>
+        <td>${Number(f.estados || 0)}</td>
+        <td>${Number(f.transicoes || 0)}</td>
+        <td>
+          <button class="btn btn-primary btn-sm" ${podeAbrir ? '' : 'disabled'} onclick="${podeAbrir ? `window.location.href='${montarUrlFluxo(f.id)}'` : ''}">Ver Estados</button>
+        </td>
+      </tr>`;
+    }).join('');
   }
-  
-  tb.innerHTML = dados.map(f => `
-    <tr>
-      <td><code>${f.id || 'padrão'}</code></td>
-      <td><strong>${escapeHtml(f.nome || 'Sem Nome')}</strong></td>
-      <td style="color:var(--muted)">${escapeHtml(f.descricao || '—')}</td>
-      <td><span class="badge ${f.ativo ? 'badge-green' : 'badge-gray'}">${f.ativo ? 'Ativo' : 'Inativo'}</span></td>
-      <td>
-        <button class="btn btn-primary btn-sm" onclick="window.location.href='index.html?flowId=${f.id || ''}'">Ver Estados</button>
-      </td>
-    </tr>`).join('');
+
+  if (!bancoConectado) {
+    tabelaBanco.style.display = 'none';
+    statusBanco.style.display = 'block';
+    statusBanco.textContent = 'Banco indisponível no momento. A listagem de fluxos cadastrados será exibida quando houver conexão.';
+  } else {
+    tabelaBanco.style.display = 'table';
+    statusBanco.style.display = 'none';
+
+    if (!fluxosBanco.length) {
+      tbBanco.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px">Nenhum fluxo cadastrado no banco.</td></tr>';
+    } else {
+      tbBanco.innerHTML = fluxosBanco.map((f) => `
+      <tr>
+        <td>${escapeHtml(f.organizacaoNome || '—')}</td>
+        <td>${escapeHtml(f.subOrganizacaoNome || '—')}</td>
+        <td><code>${f.id}</code></td>
+        <td><strong>${escapeHtml(f.nome || 'Sem Nome')}</strong></td>
+        <td style="color:var(--muted)">${escapeHtml(f.descricao || '—')}</td>
+        <td><span class="badge ${f.ativo ? 'badge-green' : 'badge-gray'}">${f.ativo ? 'Ativo' : 'Inativo'}</span></td>
+        <td>
+          <button class="btn btn-primary btn-sm" onclick="window.location.href='${montarUrlFluxo(f.id)}'">Ver Estados</button>
+        </td>
+      </tr>`).join('');
+    }
+  }
+
+  aplicarModoFluxosNaListagem(bancoConectado);
 }
 
 async function carregarEstados() {
@@ -258,7 +381,11 @@ function atualizarPreview() {
 }
 
 function escapeHtml(s) {
-  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 document.getElementById('modal-estado').addEventListener('click', e => {
@@ -502,4 +629,5 @@ async function testarRequisicao() {
 }
 
 verificarModo();
+renderizarBotoesModoFluxo();
 carregarEstados();

@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { GlobalKeywordService, GlobalKeywordDto } from './global-keyword.service';
 
-@Controller('admin/keywords-globais')
+@Controller('admin/atalhos-navegacao')
 export class GlobalKeywordController {
   constructor(private readonly service: GlobalKeywordService) { }
 

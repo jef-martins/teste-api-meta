@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Bot Admin - Keywords Globais</title>
+  <title>Bot Admin - Atalhos de Navegação</title>
   <link rel="stylesheet" href="/telas/estados/style.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
 </head>
@@ -19,13 +19,37 @@
     <a href="/telas/estados/index.html" class="tab" style="text-decoration:none">📁 Estados</a>
     <a href="/telas/transicoes/tabela/index.html" class="tab" style="text-decoration:none">🔀 Transições</a>
     <a href="/telas/keywords/index.html" class="tab active" style="text-decoration:none">🏷️ Keywords</a>
+    <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
+      <span style="color:var(--muted);font-size:12px;">Fluxos:</span>
+      <button id="btn-modo-ativos" class="btn btn-primary btn-sm" style="border:none;" onclick="definirModoFluxos('ativos')">Ativos</button>
+      <button id="btn-modo-cadastrados" class="btn btn-ghost btn-sm" style="border:none;" onclick="definirModoFluxos('cadastrados')">Cadastrados</button>
+    </div>
   </div>
 
   <div id="banner-modo" style="display:none; background:rgba(210,153,34,0.12); border:1px solid rgba(210,153,34,0.35); border-radius:8px; padding:10px 16px; margin:12px 16px 0; color:#d2991a; font-size:13px; align-items:center; gap:10px; line-height:1.5;"></div>
 
   <div class="page active">
     <div class="section-header">
-      <h2>Keywords Globais</h2>
+      <h2 id="fluxos-disponiveis-titulo">Fluxos Ativos em Memória</h2>
+    </div>
+    <table style="margin-bottom:16px;">
+      <thead>
+        <tr>
+          <th>Organização</th>
+          <th>Sub-organização</th>
+          <th>ID</th>
+          <th>Nome</th>
+          <th>Status</th>
+          <th>Origem</th>
+        </tr>
+      </thead>
+      <tbody id="body-fluxos-disponiveis">
+        <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">Carregando fluxos...</td></tr>
+      </tbody>
+    </table>
+
+    <div class="section-header">
+      <h2>Atalhos de Navegação</h2>
       <button class="btn btn-success" onclick="abrirNovaKeyword()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Nova Keyword

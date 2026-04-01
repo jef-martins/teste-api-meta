@@ -21,6 +21,12 @@ type SessaoCache = {
   nome?: string | null;
 };
 
+type FluxoMemoriaResumo = {
+  flowId: string | null;
+  estados: number;
+  transicoes: number;
+};
+
 @Injectable()
 export class EstadoRepository implements OnModuleInit {
   private readonly logger = new Logger(EstadoRepository.name);
@@ -142,6 +148,34 @@ export class EstadoRepository implements OnModuleInit {
       );
       // NUNCA zeramos o cache em erro — dados antigos continuam servindo o fluxo
     }
+  }
+
+  listarResumoFluxosMemoria(): FluxoMemoriaResumo[] {
+    const chaveFlow = (flowId: string | null) => flowId ?? '__default__';
+    const agrupado = new Map<string, FluxoMemoriaResumo>();
+
+    for (const config of this.configCache.values()) {
+      const key = chaveFlow(config.flowId ?? null);
+      const atual = agrupado.get(key) ?? {
+        flowId: config.flowId ?? null,
+        estados: 0,
+        transicoes: 0,
+      };
+      atual.estados += 1;
+      agrupado.set(key, atual);
+    }
+
+    for (const [estadoOrigem, lista] of this.transicoesCache.entries()) {
+      const flowId = this.configCache.get(estadoOrigem)?.flowId ?? null;
+      const key = chaveFlow(flowId);
+      const atual = agrupado.get(key) ?? { flowId, estados: 0, transicoes: 0 };
+      atual.transicoes += lista.length;
+      agrupado.set(key, atual);
+    }
+
+    return Array.from(agrupado.values()).sort((a, b) =>
+      (a.flowId ?? '').localeCompare(b.flowId ?? ''),
+    );
   }
 
   async obterConfigEstado(estado: string): Promise<{

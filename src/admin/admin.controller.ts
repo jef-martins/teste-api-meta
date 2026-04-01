@@ -33,6 +33,11 @@ export class AdminController {
     return this.adminService.listarFluxos();
   }
 
+  @Get('fluxos/painel')
+  listarFluxosPainel() {
+    return this.adminService.listarFluxosPainel();
+  }
+
   @Get('estados')
   listarEstados(@Query('flowId') flowId?: string) {
     return this.adminService.listarEstados(flowId);

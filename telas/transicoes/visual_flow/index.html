@@ -18,13 +18,18 @@
     <a href="/telas/estados/index.html" class="tab" style="text-decoration:none" id="link-estados">📁 Estados</a>
     <a href="/telas/transicoes/tabela/index.html" class="tab active" style="text-decoration:none" id="link-transicoes">🔀 Transições</a>
     <a href="/telas/keywords/index.html" class="tab" style="text-decoration:none" id="link-keywords">🏷️ Keywords</a>
+    <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
+      <span style="color:var(--muted);font-size:12px;">Fluxos:</span>
+      <button id="btn-modo-ativos" class="btn btn-primary btn-sm" style="border:none;" onclick="definirModoFluxos('ativos')">Ativos</button>
+      <button id="btn-modo-cadastrados" class="btn btn-ghost btn-sm" style="border:none;" onclick="definirModoFluxos('cadastrados')">Cadastrados</button>
+    </div>
   </div>
 
   <div id="banner-modo" style="display:none; background:rgba(210,153,34,0.12); border:1px solid rgba(210,153,34,0.35); border-radius:8px; padding:10px 16px; margin:12px 16px 0; color:#d2991a; font-size:13px; align-items:center; gap:10px; line-height:1.5;"></div>
 
   <div class="page active" id="page-fluxos" style="display: none;">
     <div class="section-header">
-      <h2>Selecione o Fluxo</h2>
+      <h2 id="fluxos-listagem-titulo">Fluxos Ativos em Memória</h2>
     </div>
     <table>
       <thead><tr>

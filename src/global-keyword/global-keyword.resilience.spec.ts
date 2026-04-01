@@ -256,7 +256,7 @@ describe('GlobalKeywordService.criar — vínculo obrigatório com fluxo', () =>
     const prisma = makePrismaMock(true);
     const repo = makeRepoMock();
     (prisma.botFluxo.findMany as jest.Mock).mockResolvedValueOnce([
-      { id: 'flow-1', nome: 'Fluxo Principal' },
+      { id: 'flow-1', nome: 'Fluxo Principal', ativo: true },
     ]);
     (prisma.botEstadoConfig.findFirst as jest.Mock).mockResolvedValueOnce({
       estado: 'MENU',

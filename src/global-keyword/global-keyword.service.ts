@@ -172,26 +172,35 @@ export class GlobalKeywordService implements OnModuleInit {
       );
     }
 
-    let fluxoPorId: { id: string; nome: string } | null = null;
+    let fluxoPorId: { id: string; nome: string; ativo: boolean } | null = null;
     if (flowIdInformado) {
       fluxoPorId = await this.prisma.botFluxo.findUnique({
         where: { id: flowIdInformado },
-        select: { id: true, nome: true },
+        select: { id: true, nome: true, ativo: true },
       });
       if (!fluxoPorId) {
         throw new BadRequestException('flow_id inválido.');
       }
+      if (!fluxoPorId.ativo) {
+        throw new BadRequestException(
+          'Fluxo inativo. Selecione um fluxo ativo para a keyword.',
+        );
+      }
     }
 
-    let fluxoPorNome: { id: string; nome: string } | null = null;
+    let fluxoPorNome: { id: string; nome: string; ativo: boolean } | null =
+      null;
     if (flowNomeInformado) {
       const candidatos = await this.prisma.botFluxo.findMany({
-        where: { nome: { equals: flowNomeInformado, mode: 'insensitive' } },
-        select: { id: true, nome: true },
+        where: {
+          nome: { equals: flowNomeInformado, mode: 'insensitive' },
+          ativo: true,
+        },
+        select: { id: true, nome: true, ativo: true },
         take: 2,
       });
       if (candidatos.length === 0) {
-        throw new BadRequestException('flow_nome inválido.');
+        throw new BadRequestException('flow_nome inválido ou inativo.');
       }
       if (candidatos.length > 1) {
         throw new BadRequestException(
@@ -209,6 +218,12 @@ export class GlobalKeywordService implements OnModuleInit {
     if (fluxoPorId && fluxoPorNome && fluxoPorId.id !== fluxoPorNome.id) {
       throw new BadRequestException(
         'flow_id e flow_nome informados não pertencem ao mesmo fluxo.',
+      );
+    }
+
+    if (!fluxo.ativo) {
+      throw new BadRequestException(
+        'Fluxo inativo. Selecione um fluxo ativo para a keyword.',
       );
     }
 
@@ -347,7 +362,7 @@ export class GlobalKeywordService implements OnModuleInit {
     if (this.isDefaultMode()) {
       const atual = this.buscarMemoriaPorId(id);
       if (!atual) {
-        throw new NotFoundException('Keyword global não encontrada.');
+        throw new NotFoundException('Atalho de navegação não encontrado.');
       }
 
       const duplicada = this.buscarMemoriaPorKeyword(keyword);
@@ -366,7 +381,7 @@ export class GlobalKeywordService implements OnModuleInit {
 
     const atual = await this.repository.buscarPorId(id);
     if (!atual) {
-      throw new NotFoundException('Keyword global não encontrada.');
+      throw new NotFoundException('Atalho de navegação não encontrado.');
     }
 
     const duplicada = await this.repository.buscarPorKeyword(keyword);
@@ -387,7 +402,7 @@ export class GlobalKeywordService implements OnModuleInit {
     if (this.isDefaultMode()) {
       const atual = this.buscarMemoriaPorId(id);
       if (!atual) {
-        throw new NotFoundException('Keyword global não encontrada.');
+        throw new NotFoundException('Atalho de navegação não encontrado.');
       }
       atual.ativo = ativo;
       atual.atualizadoEm = new Date();
@@ -396,7 +411,7 @@ export class GlobalKeywordService implements OnModuleInit {
 
     const atual = await this.repository.buscarPorId(id);
     if (!atual) {
-      throw new NotFoundException('Keyword global não encontrada.');
+      throw new NotFoundException('Atalho de navegação não encontrado.');
     }
 
     const atualizado = await this.repository.atualizarAtivo(id, ativo);
@@ -407,7 +422,7 @@ export class GlobalKeywordService implements OnModuleInit {
     if (this.isDefaultMode()) {
       const index = this.keywordsMemoria.findIndex((item) => item.id === id);
       if (index === -1) {
-        throw new NotFoundException('Keyword global não encontrada.');
+        throw new NotFoundException('Atalho de navegação não encontrado.');
       }
       this.keywordsMemoria.splice(index, 1);
       return { ok: true };
@@ -415,7 +430,7 @@ export class GlobalKeywordService implements OnModuleInit {
 
     const atual = await this.repository.buscarPorId(id);
     if (!atual) {
-      throw new NotFoundException('Keyword global não encontrada.');
+      throw new NotFoundException('Atalho de navegação não encontrado.');
     }
 
     await this.repository.excluir(id);

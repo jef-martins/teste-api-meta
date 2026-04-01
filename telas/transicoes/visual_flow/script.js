@@ -1,7 +1,12 @@
 const API = '/api/admin';
+const FLUXOS_MODO_KEY = 'bot_admin_fluxos_modo';
 let estadosCache = [];
 let transicoesCache = [];
 let MODO_PADRAO = false;
+let modoFluxos =
+  localStorage.getItem(FLUXOS_MODO_KEY) === 'cadastrados'
+    ? 'cadastrados'
+    : 'ativos';
 
 async function verificarModo() {
   try {
@@ -64,42 +69,88 @@ function obterFlowIdUrl() {
   return params.get('flowId');
 }
 
+function renderizarBotoesModoFluxo() {
+  const btnAtivos = document.getElementById('btn-modo-ativos');
+  const btnCadastrados = document.getElementById('btn-modo-cadastrados');
+  if (!btnAtivos || !btnCadastrados) return;
+
+  const ativosSelecionado = modoFluxos === 'ativos';
+  btnAtivos.className = `btn ${ativosSelecionado ? 'btn-primary' : 'btn-ghost'} btn-sm`;
+  btnCadastrados.className = `btn ${ativosSelecionado ? 'btn-ghost' : 'btn-primary'} btn-sm`;
+  btnAtivos.style.border = 'none';
+  btnCadastrados.style.border = 'none';
+}
+
+function definirModoFluxos(novoModo) {
+  if (novoModo !== 'ativos' && novoModo !== 'cadastrados') return;
+  modoFluxos = novoModo;
+  localStorage.setItem(FLUXOS_MODO_KEY, modoFluxos);
+  renderizarBotoesModoFluxo();
+
+  if (obterFlowIdUrl() !== null) {
+    window.location.href = 'index.html';
+    return;
+  }
+  carregarFluxos();
+}
+
 function escapeHtml(s) {
   return typeof s === 'string' ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : String(s);
 }
 
 function atualizarLinksTabs() {
   const flowId = obterFlowIdUrl();
-  if (flowId) {
+  if (flowId !== null) {
+    const flowIdParam = encodeURIComponent(flowId);
     const elEstados = document.getElementById('link-estados');
-    if (elEstados) elEstados.href = `/telas/estados/index.html?flowId=${flowId}`;
+    if (elEstados) elEstados.href = `/telas/estados/index.html?flowId=${flowIdParam}`;
     const elTransicoes = document.getElementById('link-transicoes');
-    if (elTransicoes) elTransicoes.href = `/telas/transicoes/tabela/index.html?flowId=${flowId}`;
+    if (elTransicoes) elTransicoes.href = `/telas/transicoes/tabela/index.html?flowId=${flowIdParam}`;
     
     // O botão de "Tabela" também deve manter o flowId
     const linksTabela = document.querySelectorAll('a[href="/telas/transicoes/tabela/index.html"]');
-    linksTabela.forEach(l => l.href = `/telas/transicoes/tabela/index.html?flowId=${flowId}`);
+    linksTabela.forEach(l => l.href = `/telas/transicoes/tabela/index.html?flowId=${flowIdParam}`);
   }
 }
 
 async function carregarFluxos() {
   document.getElementById('page-fluxos').style.display = 'block';
   document.getElementById('page-visual').style.display = 'none';
-  
-  const dados = await api('GET', '/fluxos');
+
+  const dados = await api('GET', '/fluxos/painel');
+  const bancoConectado = dados?.bancoConectado === true;
+  const fluxosMemoria = Array.isArray(dados?.fluxosMemoria)
+    ? dados.fluxosMemoria
+    : [];
+  const fluxosBanco = Array.isArray(dados?.fluxosBanco) ? dados.fluxosBanco : [];
+  const lista = modoFluxos === 'ativos' ? fluxosMemoria : fluxosBanco;
   const tb = document.getElementById('body-fluxos');
-  
-  if (!dados || dados.length === 0) {
-    tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">Nenhum fluxo encontrado.</td></tr>';
+  const titulo = document.getElementById('fluxos-listagem-titulo');
+  if (titulo) {
+    titulo.textContent =
+      modoFluxos === 'ativos'
+        ? 'Fluxos Ativos em Memória'
+        : 'Fluxos Cadastrados no Banco';
+  }
+
+  if (modoFluxos === 'cadastrados' && !bancoConectado) {
+    tb.innerHTML =
+      '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">Banco indisponível. Não foi possível listar fluxos cadastrados.</td></tr>';
     return;
   }
-  
-  tb.innerHTML = dados.map(f => `
+
+  if (!lista.length) {
+    tb.innerHTML =
+      '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">Nenhum fluxo encontrado.</td></tr>';
+    return;
+  }
+
+  tb.innerHTML = lista.map(f => `
     <tr>
       <td><code>${f.id || 'padrão'}</code></td>
       <td><strong>${escapeHtml(f.nome || 'Sem Nome')}</strong></td>
       <td style="color:var(--muted)">${escapeHtml(f.descricao || '—')}</td>
-      <td><span class="badge ${f.ativo ? 'badge-green' : 'badge-gray'}">${f.ativo ? 'Ativo' : 'Inativo'}</span></td>
+      <td><span class="badge ${f.ativo !== false ? 'badge-green' : 'badge-gray'}">${f.ativo !== false ? 'Ativo' : 'Inativo'}</span></td>
       <td>
         <button class="btn btn-primary btn-sm" onclick="window.location.href='index.html?flowId=${f.id || ''}'">Ver Transições</button>
       </td>
@@ -187,4 +238,5 @@ async function carregarDadosERenderizar() {
 
 // Inicialização
 verificarModo();
+renderizarBotoesModoFluxo();
 carregarDadosERenderizar();
