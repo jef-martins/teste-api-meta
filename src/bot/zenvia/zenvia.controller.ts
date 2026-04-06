@@ -2,8 +2,11 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   Headers,
+  HttpCode,
   Param,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -37,6 +40,27 @@ export class ZenviaController {
       baseUrl,
       webhookSecret,
     });
+  }
+
+  /**
+   * Lista todas as sessões NPS ativas (para o painel admin).
+   */
+  @Get('sessoes')
+  listarSessoes() {
+    return this.zenviaService.listarSessoesAtivas();
+  }
+
+  /**
+   * Atualiza o tempo de expiração por ociosidade de uma sessão ativa.
+   * Body: { tempoExpiracaoMinutos: number | null }
+   */
+  @Patch(':nps_id/expiracao')
+  @HttpCode(200)
+  atualizarExpiracao(
+    @Param('nps_id') nps_id: string,
+    @Body() body: { tempoExpiracaoMinutos: number | null },
+  ) {
+    return this.zenviaService.atualizarTempoExpiracao(nps_id, body?.tempoExpiracaoMinutos ?? null);
   }
 
   /**

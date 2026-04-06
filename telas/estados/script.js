@@ -204,6 +204,9 @@ async function carregarFluxos() {
   }
 
   aplicarModoFluxosNaListagem(bancoConectado);
+
+  // Carrega sessões NPS ativas junto com os fluxos
+  void carregarSessoesNps();
 }
 
 async function carregarEstados() {
@@ -631,3 +634,190 @@ async function testarRequisicao() {
 verificarModo();
 renderizarBotoesModoFluxo();
 carregarEstados();
+
+// ━━━━━━━━━━━━━━━ SESSÕES NPS ATIVAS ━━━━━━━━━━━━━━━
+
+let npsCountdownTimer = null;
+let npsUltimosDados = [];
+
+function formatarDuracao(ms) {
+  if (ms === null) return '<span style="color:var(--muted)">Sem expiração</span>';
+  if (ms <= 0) return '<span style="color:#f85149; font-weight:600;">Expirando...</span>';
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) return `<span style="color:#d2991a;">${h}h ${m % 60}m</span>`;
+  if (m > 0) return `<span style="color:${m < 2 ? '#f85149' : '#d2991a'}; font-weight:${m < 2 ? '700' : '400'}">${m}m ${s % 60}s</span>`;
+  return `<span style="color:#f85149; font-weight:700;">${s}s</span>`;
+}
+
+function formatarIdCurto(id) {
+  if (!id) return '—';
+  return id.length > 16 ? id.substring(0, 8) + '…' + id.slice(-4) : id;
+}
+
+function renderizarSessoesNps(sessoes) {
+  const tabela = document.getElementById('tbl-sessoes-nps');
+  const vazio = document.getElementById('sessoes-nps-vazio');
+  const tbody = document.getElementById('body-sessoes-nps');
+
+  if (!sessoes || sessoes.length === 0) {
+    tabela.style.display = 'none';
+    vazio.style.display = 'block';
+    return;
+  }
+
+  tabela.style.display = 'table';
+  vazio.style.display = 'none';
+
+  const agora = Date.now();
+
+  tbody.innerHTML = sessoes.map((s) => {
+    const ociosaMs = agora - Date.parse(s.ultimaAtividadeEm);
+    const tempoRestanteMs = s.tempoExpiracaoMs !== null
+      ? Math.max(0, s.tempoExpiracaoMs - ociosaMs)
+      : null;
+    const progresso = `${s.currentIndex}/${s.totalItens}`;
+    const expiracaoLabel = s.expiracaoEmAndamento
+      ? '<span style="color:#f85149; font-weight:700; animation: pulse 1s infinite;">⚡ Expirando...</span>'
+      : formatarDuracao(tempoRestanteMs);
+    const tempoExpiracaoMinutos = s.tempoExpiracaoMs !== null
+      ? Math.round(s.tempoExpiracaoMs / 60000)
+      : '';
+
+    return `
+    <tr data-nps-id="${escapeHtml(s.nps_id)}" data-tempo-expiracao-ms="${s.tempoExpiracaoMs ?? ''}" data-ultima-atividade="${s.ultimaAtividadeEm}">
+      <td><code style="color:#79c0ff; font-size:11px;" title="${escapeHtml(s.nps_id)}">${escapeHtml(formatarIdCurto(s.nps_id))}</code></td>
+      <td style="font-size:12px;">
+        <span style="color:var(--muted);">${escapeHtml(s.from)}</span><br>
+        <span>→ ${escapeHtml(s.to)}</span>
+      </td>
+      <td>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <div style="background:var(--surface2); border-radius:4px; height:6px; flex:1; overflow:hidden;">
+            <div style="background:#388bfd; height:100%; width:${Math.round((s.currentIndex / Math.max(s.totalItens, 1)) * 100)}%;"></div>
+          </div>
+          <span style="font-size:12px; color:var(--muted);">${progresso}</span>
+        </div>
+      </td>
+      <td style="font-size:12px; color:var(--muted);" class="nps-ultima-atividade" data-ts="${s.ultimaAtividadeEm}">—</td>
+      <td class="nps-tempo-restante" data-tempo-expiracao-ms="${s.tempoExpiracaoMs ?? ''}" data-ultima-atividade="${s.ultimaAtividadeEm}">${expiracaoLabel}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="abrirModalExpiracaoNps('${escapeHtml(s.nps_id)}', ${s.tempoExpiracaoMs !== null ? Math.round(s.tempoExpiracaoMs/60000) : 'null'})">⏱️ Expiração</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Atualiza os tempos relativos
+  atualizarTemposRelativosNps();
+}
+
+function atualizarTemposRelativosNps() {
+  const agora = Date.now();
+
+  document.querySelectorAll('.nps-ultima-atividade').forEach(el => {
+    const ts = Date.parse(el.dataset.ts);
+    if (isNaN(ts)) return;
+    const diff = agora - ts;
+    const s = Math.floor(diff / 1000);
+    const m = Math.floor(s / 60);
+    el.textContent = m > 0 ? `há ${m}m ${s % 60}s` : `há ${s}s`;
+  });
+
+  document.querySelectorAll('.nps-tempo-restante').forEach(el => {
+    const expiracaoMs = el.dataset.tempoExpiracaoMs;
+    const ultimaAtividade = el.dataset.ultimaAtividade;
+    if (!expiracaoMs || !ultimaAtividade) {
+      el.innerHTML = '<span style="color:var(--muted)">Sem expiração</span>';
+      return;
+    }
+    const ociosaMs = agora - Date.parse(ultimaAtividade);
+    const restanteMs = Math.max(0, Number(expiracaoMs) - ociosaMs);
+    el.innerHTML = formatarDuracao(restanteMs);
+  });
+}
+
+async function carregarSessoesNps() {
+  try {
+    const r = await fetch('/api/zenvia/sessoes');
+    if (!r.ok) throw new Error('Erro ao carregar sessões');
+    npsUltimosDados = await r.json();
+    renderizarSessoesNps(npsUltimosDados);
+  } catch (e) {
+    console.warn('Não foi possível carregar sessões NPS:', e);
+  }
+}
+
+// Inicia o countdown ao vivo (atualiza a cada segundo sem re-renderizar a tabela)
+function iniciarNpsCountdown() {
+  if (npsCountdownTimer) clearInterval(npsCountdownTimer);
+  npsCountdownTimer = setInterval(atualizarTemposRelativosNps, 1000);
+}
+
+// Recarrega dados do servidor a cada 30s e atualiza a tabela
+setInterval(carregarSessoesNps, 30000);
+iniciarNpsCountdown();
+
+function abrirModalExpiracaoNps(nps_id, tempoAtualMinutos) {
+  document.getElementById('exp-nps-id').value = nps_id;
+  document.getElementById('exp-nps-id-label').textContent = nps_id;
+  document.getElementById('exp-minutos').value = tempoAtualMinutos !== null ? tempoAtualMinutos : '';
+
+  const statusLabel = document.getElementById('exp-nps-status-label');
+  if (tempoAtualMinutos !== null) {
+    statusLabel.textContent = `Expira após ${tempoAtualMinutos}min de ociosidade`;
+    statusLabel.style.color = '#d2991a';
+  } else {
+    statusLabel.textContent = 'Sem expiração configurada';
+    statusLabel.style.color = '#3fb950';
+  }
+
+  document.getElementById('modal-expiracao-nps').classList.add('open');
+}
+
+function fecharModalExpiracaoNps() {
+  document.getElementById('modal-expiracao-nps').classList.remove('open');
+}
+
+async function salvarExpiracaoNps() {
+  const nps_id = document.getElementById('exp-nps-id').value;
+  const minStr = document.getElementById('exp-minutos').value.trim();
+  const minutos = minStr ? Number(minStr) : null;
+
+  if (minStr && (isNaN(minutos) || minutos <= 0)) {
+    toast('Digite um número válido de minutos (mínimo 1).', true);
+    return;
+  }
+
+  try {
+    const r = await fetch(`/api/zenvia/${encodeURIComponent(nps_id)}/expiracao`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tempoExpiracaoMinutos: minutos }),
+    });
+    const dados = await r.json();
+    if (!r.ok) throw new Error(dados?.message || 'Erro ao salvar');
+    toast(minutos ? `Expiração configurada: ${minutos}min` : 'Expiração desativada.');
+    fecharModalExpiracaoNps();
+    carregarSessoesNps();
+  } catch (e) {
+    toast('Erro ao salvar expiração: ' + e.message, true);
+  }
+}
+
+async function desativarExpiracaoNps() {
+  const nps_id = document.getElementById('exp-nps-id').value;
+  document.getElementById('exp-minutos').value = '';
+  try {
+    await fetch(`/api/zenvia/${encodeURIComponent(nps_id)}/expiracao`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tempoExpiracaoMinutos: null }),
+    });
+    toast('Expiração desativada para esta sessão.');
+    fecharModalExpiracaoNps();
+    carregarSessoesNps();
+  } catch (e) {
+    toast('Erro ao desativar expiração.', true);
+  }
+}

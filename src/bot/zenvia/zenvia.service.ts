@@ -157,6 +157,10 @@ type SessaoMemoria = {
   npsPrimeiraTentativaEm: string | null;
   npsUltimaTentativaEm: string | null;
   npsEmEnvio: boolean;
+  // Expiração por ociosidade
+  tempoExpiracaoMs: number | null;
+  ultimaAtividadeEm: string;
+  expiracaoEmAndamento: boolean;
   criadoEm: string;
   atualizadoEm: string;
   runtime: SessaoRuntime;
@@ -181,6 +185,8 @@ type StartInput = {
   ZENVIA_WHATSAPP_FROM?: string;
   ZENVIA_BASE_URL?: string;
   ZENVIA_WEBHOOK_SECRET?: string;
+  // Expiração por ociosidade (em minutos). null = sem expiração.
+  tempoExpiracaoMinutos?: number | null;
 };
 
 type NormalizedInbound = {
@@ -435,6 +441,7 @@ export class ZenviaService implements OnModuleDestroy {
     zenviaBaseUrl: string;
     zenviaHeaders: Record<string, string>;
     webhookSecret: string | null;
+    tempoExpiracaoMs: number | null;
   } {
     let payload: StartInput = {};
 
@@ -579,6 +586,13 @@ export class ZenviaService implements OnModuleDestroy {
           )
         : {};
 
+    // Tempo de expiração por ociosidade (em minutos)
+    const tempoExpiracaoMinutos = this.toNumberOrNull(payload.tempoExpiracaoMinutos);
+    const tempoExpiracaoMs =
+      tempoExpiracaoMinutos !== null && tempoExpiracaoMinutos > 0
+        ? tempoExpiracaoMinutos * 60 * 1000
+        : null;
+
     return {
       nps_id,
       conversa_id,
@@ -592,6 +606,7 @@ export class ZenviaService implements OnModuleDestroy {
       zenviaBaseUrl,
       zenviaHeaders,
       webhookSecret,
+      tempoExpiracaoMs,
     };
   }
 
@@ -1636,6 +1651,7 @@ export class ZenviaService implements OnModuleDestroy {
   private limparExpiradas() {
     const agora = Date.now();
     for (const [nps_id, sessao] of this.sessoes.entries()) {
+      // --- Retry de envio do resultado NPS após encerramento ---
       if (sessao.encerramentoExecutado && !sessao.resultadoNpsEnviado) {
         const baseEncerramento =
           Date.parse(sessao.encerramentoExecutadoEm || sessao.atualizadoEm) || agora;
@@ -1650,11 +1666,76 @@ export class ZenviaService implements OnModuleDestroy {
         continue;
       }
 
+      // --- Expiração por ociosidade do usuário ---
+      if (
+        sessao.status === 'active' &&
+        sessao.tempoExpiracaoMs !== null &&
+        sessao.tempoExpiracaoMs > 0 &&
+        !sessao.expiracaoEmAndamento
+      ) {
+        const ultimaAtividade = Date.parse(sessao.ultimaAtividadeEm);
+        if (!Number.isNaN(ultimaAtividade) && agora - ultimaAtividade >= sessao.tempoExpiracaoMs) {
+          this.logger.warn(
+            `[Zenvia][expiracao][trigger] nps_id=${nps_id} ocioso por ${Math.round((agora - ultimaAtividade) / 1000)}s (limite=${sessao.tempoExpiracaoMs / 1000}s)`,
+          );
+          void this.expirarSessaoPorOciosidade(sessao);
+          continue;
+        }
+      }
+
+      // --- TTL máximo da sessão (12h) ---
       const atualizacao = Date.parse(sessao.atualizadoEm);
       if (Number.isNaN(atualizacao)) continue;
       if (agora - atualizacao <= this.ttlMs) continue;
 
       this.removerSessao(nps_id, 'expired-ttl');
+    }
+  }
+
+  private async expirarSessaoPorOciosidade(sessao: SessaoMemoria) {
+    sessao.expiracaoEmAndamento = true;
+    const nps_id = sessao.nps_id;
+
+    try {
+      // Encontra a mensagem de expiração do item atual aguardando resposta
+      const estadoAtual = sessao.runtime.engine.estadosUsuarios.get(sessao.runtime.chatId);
+      const idx = estadoAtual ? sessao.runtime.stateToIndex.get(estadoAtual) : undefined;
+      const itemAtual = typeof idx === 'number' ? sessao.itens[idx] : null;
+      const mensagemExpiracao = itemAtual?.mensagemExpiracao ?? null;
+
+      if (mensagemExpiracao) {
+        this.logger.log(
+          `[Zenvia][expiracao][sending] nps_id=${nps_id} mensagem="${mensagemExpiracao}"`,
+        );
+        await this.enviarMensagem(
+          sessao.from,
+          sessao.to,
+          mensagemExpiracao,
+          sessao.zenviaToken,
+          sessao.zenviaBaseUrl,
+          sessao.zenviaHeaders,
+        );
+      }
+
+      sessao.encerramentoExecutado = true;
+      if (!sessao.encerramentoExecutadoEm) {
+        sessao.encerramentoExecutadoEm = this.nowIso();
+      }
+
+      this.atualizarStatusSessao(sessao);
+      await this.enviarCallback(sessao, 'expired');
+      await this.enviarResultadoNps(sessao, 'expiracao-ociosidade');
+
+      this.logger.log(
+        `[Zenvia][expiracao][done] nps_id=${nps_id}`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `[Zenvia][expiracao][error] nps_id=${nps_id} erro=${this.errorToString(err)}`,
+      );
+    } finally {
+      sessao.expiracaoEmAndamento = false;
+      this.removerSessao(nps_id, 'expiracao-ociosidade');
     }
   }
 
@@ -1712,6 +1793,9 @@ export class ZenviaService implements OnModuleDestroy {
       npsPrimeiraTentativaEm: null,
       npsUltimaTentativaEm: null,
       npsEmEnvio: false,
+      tempoExpiracaoMs: normalized.tempoExpiracaoMs,
+      ultimaAtividadeEm: now,
+      expiracaoEmAndamento: false,
       criadoEm: now,
       atualizadoEm: now,
     };
@@ -1758,6 +1842,60 @@ export class ZenviaService implements OnModuleDestroy {
       ok: true,
       nps_id,
       mensagem: 'apagado com sucesso',
+    };
+  }
+
+  listarSessoesAtivas() {
+    const agora = Date.now();
+    return Array.from(this.sessoes.values()).map((sessao) => {
+      const ultimaAtividade = Date.parse(sessao.ultimaAtividadeEm);
+      const ociosaMs = agora - ultimaAtividade;
+      const tempoRestanteMs =
+        sessao.tempoExpiracaoMs !== null
+          ? Math.max(0, sessao.tempoExpiracaoMs - ociosaMs)
+          : null;
+
+      return {
+        nps_id: sessao.nps_id,
+        conversa_id: sessao.conversa_id,
+        from: sessao.from,
+        to: sessao.to,
+        status: sessao.status,
+        currentIndex: sessao.currentIndex,
+        totalItens: sessao.itens.length,
+        criadoEm: sessao.criadoEm,
+        ultimaAtividadeEm: sessao.ultimaAtividadeEm,
+        tempoExpiracaoMs: sessao.tempoExpiracaoMs,
+        tempoRestanteMs,
+        expiracaoEmAndamento: sessao.expiracaoEmAndamento,
+      };
+    });
+  }
+
+  atualizarTempoExpiracao(nps_id: string, tempoExpiracaoMinutos: number | null) {
+    const sessao = this.sessoes.get(nps_id);
+    if (!sessao) {
+      throw new NotFoundException(`Sessão ${nps_id} não encontrada.`);
+    }
+
+    const tempoExpiracaoMs =
+      tempoExpiracaoMinutos !== null && tempoExpiracaoMinutos > 0
+        ? tempoExpiracaoMinutos * 60 * 1000
+        : null;
+
+    sessao.tempoExpiracaoMs = tempoExpiracaoMs;
+    sessao.ultimaAtividadeEm = this.nowIso(); // Reinicia o timer
+    void this.salvarSessaoRedis(sessao);
+
+    this.logger.log(
+      `[Zenvia][expiracao][config] nps_id=${nps_id} tempoExpiracaoMinutos=${tempoExpiracaoMinutos ?? 'sem-expiracao'}`,
+    );
+
+    return {
+      ok: true,
+      nps_id,
+      tempoExpiracaoMs,
+      tempoExpiracaoMinutos,
     };
   }
 
@@ -1882,6 +2020,9 @@ export class ZenviaService implements OnModuleDestroy {
     item.resposta = respostaLimpa;
     item.respostaMessageId = respostaMessageId || null;
     item.respondidoEm = this.nowIso();
+
+    // Reset do timer de ociosidade: usuário respondeu
+    sessao.ultimaAtividadeEm = this.nowIso();
 
     this.atualizarStatusSessao(sessao);
     await this.salvarSessaoRedis(sessao);
