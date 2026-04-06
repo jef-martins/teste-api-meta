@@ -186,6 +186,7 @@ type StartInput = {
   ZENVIA_BASE_URL?: string;
   ZENVIA_WEBHOOK_SECRET?: string;
   // Expiração por ociosidade (em minutos). null = sem expiração.
+  tempo_expiracao_minutos?: number | null;
   tempoExpiracaoMinutos?: number | null;
 };
 
@@ -587,7 +588,10 @@ export class ZenviaService implements OnModuleDestroy {
         : {};
 
     // Tempo de expiração por ociosidade (em minutos)
-    const tempoExpiracaoMinutos = this.toNumberOrNull(payload.tempoExpiracaoMinutos);
+    // Aceita tanto snake_case (tempo_expiracao_minutos) quanto camelCase (tempoExpiracaoMinutos)
+    const tempoExpiracaoMinutos = this.toNumberOrNull(
+      payload.tempo_expiracao_minutos ?? payload.tempoExpiracaoMinutos,
+    );
     const tempoExpiracaoMs =
       tempoExpiracaoMinutos !== null && tempoExpiracaoMinutos > 0
         ? tempoExpiracaoMinutos * 60 * 1000
