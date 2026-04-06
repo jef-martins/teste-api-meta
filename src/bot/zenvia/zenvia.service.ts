@@ -9,6 +9,7 @@ import { Client, TextContent } from '@zenvia/sdk';
 import { HandlerService } from '../handler.service';
 import { StateMachineEngine } from '../state-machine.engine';
 import { MEMORY_SESSIONS } from '../meta/default-state-machine.config';
+import { RedisService } from '../../redis/redis.service';
 
 type PrimitiveId = string | number;
 
@@ -240,7 +241,7 @@ export class ZenviaService implements OnModuleDestroy {
     process.env.ZENVIA_NPS_APPLICATION_KEY ??
     '9a2a4e71f8457120000d1258d663119c12637315';
 
-  constructor() {
+  constructor(private redis: RedisService) {
     this.cleanupTimer = setInterval(() => this.limparExpiradas(), 60_000);
   }
 
@@ -1475,10 +1476,54 @@ export class ZenviaService implements OnModuleDestroy {
     }
 
     this.atualizarStatusSessao(sessao);
+    await this.salvarSessaoRedis(sessao);
     await this.enviarResultadoNps(sessao, 'start');
     this.logger.log(
       `[Zenvia][FLOW][started] nps_id=${sessao.nps_id} status=${sessao.status} currentIndex=${sessao.currentIndex}`,
     );
+  }
+
+  private async salvarSessaoRedis(sessao: SessaoMemoria) {
+    try {
+      const data = { ...sessao };
+      // Removemos o runtime antes de serializar pois ele contém instâncias/classes que não viram JSON
+      delete (data as any).runtime;
+      
+      const key = `zenvia:session:${sessao.nps_id}`;
+      await this.redis.set(key, JSON.stringify(data), 'EX', 43200); // 12h de expiração
+      
+      const pair = this.normalizarPar(sessao.from, sessao.to);
+      await this.redis.set(`zenvia:pair:${pair}`, sessao.nps_id, 'EX', 43200);
+    } catch (err) {
+      this.logger.warn(`Falha ao espelhar sessão no Redis: ${this.errorToString(err)}`);
+    }
+  }
+
+  private async recuperarSessaoRedis(nps_id: string): Promise<SessaoMemoria | null> {
+    try {
+      const dataRaw = await this.redis.get(`zenvia:session:${nps_id}`);
+      if (!dataRaw) return null;
+
+      const sessao = JSON.parse(dataRaw) as SessaoMemoria;
+      // Reconstitui o runtime dinamicamente
+      sessao.runtime = this.criarRuntime(sessao);
+      
+      // Re-injeta o estado do usuário no engine
+      const chatId = sessao.runtime.chatId;
+      const estadoUsuario = await sessao.runtime.repo.obterEstadoUsuario(chatId);
+      if (estadoUsuario) {
+        sessao.runtime.engine.estadosUsuarios.set(chatId, estadoUsuario);
+      }
+
+      // Adiciona de volta ao Map local (In-Memory Access)
+      this.sessoes.set(nps_id, sessao);
+      this.sessoesAtivasPorPar.set(this.normalizarPar(sessao.from, sessao.to), nps_id);
+      
+      return sessao;
+    } catch (err) {
+      this.logger.error(`Erro ao recuperar sessão ${nps_id} do Redis: ${this.errorToString(err)}`);
+      return null;
+    }
   }
 
   private async enviarCallback(sessao: SessaoMemoria, event: string) {
@@ -1541,6 +1586,10 @@ export class ZenviaService implements OnModuleDestroy {
     this.sessoes.delete(nps_id);
     this.sessoesAtivasPorPar.delete(this.normalizarPar(sessao.from, sessao.to));
     delete MEMORY_SESSIONS[nps_id];
+    
+    void this.redis.del(`zenvia:session:${nps_id}`);
+    void this.redis.del(`zenvia:pair:${this.normalizarPar(sessao.from, sessao.to)}`);
+    
     this.logger.log(
       `[Zenvia][session][removed] nps_id=${nps_id} reason=${reason}`,
     );
@@ -1583,7 +1632,7 @@ export class ZenviaService implements OnModuleDestroy {
       `[Zenvia][start][normalized] nps_id=${normalized.nps_id} from=${this.maskPhone(normalized.from)} to=${this.maskPhone(normalized.to)} perguntas=${normalized.itens.length} baseUrl=${normalized.zenviaBaseUrl} token=${this.maskToken(normalized.zenviaToken)} headers=${this.stringifySafe(this.maskHeaders(normalized.zenviaHeaders))} npsHeaders=${this.stringifySafe(this.maskHeaders(normalized.npsHeaders))} webhookSecret=${normalized.webhookSecret ? this.maskToken(normalized.webhookSecret) : 'null'}`,
     );
 
-    const nps_idAtivo = this.sessoesAtivasPorPar.get(pair);
+    const nps_idAtivo = (await this.redis.get(`zenvia:pair:${pair}`)) || this.sessoesAtivasPorPar.get(pair);
     if (nps_idAtivo) {
       this.logger.warn(
         `[Zenvia][start][blocked] par já ativo nps_id=${nps_idAtivo} from=${this.maskPhone(normalized.from)} to=${this.maskPhone(normalized.to)}`,
@@ -1594,7 +1643,7 @@ export class ZenviaService implements OnModuleDestroy {
     }
 
     const nps_id = normalized.nps_id;
-    if (this.sessoes.has(nps_id)) {
+    if (this.sessoes.has(nps_id) || (await this.redis.get(`zenvia:session:${nps_id}`))) {
       this.logger.warn(
         `[Zenvia][start][blocked] nps_id já existente nps_id=${nps_id}`,
       );
@@ -1797,6 +1846,7 @@ export class ZenviaService implements OnModuleDestroy {
     item.respondidoEm = this.nowIso();
 
     this.atualizarStatusSessao(sessao);
+    await this.salvarSessaoRedis(sessao);
     await this.enviarResultadoNps(sessao, 'answered');
     await this.enviarCallback(sessao, 'answered');
 
@@ -1832,10 +1882,9 @@ export class ZenviaService implements OnModuleDestroy {
       `[Zenvia][webhook][normalized] from=${this.maskPhone(inbound.from)} to=${this.maskPhone(inbound.to)} nps_id=${inbound.nps_id ?? 'null'} sourceType=${inbound.sourceType} textLen=${inbound.text.length}`,
     );
 
-    const nps_idPorPar =
-      this.sessoesAtivasPorPar.get(this.normalizarPar(inbound.to, inbound.from)) ||
-      null;
-    let nps_id = inbound.nps_id || nps_idPorPar || null;
+    const pair = this.normalizarPar(inbound.to, inbound.from);
+    let nps_idAtivo = await this.redis.get(`zenvia:pair:${pair}`) || this.sessoesAtivasPorPar.get(pair);
+    let nps_id = inbound.nps_id || nps_idAtivo || null;
 
     if (!nps_id) {
       this.logger.log(
@@ -1844,18 +1893,22 @@ export class ZenviaService implements OnModuleDestroy {
       return { ok: true, ignored: true, reason: 'sessão ativa não encontrada' };
     }
 
-    let sessao = this.sessoes.get(nps_id);
-    if (!sessao && nps_idPorPar && nps_idPorPar !== nps_id) {
+    let sessao: SessaoMemoria | null | undefined = this.sessoes.get(nps_id);
+    if (!sessao) {
+      sessao = await this.recuperarSessaoRedis(nps_id);
+    }
+
+    if (!sessao && inbound.nps_id && nps_idAtivo && nps_idAtivo !== inbound.nps_id) {
       this.logger.warn(
-        `[Zenvia][webhook][fallback] nps_id_inbound=${nps_id} não encontrado; usando nps_id_ativo_par=${nps_idPorPar}`,
+        `[Zenvia][webhook][fallback] nps_id_inbound=${inbound.nps_id} não encontrado; tentando nps_id_ativo_par=${nps_idAtivo}`,
       );
-      nps_id = nps_idPorPar;
-      sessao = this.sessoes.get(nps_id);
+      nps_id = nps_idAtivo;
+      sessao = this.sessoes.get(nps_id) ?? (await this.recuperarSessaoRedis(nps_id));
     }
 
     if (!sessao) {
       this.logger.log(
-        `[Zenvia][webhook][ignored] reason=sessao-nao-encontrada nps_id=${nps_id} nps_idPar=${nps_idPorPar ?? 'null'}`,
+        `[Zenvia][webhook][ignored] reason=sessao-nao-encontrada nps_id=${nps_id}`,
       );
       return { ok: true, ignored: true, reason: 'sessão não encontrada' };
     }

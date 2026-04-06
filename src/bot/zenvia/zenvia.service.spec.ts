@@ -2,14 +2,20 @@ import { ZenviaService } from './zenvia.service';
 import { MEMORY_SESSIONS } from '../meta/default-state-machine.config';
 
 describe('ZenviaService', () => {
+  let mockRedis: any;
   let service: ZenviaService;
 
   beforeEach(() => {
-    service = new ZenviaService();
+    mockRedis = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue('OK'),
+      del: jest.fn().mockResolvedValue(1),
+    };
+    service = new ZenviaService(mockRedis);
   });
 
   afterEach(() => {
-    service.onModuleDestroy();
+    if (service) service.onModuleDestroy();
   });
 
   it('normaliza webhook interativo priorizando id/payload', () => {
