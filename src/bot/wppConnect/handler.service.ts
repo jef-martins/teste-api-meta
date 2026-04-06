@@ -102,7 +102,7 @@ type DynamicHandler = (
   chatId: string,
   corpo: string,
   engine: StateMachineEngine,
-) => Promise<unknown> | unknown;
+) => unknown;
 
 @Injectable()
 export class HandlerService {
@@ -110,9 +110,9 @@ export class HandlerService {
 
   /** Set by BotService after WPPConnect initialization */
   client: WppClient = {
-    sendText: async () => undefined,
-    sendListMessage: async () => undefined,
-    sendButtons: async () => undefined,
+    sendText: () => Promise.resolve(undefined),
+    sendListMessage: () => Promise.resolve(undefined),
+    sendButtons: () => Promise.resolve(undefined),
   };
 
   constructor(private estadoRepo: EstadoRepository) {}
@@ -132,6 +132,25 @@ export class HandlerService {
   private getErrorMessage(err: unknown): string {
     if (err instanceof Error) return err.message;
     return String(err);
+  }
+
+  private safeString(value: unknown): string {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return value.toString();
+    }
+    if (typeof value === 'object') return JSON.stringify(value);
+    return `${value as string}`;
+  }
+
+  /** Remove acentos/diacríticos e converte para minúsculas */
+  private normalizar(str: string): string {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
@@ -218,7 +237,7 @@ export class HandlerService {
 
     const obj = item as ItemInterativoObjeto;
 
-    const entrada = String(
+    const entrada = this.safeString(
       obj.entrada ??
         obj.id ??
         obj.rowId ??
@@ -229,7 +248,7 @@ export class HandlerService {
         obj.text ??
         '',
     ).trim();
-    const label = String(
+    const label = this.safeString(
       obj.label ??
         obj.title ??
         obj.text ??
@@ -247,7 +266,7 @@ export class HandlerService {
     return {
       entrada: entrada || label,
       label: label || entrada,
-      descricao: String(obj.descricao ?? obj.description ?? '').trim(),
+      descricao: this.safeString(obj.descricao ?? obj.description ?? '').trim(),
     };
   }
 
@@ -344,7 +363,10 @@ export class HandlerService {
       for (const assignment of assignments) {
         const key = assignment.key;
         const rawValue = assignment.value ?? '';
-        const interpolado = engine.interpolar(String(rawValue), dadosAtuais);
+        const interpolado = engine.interpolar(
+          this.safeString(rawValue),
+          dadosAtuais,
+        );
         if (key) engine.salvarDado(chatId, key, interpolado);
       }
       this.logger.log(
@@ -383,6 +405,8 @@ export class HandlerService {
           engine,
           '[auto-exit]',
         );
+      } else {
+        await engine.finalizarSessao(chatId);
       }
     }
   }
@@ -450,7 +474,10 @@ export class HandlerService {
       for (const assignment of captureAssignments) {
         const key = assignment.key;
         const rawValue = assignment.value ?? '';
-        const interpolado = engine.interpolar(String(rawValue), dadosAtuais);
+        const interpolado = engine.interpolar(
+          this.safeString(rawValue),
+          dadosAtuais,
+        );
         if (key) engine.salvarDado(chatId, key, interpolado);
       }
     }
@@ -490,7 +517,9 @@ export class HandlerService {
 
     if (
       Array.isArray(proximoCampo.valoresAceitos) &&
-      !proximoCampo.valoresAceitos.includes(corpo)
+      !proximoCampo.valoresAceitos.some(
+        (v: string) => this.normalizar(v) === this.normalizar(corpo),
+      )
     ) {
       const msgInvalida =
         proximoCampo.mensagemInvalida ??
@@ -520,7 +549,10 @@ export class HandlerService {
     }
 
     const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
-    if (!proximo) return;
+    if (!proximo) {
+      await engine.finalizarSessao(chatId);
+      return;
+    }
 
     await this.avancarEExecutar(
       proximo,
@@ -557,9 +589,10 @@ export class HandlerService {
           config.opcoes ?? [],
           'opcoes',
         );
+        const corpoNorm = this.normalizar(corpo);
         const match = opcoes.find(
           (o: ItemInterativoNormalizado) =>
-            (o.label || '').toLowerCase() === corpo.toLowerCase(),
+            this.normalizar(o.label || '') === corpoNorm,
         );
         if (match) {
           proximo = await this.estadoRepo.buscarProximoEstado(
@@ -676,9 +709,10 @@ export class HandlerService {
           config.botoes ?? [],
           'botoes',
         );
+        const corpoNorm = this.normalizar(corpo);
         const match = botoes.find(
           (b: ItemInterativoNormalizado) =>
-            (b.label || '').toLowerCase() === corpo.toLowerCase(),
+            this.normalizar(b.label || '') === corpoNorm,
         );
         if (match) {
           proximo = await this.estadoRepo.buscarProximoEstado(
@@ -733,20 +767,20 @@ export class HandlerService {
     const rodape = config.rodape ?? '';
 
     const timeout = new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error('sendButtons timeout após 5s')),
-        5000,
-      ),
+      setTimeout(() => reject(new Error('sendButtons timeout após 5s')), 5000),
     );
 
     try {
       await Promise.race([
-        this.client.sendButtons(destino, titulo, botoes.map(
-          (b: ItemInterativoNormalizado) => ({
+        this.client.sendButtons(
+          destino,
+          titulo,
+          botoes.map((b: ItemInterativoNormalizado) => ({
             id: String(b.entrada),
             text: String(b.label || b.entrada),
-          }),
-        ), rodape),
+          })),
+          rodape,
+        ),
         timeout,
       ]);
     } catch (err: unknown) {
@@ -970,7 +1004,7 @@ export class HandlerService {
           }
         } else {
           if (typeof valorExtraido !== 'object') {
-            valorParaTransicao = String(valorExtraido).toLowerCase();
+            valorParaTransicao = this.safeString(valorExtraido).toLowerCase();
           }
           let variaveis: Record<string, unknown> = {
             resposta: valorExtraido,
@@ -1019,6 +1053,8 @@ export class HandlerService {
           engine,
           corpo,
         );
+      } else {
+        await engine.finalizarSessao(chatId);
       }
     }
   }
@@ -1042,7 +1078,10 @@ export class HandlerService {
     for (const assignment of assignments) {
       const key = assignment.key;
       const rawValue = assignment.value ?? '';
-      const interpolado = engine.interpolar(String(rawValue), dadosChat);
+      const interpolado = engine.interpolar(
+        this.safeString(rawValue),
+        dadosChat,
+      );
       if (key) engine.salvarDado(chatId, key, interpolado);
     }
 
@@ -1063,6 +1102,8 @@ export class HandlerService {
         engine,
         '[setVariable]',
       );
+    } else {
+      await engine.finalizarSessao(chatId);
     }
   }
 
@@ -1101,6 +1142,8 @@ export class HandlerService {
         engine,
         '[delay]',
       );
+    } else {
+      await engine.finalizarSessao(chatId);
     }
   }
 }

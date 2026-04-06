@@ -328,6 +328,14 @@ export class StateMachineEngine {
     ]);
   }
 
+  async finalizarSessao(chatId: string) {
+    this.estadosUsuarios.delete(chatId);
+    this.dadosCapturados.delete(chatId);
+    this.estadosAvisados.delete(chatId);
+    await this.estadoRepo.limparEstadoUsuario(chatId);
+    this.logger.log(`[${chatId}] sessão finalizada — próxima mensagem inicia novo fluxo`);
+  }
+
   async transitarPorEntrada(
     chatId: string,
     estadoAtual: string,

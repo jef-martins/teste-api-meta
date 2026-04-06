@@ -34,11 +34,20 @@ export class EstadoRepository implements OnModuleInit {
   constructor(
     private prisma: PrismaService,
     private redis: RedisService,
-  ) { }
+  ) {}
 
   private getErrorMessage(err: unknown): string {
     if (err instanceof Error) return err.message;
     return String(err);
+  }
+
+  /** Remove acentos/diacríticos e converte para minúsculas */
+  private normalizar(str: string): string {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
@@ -167,33 +176,46 @@ export class EstadoRepository implements OnModuleInit {
     try {
       const transicoes = this.transicoesCache.get(estadoAtual) || [];
 
-      // Exact match first in cache
-      const exactMatch = transicoes.find((t) => t.entrada === entrada);
+      // Busca explícita por wildcard (ex: auto-transição)
+      if (entrada === '*') {
+        const wildcard = transicoes.find((t) => t.entrada === '*');
+        if (wildcard) return wildcard.estadoDestino;
+
+        const dbWildcard = await this.prisma.botEstadoTransicao.findFirst({
+          where: { estadoOrigem: estadoAtual, entrada: '*', ativo: true },
+          select: { estadoDestino: true },
+        });
+        return dbWildcard?.estadoDestino ?? null;
+      }
+
+      const entradaNorm = this.normalizar(entrada);
+
+      // Match in cache (accent + case insensitive)
+      const exactMatch = transicoes.find(
+        (t) => t.entrada !== '*' && this.normalizar(t.entrada) === entradaNorm,
+      );
       if (exactMatch) return exactMatch.estadoDestino;
 
       // Wildcard fallback in cache
-      if (acceptWildcard && entrada !== '*') {
+      if (acceptWildcard) {
         const wildcardMatch = transicoes.find((t) => t.entrada === '*');
         if (wildcardMatch) return wildcardMatch.estadoDestino;
       }
 
-      // Fallback to database if not found in cache (e.g. cache hasn't loaded properly)
-      let row = await this.prisma.botEstadoTransicao.findFirst({
-        where: {
-          estadoOrigem: estadoAtual,
-          entrada: { equals: entrada, mode: 'insensitive' },
-          ativo: true,
-        },
-        select: { estadoDestino: true },
+      // Fallback to database if not found in cache
+      const dbRows = await this.prisma.botEstadoTransicao.findMany({
+        where: { estadoOrigem: estadoAtual, ativo: true },
+        select: { entrada: true, estadoDestino: true },
       });
-      if (row) return row.estadoDestino;
 
-      if (acceptWildcard && entrada !== '*') {
-        row = await this.prisma.botEstadoTransicao.findFirst({
-          where: { estadoOrigem: estadoAtual, entrada: '*', ativo: true },
-          select: { estadoDestino: true },
-        });
-        if (row) return row.estadoDestino;
+      const dbMatch = dbRows.find((r) => {
+        return r.entrada !== '*' && this.normalizar(r.entrada) === entradaNorm;
+      });
+      if (dbMatch) return dbMatch.estadoDestino;
+
+      if (acceptWildcard) {
+        const dbWildcard = dbRows.find((r) => r.entrada === '*');
+        if (dbWildcard) return dbWildcard.estadoDestino;
       }
       return null;
     } catch (err: unknown) {
@@ -267,6 +289,21 @@ export class EstadoRepository implements OnModuleInit {
     } catch (err: unknown) {
       this.logger.error(
         `Erro ao salvar estado do usuário no Redis/DB: ${this.getErrorMessage(err)}`,
+      );
+    }
+  }
+
+  async limparEstadoUsuario(chatId: string) {
+    try {
+      await this.redis.del(`session:${chatId}`);
+      await this.prisma.botEstadoUsuario
+        .delete({ where: { chatId } })
+        .catch(() => {
+          /* registro pode não existir */
+        });
+    } catch (err: unknown) {
+      this.logger.error(
+        `Erro ao limpar estado do usuário [${chatId}]: ${this.getErrorMessage(err)}`,
       );
     }
   }
