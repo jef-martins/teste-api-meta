@@ -31,6 +31,24 @@ Em `recompileFlow`, após `flowService.recompilarFluxo`, emite `this.eventEmitte
 
 Injetado `EventEmitter2` no construtor do `CollaborationService`.
 
+### 3. Robustez do sync frontend (useYjs + flowStore + ComponentEditor)
+
+**Problema:** Ao adicionar sub-componentes (waitForResponse, sendMessage, etc.) a um nó no `ComponentEditor.vue`, a mudança podia não ser sincronizada com o Yjs em certos cenários de timing.
+
+**Causas identificadas:**
+
+1. **Race condition em watchers de name/description (`flowStore.js`)**: Os watchers `watch(name)` e `watch(description)` usavam flush padrão (`'pre'`), que é assíncrono. Quando `syncDocToStore()` definia `flowStore.name` com `_applyingRemote = true`, o watcher só disparava DEPOIS de `setApplyingRemote(false)`, causando `_markDirty()` espúrios e potencial interferência no scheduling de sync.
+
+2. **Falta de safety net para syncs perdidos (`useYjs.js`)**: O mecanismo RAF-based de sync depende de: `_markDirty()` → `_syncVersion++` → watch → `scheduleSync()` → RAF → `syncStoreToDoc()`. Se qualquer elo dessa cadeia falhasse (ex: RAF disparando com `yjsConnected = false`, deduplicação de watchers do Vue), a mudança era perdida permanentemente.
+
+3. **Poluição de localStorage (`ComponentEditor.vue`)**: `useFlowBuilder` era chamado sem `flowId`, fazendo `loadFromLocalStorage()` carregar dados genéricos e `saveToLocalStorage()` salvar dados do componente na chave genérica.
+
+**Correções:**
+
+- **`flowStore.js`**: Watchers de `name` e `description` agora usam `{ flush: 'sync' }`, garantindo que disparem sincronamente enquanto `_applyingRemote` ainda é `true`.
+- **`useYjs.js`**: Adicionado sync periódico (5s) como safety net. Compara `_lastSyncedVersion` com `flowStore._syncVersion` para detectar mudanças não sincronizadas. Só dispara `syncStoreToDoc()` quando há mudanças pendentes.
+- **`ComponentEditor.vue`**: `useFlowBuilder` agora recebe `flowId: props.componentId` para evitar poluição do localStorage genérico.
+
 ## Fluxos Afetados
 
 | Cenário | Antes | Depois |
@@ -39,3 +57,5 @@ Injetado `EventEmitter2` no construtor do `CollaborationService`.
 | Recompilação via Yjs | Cache do bot não atualizado (P2003) | Cache atualizado via `flow.updated` |
 | Editar componente inline no FlowEditor (close) | Funcionava via REST | Sem mudança |
 | Editar fluxo diretamente no FlowEditor | Funcionava via Yjs | Sem mudança (+ cache agora atualizado) |
+| Adicionar sub-componente no ComponentEditor | Podia não sincronizar em certos timings | Sync garantido via safety net periódico (5s) |
+| Adicionar sub-componente no FlowEditor | Funcionava (mesma correção melhora robustez) | Robustez melhorada via safety net |

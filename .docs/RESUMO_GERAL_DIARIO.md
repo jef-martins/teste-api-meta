@@ -19,6 +19,19 @@
   - Em `recompileFlow`, após `flowService.recompilarFluxo`, adicionado `this.eventEmitter.emit('flow.updated')`
   - Injetado `EventEmitter2` no construtor do `CollaborationService`
 
+### Frontend (`telebots-frontend`)
+
+**Bug 3: sub-componentes não sincronizavam via Yjs no ComponentEditor:**
+
+- **`flowStore.js`**: Watchers de `name`/`description` trocados para `{ flush: 'sync' }`. Antes, disparavam `_markDirty()` assincronamente após `syncDocToStore()` já ter liberado `_applyingRemote`, causando scheduling de sync espúrio.
+- **`useYjs.js`**: Adicionado sync periódico (5s) como safety net. Compara `_lastSyncedVersion` vs `flowStore._syncVersion` para detectar mudanças não sincronizadas pelo mecanismo RAF. Inicia ao entrar na sala, para ao desconectar.
+- **`ComponentEditor.vue`**: `useFlowBuilder` agora recebe `flowId: props.componentId` para evitar `loadFromLocalStorage()` carregar dados genéricos e poluir o localStorage com dados de componente.
+
+**Bug 4: componente de botões não usava `sendButtons` do WPPConnect:**
+
+- **`handler.service.ts`**: `_handlerBotoes` enviava botões como texto plano via `sendText()`. Reescrito para usar `client.sendButtons()` com timeout de 5s e fallback para texto em caso de erro, seguindo o mesmo padrão do `_handlerLista` com `sendListMessage()`.
+- **`bot.service.ts` e `handler.service.ts`**: Tipo `WppClient` atualizado para incluir `sendButtons` e `sendListMessage` como métodos obrigatórios (não opcionais). Removidos operadores `!` desnecessários nas chamadas.
+
 ---
 
 ## 19/03/2026 — Novas funcionalidades: hierarquia de usuários, roteamento e seed
