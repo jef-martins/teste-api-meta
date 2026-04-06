@@ -17,12 +17,12 @@ export class ZenviaController {
    * Inicia uma execução em memória.
    * Aceita body como array de etapas no formato:
    * [{ ordem, tipo, texto, opcoes_validacao }]
-   * ou objeto { executionId, from, to, itens|mensagens, ... }.
+   * ou objeto { nps_id, from, to, itens|mensagens, ... }.
    */
   @Post()
   iniciar(
     @Body() body: unknown,
-    @Query('executionId') executionId?: string,
+    @Query('nps_id') nps_id?: string,
     @Query('to') to?: string,
     @Query('from') from?: string,
     @Query('token') token?: string,
@@ -30,7 +30,7 @@ export class ZenviaController {
     @Query('webhookSecret') webhookSecret?: string,
   ) {
     return this.zenviaService.iniciarFluxo(body, {
-      executionId,
+      nps_id,
       to,
       from,
       token,
@@ -52,20 +52,20 @@ export class ZenviaController {
    * Permite registrar resposta manualmente por request.
    * Útil para integrações externas que já recebem a resposta do usuário.
    */
-  @Post(':executionId/resposta')
+  @Post(':nps_id/resposta')
   responderManual(
-    @Param('executionId') executionId: string,
+    @Param('nps_id') nps_id: string,
     @Body() body: { resposta?: string; messageId?: string },
   ) {
     return this.zenviaService.registrarResposta(
-      executionId,
+      nps_id,
       body?.resposta || '',
       body?.messageId || null,
     );
   }
 
-  @Delete(':executionId')
-  encerrar(@Param('executionId') executionId: string) {
-    return this.zenviaService.encerrarSessao(executionId);
+  @Delete(':nps_id')
+  encerrar(@Param('nps_id') nps_id: string) {
+    return this.zenviaService.encerrarSessao(nps_id);
   }
 }
