@@ -94,6 +94,7 @@ describe('ZenviaService', () => {
 
     const snapshot = await service.iniciarFluxo({
       executionId: 'exec-button-native-1',
+      conversa_id: 'conversa-button-native-1',
       from: '558599968524',
       to: '5514998089672',
       zenviaToken: 'token-teste',
@@ -125,6 +126,7 @@ describe('ZenviaService', () => {
 
     const snapshot = await service.iniciarFluxo({
       executionId: 'exec-list-native-1',
+      conversa_id: 'conversa-list-native-1',
       from: '558599968524',
       to: '5514998089672',
       zenviaToken: 'token-teste',
@@ -156,6 +158,7 @@ describe('ZenviaService', () => {
 
     const snapshot = await service.iniciarFluxo({
       executionId: 'exec-start-send-1',
+      conversa_id: 'conversa-start-send-1',
       from: '558599968524',
       to: '5514998089672',
       zenviaToken: 'token-teste',
@@ -182,6 +185,7 @@ describe('ZenviaService', () => {
 
     await service.iniciarFluxo({
       executionId: 'exec-next-step-1',
+      conversa_id: 'conversa-next-step-1',
       from: '558599968524',
       to: '5514998089672',
       zenviaToken: 'token-teste',
@@ -221,6 +225,7 @@ describe('ZenviaService', () => {
 
     await service.iniciarFluxo({
       executionId: 'exec-next-step-fail-1',
+      conversa_id: 'conversa-next-step-fail-1',
       from: '558599968524',
       to: '5514998089672',
       zenviaToken: 'token-teste',

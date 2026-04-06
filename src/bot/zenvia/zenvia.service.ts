@@ -129,7 +129,7 @@ type SessaoRuntime = {
 
 type SessaoMemoria = {
   executionId: string;
-  conversa_id: string | null;
+  conversa_id: string;
   from: string;
   to: string;
   status: SessaoStatus;
@@ -396,7 +396,7 @@ export class ZenviaService implements OnModuleDestroy {
     query?: StartQueryInput,
   ): {
     executionId: string;
-    conversa_id: string | null;
+    conversa_id: string;
     from: string;
     to: string;
     itens: ItemResposta[];
@@ -461,6 +461,12 @@ export class ZenviaService implements OnModuleDestroy {
     if (!executionId) {
       throw new BadRequestException(
         'executionId é obrigatório. Envie "executionId" no body ou query.',
+      );
+    }
+
+    if (!conversa_id) {
+      throw new BadRequestException(
+        'conversa_id é obrigatório. Envie "conversa_id" no body da requisição.',
       );
     }
 
@@ -1344,11 +1350,9 @@ export class ZenviaService implements OnModuleDestroy {
 
     const payload: Record<string, unknown> = {
       executionId: sessao.executionId,
+      conversa_id: sessao.conversa_id,
       respostas: this.montarResultadoNps(sessao),
     };
-    if (sessao.conversa_id) {
-      payload.conversa_id = sessao.conversa_id;
-    }
 
     const headers: Record<string, string> = {
       ...sessao.npsHeaders,
