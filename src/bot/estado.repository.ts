@@ -19,6 +19,11 @@ type TransicaoCacheItem = {
 type SessaoCache = {
   estado?: string;
   nome?: string | null;
+  flowId?: string | null;
+  ultimaAtividadeEm?: string;
+  meta?: {
+    tempoExpiracaoMs?: number | null;
+  };
 };
 
 type FluxoMemoriaResumo = {
@@ -31,10 +36,6 @@ type FluxoMemoriaResumo = {
 export class EstadoRepository implements OnModuleInit {
   private readonly logger = new Logger(EstadoRepository.name);
 
-  /**
-   * Cache imutável — JAMAIS zerado em erro.
-   * Só é substituído em caso de sucesso no warmUpCache (Stale-While-Revalidate).
-   */
   private configCache = new Map<string, EstadoConfigCacheItem>();
   private transicoesCache = new Map<string, TransicaoCacheItem[]>();
   private estadoInicialCache: string | null = null;
@@ -94,10 +95,6 @@ export class EstadoRepository implements OnModuleInit {
     await this.warmUpCache();
   }
 
-  /**
-   * Carrega todas as definições ativas para a memória.
-   * Cache anterior é preservado se o banco falhar (Stale-While-Revalidate).
-   */
   @OnEvent('flow.updated')
   @OnEvent('db.reconnected')
   async warmUpCache() {
@@ -116,7 +113,6 @@ export class EstadoRepository implements OnModuleInit {
         }),
       ]);
 
-      // Constrói novos maps antes de substituir — evita estado parcialmente atualizado
       const novoConfigCache = new Map<string, EstadoConfigCacheItem>();
       configs.forEach((c) =>
         novoConfigCache.set(c.estado, {
@@ -134,7 +130,6 @@ export class EstadoRepository implements OnModuleInit {
         novaTransicoesCache.set(t.estadoOrigem, lista);
       });
 
-      // Substitui apenas em caso de sucesso completo
       this.configCache = novoConfigCache;
       this.transicoesCache = novaTransicoesCache;
       this.estadoInicialCache = estadoInicialNode?.estado || 'NOVO';
@@ -146,7 +141,6 @@ export class EstadoRepository implements OnModuleInit {
       this.logger.error(
         `{"event":"cache_refresh_failed","msg":"Erro ao carregar cache — mantendo dados anteriores","error":"${this.getErrorMessage(err)}"}`,
       );
-      // NUNCA zeramos o cache em erro — dados antigos continuam servindo o fluxo
     }
   }
 
@@ -178,12 +172,33 @@ export class EstadoRepository implements OnModuleInit {
     );
   }
 
-  async obterConfigEstado(estado: string): Promise<{
+  async obterConfigEstado(
+    estado: string,
+    chatId?: string,
+  ): Promise<{
     handler: string;
     descricao: string | null;
     flowId?: string | null;
     config: Record<string, unknown>;
   } | null> {
+    if (chatId) {
+      try {
+        const sessaoRaw = await this.redis.get(`session:${chatId}`);
+        if (sessaoRaw) {
+          const sessao = JSON.parse(sessaoRaw) as any;
+          if (sessao.dynamic_states && sessao.dynamic_states[estado]) {
+            const ds = sessao.dynamic_states[estado];
+            return {
+              handler: ds.handler,
+              descricao: ds.descricao || null,
+              flowId: 'DYNAMIC',
+              config: ds.config || {},
+            };
+          }
+        }
+      } catch {}
+    }
+
     // 1. Tenta cache imutável primeiro
     const cached = this.configCache.get(estado);
     if (cached) {
@@ -220,7 +235,30 @@ export class EstadoRepository implements OnModuleInit {
     estadoAtual: string,
     entrada: string,
     acceptWildcard = true,
+    chatId?: string,
   ): Promise<string | null> {
+    if (chatId) {
+      try {
+        const sessaoRaw = await this.redis.get(`session:${chatId}`);
+        if (sessaoRaw) {
+          const sessao = JSON.parse(sessaoRaw) as any;
+          if (sessao.dynamic_transitions && sessao.dynamic_transitions[estadoAtual]) {
+            const transicoes = sessao.dynamic_transitions[estadoAtual] as TransicaoCacheItem[];
+            
+            // Exact match
+            const exact = transicoes.find(t => t.entrada === entrada);
+            if (exact) return exact.estadoDestino;
+
+            // Wildcard
+            if (acceptWildcard && entrada !== '*') {
+              const wildcard = transicoes.find(t => t.entrada === '*');
+              if (wildcard) return wildcard.estadoDestino;
+            }
+          }
+        }
+      } catch {}
+    }
+
     try {
       const transicoes = this.transicoesCache.get(estadoAtual) || [];
 
@@ -310,10 +348,26 @@ export class EstadoRepository implements OnModuleInit {
     nome?: string | null,
   ) {
     try {
-      // 1. Atualizar Redis (Expira em 7 dias = 604800 segundos)
+      // 1. Atualizar Redis preservando dados dinâmicos (merge-aware)
+      const rawOld = await this.redis.get(`session:${chatId}`);
+      let sessao: SessaoCache = {};
+      if (rawOld) {
+        try { sessao = JSON.parse(rawOld); } catch {}
+      }
+      sessao.estado = estado;
+      if (nome) sessao.nome = nome;
+
+      // Tenta descobrir o flowId se ainda não estiver na sessão
+      if (!sessao.flowId) {
+        const config = await this.obterConfigEstado(estado, chatId);
+        if (config && config.flowId) {
+          sessao.flowId = config.flowId;
+        }
+      }
+      
       await this.redis.set(
         `session:${chatId}`,
-        JSON.stringify({ estado, nome }),
+        JSON.stringify(sessao),
         'EX',
         604800,
       );

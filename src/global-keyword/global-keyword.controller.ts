@@ -8,7 +8,8 @@ import {
   Post,
   Put,
 } from '@nestjs/common';
-import { GlobalKeywordService, GlobalKeywordDto } from './global-keyword.service';
+import { GlobalKeywordService } from './global-keyword.service';
+import type { GlobalKeywordData } from './interfaces/global-keyword.interface';
 
 @Controller('admin/atalhos-navegacao')
 export class GlobalKeywordController {
@@ -20,12 +21,12 @@ export class GlobalKeywordController {
   }
 
   @Post()
-  criar(@Body() body: GlobalKeywordDto) {
+  criar(@Body() body: GlobalKeywordData) {
     return this.service.criar(body);
   }
 
   @Put(':id')
-  atualizar(@Param('id') id: string, @Body() body: GlobalKeywordDto) {
+  atualizar(@Param('id') id: string, @Body() body: GlobalKeywordData) {
     return this.service.atualizar(id, body);
   }
 

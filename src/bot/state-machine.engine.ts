@@ -130,7 +130,9 @@ export class StateMachineEngine {
       typeof entradaOriginal === 'string' ? entradaOriginal.trim() : '';
     const entradaNormalizada = entradaBruta.toLowerCase();
 
-    const estadoPadrao = await this.estadoRepo.obterEstadoInicial();
+    const estadoPadrao = await this.estadoRepo.obterConfigEstado('INICIO', chatId)
+      ? 'INICIO'
+      : await this.estadoRepo.obterEstadoInicial();
 
     let estadoAtualUsuario = this.estadosUsuarios.get(chatId);
     if (!estadoAtualUsuario) {
@@ -171,6 +173,7 @@ export class StateMachineEngine {
     const estadoAtualContexto = this.estadosUsuarios.get(chatId) ?? estadoPadrao;
     const configEstadoAtual = (await this.estadoRepo.obterConfigEstado(
       estadoAtualContexto,
+      chatId,
     )) as EstadoConfig | null;
     const flowIdContexto =
       typeof configEstadoAtual?.flowId === 'string'
@@ -184,6 +187,7 @@ export class StateMachineEngine {
     if (keywordGlobal) {
       const configDestino = (await this.estadoRepo.obterConfigEstado(
         keywordGlobal.estadoDestino,
+        chatId,
       )) as EstadoConfig | null;
 
       if (!configDestino) {
@@ -225,6 +229,7 @@ export class StateMachineEngine {
         ? configEstadoAtual
         : ((await this.estadoRepo.obterConfigEstado(
             estadoAtual,
+            chatId,
           )) as EstadoConfig | null);
 
     if (!config) {
@@ -276,6 +281,7 @@ export class StateMachineEngine {
 
         const configInicial = (await this.estadoRepo.obterConfigEstado(
           estadoPadrao,
+          chatId,
         )) as EstadoConfig | null;
         if (!configInicial) {
           return;
@@ -360,6 +366,7 @@ export class StateMachineEngine {
       estadoAtual,
       entrada,
       acceptWildcard,
+      chatId,
     );
     if (!proximo) {
       return null;
@@ -370,6 +377,7 @@ export class StateMachineEngine {
     if (executarHandler && actionDelegate) {
       const configProximo = (await this.estadoRepo.obterConfigEstado(
         proximo,
+        chatId,
       )) as EstadoConfig | null;
       if (!configProximo) {
         return proximo;

@@ -23,10 +23,23 @@ export class DefaultEstadoRepository {
   private readonly userStates = new Map<string, string>();
 
   /**
+   * Retorna um resumo para exibição no painel administrativo.
+   */
+  listarResumoFluxosMemoria(): Array<{ flowId: string | null; estados: number; transicoes: number }> {
+    return [
+      {
+        flowId: '',
+        estados: Object.keys(DEFAULT_ESTADOS).length,
+        transicoes: Object.values(DEFAULT_TRANSICOES).reduce((acc, curr) => acc + curr.length, 0),
+      }
+    ];
+  }
+
+  /**
    * Retorna a configuração de um estado da máquina padrão.
    * Equivalente a bot_estado_config no banco de dados.
    */
-  obterConfigEstado(estado: string): Promise<{
+  obterConfigEstado(estado: string, _chatId?: string): Promise<{
     handler: string;
     descricao: string;
     flowId?: string;
@@ -55,6 +68,7 @@ export class DefaultEstadoRepository {
     estadoAtual: string,
     entrada: string,
     acceptWildcard = true,
+    _chatId?: string,
   ): Promise<string | null> {
     const transicoes = DEFAULT_TRANSICOES[estadoAtual] ?? [];
     const transicoesAtivas = transicoes.filter((t) => t.ativo !== false);

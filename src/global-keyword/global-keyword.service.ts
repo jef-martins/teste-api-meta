@@ -12,8 +12,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   DEFAULT_ESTADOS,
   MEMORY_SESSIONS,
-} from '../bot/meta/default-state-machine.config';
+} from '../bot/default-state-machine.config';
 import { GlobalKeywordRepository } from './global-keyword.repository';
+import { GlobalKeywordData } from './interfaces/global-keyword.interface';
 
 type KeywordMemoria = {
   id: string;
@@ -26,22 +27,11 @@ type KeywordMemoria = {
   atualizadoEm: Date;
 };
 
-export class GlobalKeywordDto {
-  keyword!: string;
-  flow_nome?: string;
-  flow_id?: string;
-  estado_destino!: string;
-  ativo?: boolean;
-}
 
 @Injectable()
 export class GlobalKeywordService implements OnModuleInit {
   private readonly logger = new Logger(GlobalKeywordService.name);
 
-  /**
-   * keywordsMemoria: usado exclusivamente no modo BOT_STATE_MACHINE_PADRAO=true.
-   * Para o modo normal (banco), o cache é mantido no GlobalKeywordRepository.
-   */
   private readonly keywordsMemoria: KeywordMemoria[] = [];
 
   constructor(
@@ -54,10 +44,6 @@ export class GlobalKeywordService implements OnModuleInit {
     await this._sincronizarCacheRepositorio();
   }
 
-  /**
-   * Sincroniza o cache interno do repositório com o banco.
-   * Seguro mesmo se o banco estiver indisponível (repositório mantém stale cache).
-   */
   @OnEvent('db.reconnected')
   @OnEvent('flow.updated')
   async _sincronizarCacheRepositorio() {
@@ -266,7 +252,7 @@ export class GlobalKeywordService implements OnModuleInit {
     }
   }
 
-  private validarPayload(data: GlobalKeywordDto) {
+  private validarPayload(data: GlobalKeywordData) {
     const keyword = this.normalizarKeyword(data.keyword);
     const flowNomeInformado = this.normalizarFlowNome(data.flow_nome);
     const flowIdInformado = this.normalizarFlowId(data.flow_id);
@@ -307,7 +293,7 @@ export class GlobalKeywordService implements OnModuleInit {
     return registros.map((item) => this.serializar(item));
   }
 
-  async criar(data: GlobalKeywordDto) {
+  async criar(data: GlobalKeywordData) {
     const { keyword, flowNomeInformado, flowIdInformado, estadoDestino, ativo } =
       this.validarPayload(data);
     const { flowId, flowNome } = await this.resolverFluxo(
@@ -350,7 +336,7 @@ export class GlobalKeywordService implements OnModuleInit {
     return this.serializar(criado);
   }
 
-  async atualizar(id: string, data: GlobalKeywordDto) {
+  async atualizar(id: string, data: GlobalKeywordData) {
     const { keyword, flowNomeInformado, flowIdInformado, estadoDestino, ativo } =
       this.validarPayload(data);
     const { flowId, flowNome } = await this.resolverFluxo(
@@ -437,13 +423,6 @@ export class GlobalKeywordService implements OnModuleInit {
     return { ok: true };
   }
 
-  /**
-   * Lookup de keyword ativa com fallback total:
-   * 1. Modo padrão (memória volátil)
-   * 2. Repositório (banco → cache stale, nunca lança exceção)
-   *
-   * NUNCA propaga erro para o chamador — retorna null em qualquer falha.
-   */
   async buscarKeywordAtiva(
     keywordInformada: string,
     flowIdContexto: string | null,

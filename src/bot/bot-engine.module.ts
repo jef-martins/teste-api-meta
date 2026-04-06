@@ -4,6 +4,7 @@ import { DefaultEstadoRepository } from './default-estado.repository';
 import { HandlerService } from './handler.service';
 import { StateMachineEngine } from './state-machine.engine';
 import { IdleExpirationService } from './idle-expiration.service';
+import { HandlerZenviaService } from './zenvia/handler-zenvia.service';
 
 /**
  * Verifica se o bot deve operar no modo de memória padrão (in-memory)
@@ -29,12 +30,14 @@ const estadoRepositoryProvider = isDefaultMode
     estadoRepositoryProvider,
     DefaultEstadoRepository,
     HandlerService,
+    HandlerZenviaService,
     StateMachineEngine,
     IdleExpirationService,
   ],
   exports: [
     EstadoRepository,
     HandlerService,
+    HandlerZenviaService,
     StateMachineEngine,
     IdleExpirationService,
   ],

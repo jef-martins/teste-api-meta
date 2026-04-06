@@ -15,10 +15,7 @@ export class PrismaService
   private readonly logger = new Logger(PrismaService.name);
   public isConnected = false;
 
-  /** Intervalo do health-check em ms (padrão: 1 min) */
   private readonly healthCheckIntervalMs = 60_000;
-
-  /** Timer do health-check periódico */
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly eventEmitter: EventEmitter2) {
@@ -38,7 +35,6 @@ export class PrismaService
     this._startHealthCheck();
   }
 
-  /** Tenta conectar (ou reconectar) ao banco. */
   private async _tryConnect(): Promise<void> {
     try {
       await this.$connect();
@@ -63,10 +59,6 @@ export class PrismaService
     }
   }
 
-  /**
-   * Realiza um health-check ativo com query leve ($queryRaw `SELECT 1`).
-   * Atualiza `isConnected` e dispara `db.reconnected` quando volta.
-   */
   async isAlive(): Promise<boolean> {
     try {
       await this.$queryRaw`SELECT 1`;
@@ -85,7 +77,6 @@ export class PrismaService
     }
   }
 
-  /** Inicia o health-check periódico. */
   private _startHealthCheck(): void {
     this.healthCheckTimer = setInterval(() => {
       void this.isAlive();

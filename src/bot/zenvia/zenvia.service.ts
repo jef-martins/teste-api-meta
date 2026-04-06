@@ -6,11 +6,12 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { Client, TextContent } from '@zenvia/sdk';
+import { EstadoRepository } from '../estado.repository';
 import { HandlerService } from '../handler.service';
 import { StateMachineEngine } from '../state-machine.engine';
-import { MEMORY_SESSIONS } from '../default-state-machine.config';
 import { RedisService } from '../../redis/redis.service';
 import { IdleExpirationService } from '../idle-expiration.service';
+import { HandlerZenviaService } from './handler-zenvia.service';
 
 type PrimitiveId = string | number;
 
@@ -48,125 +49,6 @@ type ItemResposta = {
 
 type SessaoStatus = 'active' | 'completed';
 
-type EstadoConfigMemoria = {
-  handler: string;
-  descricao: string;
-  config: Record<string, unknown>;
-};
-
-type TransicaoMemoria = {
-  entrada: string;
-  estadoDestino: string;
-};
-
-class ZenviaEstadoRepoMemoria {
-  private readonly estadoInicial: string;
-  private readonly configs = new Map<string, EstadoConfigMemoria>();
-  private readonly transicoes = new Map<string, TransicaoMemoria[]>();
-  private readonly estadosUsuarios = new Map<string, string>();
-
-  constructor(args: {
-    estadoInicial: string;
-    configs: Map<string, EstadoConfigMemoria>;
-    transicoes: Map<string, TransicaoMemoria[]>;
-  }) {
-    this.estadoInicial = args.estadoInicial;
-    this.configs = args.configs;
-    this.transicoes = args.transicoes;
-  }
-
-  getEstadoInicialSync(): string {
-    return this.estadoInicial;
-  }
-
-  async obterConfigEstado(estado: string): Promise<EstadoConfigMemoria | null> {
-    return this.configs.get(estado) ?? null;
-  }
-
-  async buscarProximoEstado(
-    estadoAtual: string,
-    entrada: string,
-    acceptWildcard = true,
-  ): Promise<string | null> {
-    const lista = this.transicoes.get(estadoAtual) ?? [];
-    const exata = lista.find((t) => t.entrada === entrada);
-    if (exata) return exata.estadoDestino;
-
-    if (acceptWildcard && entrada !== '*') {
-      const coringa = lista.find((t) => t.entrada === '*');
-      if (coringa) return coringa.estadoDestino;
-    }
-
-    return null;
-  }
-
-  async obterEstadoUsuario(chatId: string): Promise<string | null> {
-    return this.estadosUsuarios.get(chatId) ?? null;
-  }
-
-  async salvarEstadoUsuario(chatId: string, estado: string): Promise<void> {
-    this.estadosUsuarios.set(chatId, estado);
-  }
-
-  async registrarTransicao(): Promise<void> {
-    return;
-  }
-
-  async obterEstadoInicial(): Promise<string> {
-    return this.estadoInicial;
-  }
-
-  async obterVariaveisFluxoAtivo(): Promise<Record<string, string>> {
-    return {};
-  }
-
-  async obterRotaApi(): Promise<null> {
-    return null;
-  }
-}
-
-type SessaoRuntime = {
-  repo: ZenviaEstadoRepoMemoria;
-  engine: StateMachineEngine;
-  handler: HandlerService;
-  chatId: string;
-  messageContext: { from: string };
-  stateToIndex: Map<string, number>;
-  promptStateToIndex: Map<string, number>;
-  responseKeyByIndex: string[];
-  responseRequiredIndexes: Set<number>;
-};
-
-type SessaoMemoria = {
-  nps_id: string;
-  conversa_id: string;
-  from: string;
-  to: string;
-  status: SessaoStatus;
-  currentIndex: number;
-  itens: ItemResposta[];
-  callbackUrl: string | null;
-  callbackHeaders: Record<string, string>;
-  npsHeaders: Record<string, string>;
-  zenviaToken: string;
-  zenviaBaseUrl: string;
-  zenviaHeaders: Record<string, string>;
-  webhookSecret: string | null;
-  encerramentoExecutado: boolean;
-  encerramentoExecutadoEm: string | null;
-  resultadoNpsEnviado: boolean;
-  npsPrimeiraTentativaEm: string | null;
-  npsUltimaTentativaEm: string | null;
-  npsEmEnvio: boolean;
-  // Expiração por ociosidade
-  tempoExpiracaoMs: number | null;
-  ultimaAtividadeEm: string;
-  expiracaoEmAndamento: boolean;
-  criadoEm: string;
-  atualizadoEm: string;
-  runtime: SessaoRuntime;
-};
-
 type StartInput = {
   nps_id?: string;
   conversa_id?: string;
@@ -186,7 +68,6 @@ type StartInput = {
   ZENVIA_WHATSAPP_FROM?: string;
   ZENVIA_BASE_URL?: string;
   ZENVIA_WEBHOOK_SECRET?: string;
-  // Expiração por ociosidade (em minutos). null = sem expiração.
   tempo_expiracao_minutos?: number | null;
   tempoExpiracaoMinutos?: number | null;
 };
@@ -247,19 +128,14 @@ type StartQueryInput = {
 @Injectable()
 export class ZenviaService implements OnModuleDestroy {
   private readonly logger = new Logger(ZenviaService.name);
-  private readonly sessoes = new Map<string, SessaoMemoria>();
-  private readonly sessoesAtivasPorPar = new Map<string, string>();
-  private readonly ttlMs = 1000 * 60 * 60 * 12;
-  private readonly npsMaxRetryMs = 1000 * 60 * 60 * 24;
   private readonly cleanupTimer: NodeJS.Timeout;
-  private readonly npsEndpointUrl = process.env.ZENVIA_NPS_ENDPOINT_URL || null;
-  private readonly npsApplicationKey =
-    process.env.ZENVIA_NPS_APPLICATION_KEY ??
-    '9a2a4e71f8457120000d1258d663119c12637315';
 
   constructor(
     private redis: RedisService,
     private idleExpiration: IdleExpirationService,
+    private engine: StateMachineEngine,
+    private handlerZenvia: HandlerZenviaService,
+    private estadoRepo: EstadoRepository,
   ) {
     this.cleanupTimer = setInterval(() => this.limparExpiradas(), 60_000);
   }
@@ -290,14 +166,12 @@ export class ZenviaService implements OnModuleDestroy {
     if (!phone) return 'null';
     const digits = String(phone).replace(/\D/g, '');
     if (!digits) return 'invalid';
-    if (digits.length <= 4) return `${digits[0] ?? '*'}***`;
     return `${digits.slice(0, 4)}***${digits.slice(-2)}`;
   }
 
   private maskToken(token: string | null | undefined): string {
     if (!token) return 'null';
     const clean = token.trim().replace(/^"(.*)"$/, '$1');
-    if (clean.length <= 6) return `${clean.slice(0, 1)}***`;
     return `${clean.slice(0, 4)}***${clean.slice(-2)}`;
   }
 
@@ -329,21 +203,8 @@ export class ZenviaService implements OnModuleDestroy {
     return Object.fromEntries(entries);
   }
 
-  private getHeaderCaseInsensitive(
-    headers: Record<string, string>,
-    name: string,
-  ): string | null {
-    const target = name.toLowerCase();
-    for (const [k, v] of Object.entries(headers || {})) {
-      if (k.toLowerCase() === target) return String(v);
-    }
-    return null;
-  }
-
   private toNumberOrNull(value: unknown): number | null {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
     if (typeof value === 'string' && value.trim()) {
       const parsed = Number(value);
       if (Number.isFinite(parsed)) return parsed;
@@ -353,16 +214,8 @@ export class ZenviaService implements OnModuleDestroy {
 
   private normalizeTipo(value: unknown): string {
     const tipo = this.toStringOrNull(value)?.toLowerCase() ?? 'descritiva';
-    if (
-      tipo === 'botao' ||
-      tipo === 'numerica' ||
-      tipo === 'lista' ||
-      tipo === 'descritiva' ||
-      tipo === 'encerramento'
-    ) {
-      return tipo;
-    }
-    return 'descritiva';
+    const accepted = ['botao', 'numerica', 'lista', 'descritiva', 'get_location', 'encerramento'];
+    return accepted.includes(tipo) ? tipo : 'descritiva';
   }
 
   private normalizeEntrada(value: string): string {
@@ -373,27 +226,24 @@ export class ZenviaService implements OnModuleDestroy {
       .toLowerCase();
   }
 
-  private extrairOpcoesValidacaoDoObjeto(value: unknown): {
-    opcoes: string[];
-    mensagemInvalida: string | null;
-    mensagemExpiracao: string | null;
-  } {
+  private extrairOpcoesValidacaoDoObjeto(value: unknown) {
     if (!this.isRecord(value)) {
-      return { opcoes: this.parseOpcoesValidacao(value), mensagemInvalida: null, mensagemExpiracao: null };
+      return {
+        opcoes: this.parseOpcoesValidacao(value),
+        mensagemInvalida: null,
+        mensagemExpiracao: null,
+      };
     }
-    const mensagemInvalida = this.toStringOrNull(value.mensagem_resposta_invalida);
-    const mensagemExpiracao = this.toStringOrNull(value.mensagem_expiracao);
-    const opcoes = this.parseOpcoesValidacao(value.validation);
-    return { opcoes, mensagemInvalida, mensagemExpiracao };
+    return {
+      opcoes: this.parseOpcoesValidacao(value.validation),
+      mensagemInvalida: this.toStringOrNull(value.mensagem_resposta_invalida),
+      mensagemExpiracao: this.toStringOrNull(value.mensagem_expiracao),
+    };
   }
 
   private parseOpcoesValidacao(value: unknown): string[] {
     if (value === null || value === undefined) return [];
-
-    // Se for objeto estruturado, extrai apenas o campo 'validation'
-    if (this.isRecord(value)) {
-      return this.parseOpcoesValidacao(value.validation);
-    }
+    if (this.isRecord(value)) return this.parseOpcoesValidacao(value.validation);
 
     let parts: string[] = [];
     if (typeof value === 'string') {
@@ -405,7 +255,7 @@ export class ZenviaService implements OnModuleDestroy {
         const end = Number(rangeMatch[2]);
         if (Number.isFinite(start) && Number.isFinite(end) && start <= end) {
           const span = end - start;
-          if (span <= 200) {
+          if (span <= 100) {
             return Array.from({ length: span + 1 }, (_, i) => String(start + i));
           }
         }
@@ -418,188 +268,44 @@ export class ZenviaService implements OnModuleDestroy {
       if (str) parts = [str];
     }
 
-    const unique = new Set<string>();
-    for (const p of parts) {
-      const clean = String(p).trim();
-      if (clean) unique.add(clean);
-    }
-    return Array.from(unique);
+    return Array.from(new Set(parts.map((p) => p.trim()).filter((p) => !!p)));
   }
 
-  private tipoExigeResposta(tipo: string): boolean {
-    return tipo !== 'encerramento';
-  }
-
-  private normalizeStartInput(
-    body: unknown,
-    query?: StartQueryInput,
-  ): {
-    nps_id: string;
-    conversa_id: string;
-    from: string;
-    to: string;
-    itens: ItemResposta[];
-    callbackUrl: string | null;
-    callbackHeaders: Record<string, string>;
-    npsHeaders: Record<string, string>;
-    zenviaToken: string;
-    zenviaBaseUrl: string;
-    zenviaHeaders: Record<string, string>;
-    webhookSecret: string | null;
-    tempoExpiracaoMs: number | null;
-  } {
+  private normalizeStartInput(body: unknown, query?: StartQueryInput) {
     let payload: StartInput = {};
+    if (Array.isArray(body)) payload.itens = body as InputItem[];
+    else if (this.isRecord(body)) payload = body as StartInput;
 
-    if (Array.isArray(body)) {
-      payload.itens = body as InputItem[];
-    } else if (this.isRecord(body)) {
-      payload = body as StartInput;
-    } else {
-      throw new BadRequestException('Body inválido para iniciar fluxo Zenvia.');
-    }
-
-    const nps_id =
-      this.toStringOrNull(query?.nps_id) ||
-      this.toStringOrNull(payload.nps_id);
+    const nps_id = this.toStringOrNull(query?.nps_id) || this.toStringOrNull(payload.nps_id);
     const conversa_id = this.toStringOrNull(payload.conversa_id);
-    const from =
-      this.toStringOrNull(query?.from) ||
-      this.toStringOrNull(payload.from) ||
-      this.toStringOrNull(payload.ZENVIA_WHATSAPP_FROM);
+    const from = this.toStringOrNull(query?.from) || this.toStringOrNull(payload.from) || this.toStringOrNull(payload.ZENVIA_WHATSAPP_FROM);
     const to = this.toStringOrNull(query?.to) || this.toStringOrNull(payload.to);
+    const zenviaToken = this.toStringOrNull(query?.token) || this.toStringOrNull(payload.zenviaToken) || this.toStringOrNull(payload.ZENVIA_TOKEN);
+    const zenviaBaseUrl = this.toStringOrNull(query?.baseUrl) || this.toStringOrNull(payload.zenviaBaseUrl) || this.toStringOrNull(payload.ZENVIA_BASE_URL) || 'https://api.zenvia.com/v2/channels/whatsapp/messages';
+
+    if (!nps_id || !conversa_id || !from || !to || !zenviaToken) {
+      throw new BadRequestException('Campos obrigatórios ausentes: nps_id, conversa_id, from, to, zenviaToken.');
+    }
+
     const sourceItens = payload.itens ?? payload.mensagens ?? [];
-    const zenviaToken =
-      this.toStringOrNull(query?.token) ||
-      this.toStringOrNull(payload.zenviaToken) ||
-      this.toStringOrNull(payload.ZENVIA_TOKEN);
-    const zenviaBaseUrl =
-      this.toStringOrNull(query?.baseUrl) ||
-      this.toStringOrNull(payload.zenviaBaseUrl) ||
-      this.toStringOrNull(payload.ZENVIA_BASE_URL) ||
-      'https://api.zenvia.com/v2/channels/whatsapp/messages';
-    const webhookSecret =
-      this.toStringOrNull(query?.webhookSecret) ||
-      this.toStringOrNull(payload.zenviaWebhookSecret) ||
-      this.toStringOrNull(payload.ZENVIA_WEBHOOK_SECRET);
-    const zenviaHeaders =
-      payload.zenviaHeaders && this.isRecord(payload.zenviaHeaders)
-        ? Object.fromEntries(
-            Object.entries(payload.zenviaHeaders).map(([k, v]) => [
-              k,
-              String(v),
-            ]),
-          )
-        : {};
-    const npsHeadersFonte =
-      (payload.Headers && this.isRecord(payload.Headers) && payload.Headers) ||
-      (payload.headers && this.isRecord(payload.headers) && payload.headers) ||
-      {};
-    const npsHeaders = Object.fromEntries(
-      Object.entries(npsHeadersFonte).map(([k, v]) => [k, String(v)]),
-    );
+    const itens = sourceItens.map((raw, idx) => {
+      const tipo = this.normalizeTipo(raw.tipo);
+      const { opcoes: opcoesValidacao, mensagemInvalida, mensagemExpiracao } = this.extrairOpcoesValidacaoDoObjeto(raw.opcoes_validacao ?? raw.opcoesValidacao);
+      return {
+        id: raw.id ?? idx,
+        ordem: this.toNumberOrNull(raw.ordem) ?? idx,
+        tipo,
+        mensagem: this.toStringOrNull(raw.texto) || this.toStringOrNull(raw.mensagem) || '',
+        opcoesValidacao,
+        mensagemInvalida,
+        mensagemExpiracao,
+        exigeResposta: tipo !== 'encerramento',
+        resposta: null,
+      } as ItemResposta;
+    }).sort((a, b) => a.ordem - b.ordem);
 
-    if (!nps_id) {
-      throw new BadRequestException(
-        'nps_id é obrigatório. Envie "nps_id" no body ou query.',
-      );
-    }
-
-    if (!conversa_id) {
-      throw new BadRequestException(
-        'conversa_id é obrigatório. Envie "conversa_id" no body da requisição.',
-      );
-    }
-
-    if (!from) {
-      throw new BadRequestException(
-        'Número de origem ausente. Envie "from" ou "ZENVIA_WHATSAPP_FROM".',
-      );
-    }
-
-    if (!to) {
-      throw new BadRequestException(
-        'Número de destino ausente. Envie "to" no body ou query.',
-      );
-    }
-
-    if (!zenviaToken) {
-      throw new BadRequestException(
-        'Token Zenvia ausente. Envie "zenviaToken" (ou "ZENVIA_TOKEN") no body.',
-      );
-    }
-
-    if (!Array.isArray(sourceItens) || sourceItens.length === 0) {
-      throw new BadRequestException(
-        'Lista de mensagens obrigatória e não pode ser vazia.',
-      );
-    }
-
-    const itens = sourceItens
-      .map((raw, idx) => {
-        const ordem = this.toNumberOrNull(raw?.ordem) ?? idx;
-        const tipo = this.normalizeTipo(raw?.tipo);
-        const mensagem =
-          this.toStringOrNull(raw?.texto) || this.toStringOrNull(raw?.mensagem);
-        const id = ordem;
-        const rawOpcoes = raw?.opcoes_validacao ?? raw?.opcoesValidacao;
-        const { opcoes: opcoesValidacao, mensagemInvalida, mensagemExpiracao } =
-          this.extrairOpcoesValidacaoDoObjeto(rawOpcoes);
-        const exigeResposta = this.tipoExigeResposta(tipo);
-
-        if (!mensagem) {
-          throw new BadRequestException(
-            `Item ${idx + 1} sem campo "texto" (ou "mensagem") válido.`,
-          );
-        }
-
-        return {
-          id,
-          ordem,
-          tipo,
-          mensagem,
-          opcoesValidacao,
-          mensagemInvalida,
-          mensagemExpiracao,
-          exigeResposta,
-          resposta: null,
-          perguntaMessageId: null,
-          perguntaProviderResponse: null,
-          respostaMessageId: null,
-          respondidoEm: null,
-        } as ItemResposta;
-      })
-      .sort((a, b) => a.ordem - b.ordem);
-
-    const ordensVistas = new Set<number>();
-    for (const item of itens) {
-      if (ordensVistas.has(item.ordem)) {
-        throw new BadRequestException(
-          `Valor "ordem" duplicado: ${item.ordem}. Cada etapa deve ter ordem única.`,
-        );
-      }
-      ordensVistas.add(item.ordem);
-    }
-
-    const callbackUrl = this.toStringOrNull(payload.callbackUrl);
-    const callbackHeaders =
-      payload.callbackHeaders && this.isRecord(payload.callbackHeaders)
-        ? Object.fromEntries(
-            Object.entries(payload.callbackHeaders).map(([k, v]) => [
-              k,
-              String(v),
-            ]),
-          )
-        : {};
-
-    // Tempo de expiração por ociosidade (em minutos)
-    // Aceita tanto snake_case (tempo_expiracao_minutos) quanto camelCase (tempoExpiracaoMinutos)
-    const tempoExpiracaoMinutos = this.toNumberOrNull(
-      payload.tempo_expiracao_minutos ?? payload.tempoExpiracaoMinutos,
-    );
-    const tempoExpiracaoMs =
-      tempoExpiracaoMinutos !== null && tempoExpiracaoMinutos > 0
-        ? tempoExpiracaoMinutos * 60 * 1000
-        : null;
+    const tempoExpiracaoMinutos = this.toNumberOrNull(payload.tempo_expiracao_minutos ?? payload.tempoExpiracaoMinutos);
+    const tempoExpiracaoMs = tempoExpiracaoMinutos && tempoExpiracaoMinutos > 0 ? tempoExpiracaoMinutos * 60 * 1000 : null;
 
     return {
       nps_id,
@@ -607,1538 +313,224 @@ export class ZenviaService implements OnModuleDestroy {
       from,
       to,
       itens,
-      callbackUrl,
-      callbackHeaders,
-      npsHeaders,
       zenviaToken,
       zenviaBaseUrl,
-      zenviaHeaders,
-      webhookSecret,
       tempoExpiracaoMs,
+      callbackUrl: this.toStringOrNull(payload.callbackUrl),
+      callbackHeaders: payload.callbackHeaders || {},
+      zenviaHeaders: payload.zenviaHeaders || {},
     };
   }
 
-  private extrairString(obj: unknown, path: Array<string | number>): string | null {
-    let atual: unknown = obj;
-    for (const key of path) {
-      if (typeof key === 'number') {
-        if (!Array.isArray(atual) || key >= atual.length) return null;
-        atual = atual[key];
-        continue;
+  private mapearParaDynamicFlow(itens: ItemResposta[]) {
+    const states: Record<string, any> = {};
+    const transitions: Record<string, any> = {};
+
+    itens.forEach((item, idx) => {
+      const stateId = `STEP_${idx + 1}`;
+      const nextState = idx === itens.length - 1 ? 'END' : `STEP_${idx + 2}`;
+
+      let handler = '_handlerCapturar';
+      let config: any = {
+        mensagemPedir: item.mensagem,
+        campoSalvar: `item_${idx}_ans`,
+        transicaoAutomatica: true,
+      };
+
+      if (item.tipo === 'botao') {
+        handler = '_handlerBotoes';
+        config.titulo = item.mensagem;
+        config.botoes = item.opcoesValidacao.map(o => ({ id: o, title: o }));
+      } else if (item.tipo === 'lista') {
+        handler = '_handlerLista';
+        config.titulo = item.mensagem;
+        config.opcoes = item.opcoesValidacao.map(o => ({ id: o, title: o }));
+      } else if (item.tipo === 'encerramento') {
+        handler = '_handlerMensagem';
+        config.mensagens = [item.mensagem];
+        config.transicaoAutomatica = true;
       }
-      if (!this.isRecord(atual)) return null;
+
+      if (item.mensagemInvalida) config.mensagemInvalida = item.mensagemInvalida;
+      if (item.mensagemExpiracao) config.mensagemExpiracao = item.mensagemExpiracao;
+
+      states[stateId] = { handler, descricao: `Etapa ${idx + 1}`, config };
+      transitions[stateId] = this.criarTransicoesPorValidacao(item.opcoesValidacao, nextState, item.opcoesValidacao.length === 0 || item.tipo === 'descritiva');
+    });
+
+    states['END'] = { handler: '_handlerMensagem', config: { mensagens: [], aguardarEntrada: false } };
+    return { states, transitions };
+  }
+
+  private criarTransicoesPorValidacao(opcoes: string[], nextState: string, aceitaTudo: boolean) {
+    if (aceitaTudo) return [{ entrada: '*', estadoDestino: nextState }];
+    const t = opcoes.map(o => ({ entrada: this.normalizeEntrada(o), estadoDestino: nextState }));
+    return t;
+  }
+
+  private extrairStringPath(obj: unknown, path: Array<string | number>): string | null {
+    let atual: any = obj;
+    for (const key of path) {
+      if (!atual || typeof atual !== 'object') return null;
       atual = atual[key];
     }
-    return this.toStringOrNull(atual);
-  }
-
-  private formatarListPayloadComoTexto(payload: unknown): string {
-    if (!this.isRecord(payload)) return 'Menu';
-
-    const titulo =
-      this.toStringOrNull(payload.description) ||
-      this.toStringOrNull(payload.title) ||
-      'Menu';
-    const secoesRaw = Array.isArray(payload.sections) ? payload.sections : [];
-    const linhas: string[] = [];
-
-    for (const secao of secoesRaw) {
-      if (!this.isRecord(secao)) continue;
-
-      const rows = Array.isArray(secao.rows) ? secao.rows : [];
-      for (const row of rows) {
-        if (!this.isRecord(row)) continue;
-        const entrada =
-          this.toStringOrNull(row.rowId) ||
-          this.toStringOrNull(row.id) ||
-          this.toStringOrNull(row.value) ||
-          '';
-        const label =
-          this.toStringOrNull(row.title) ||
-          this.toStringOrNull(row.text) ||
-          entrada ||
-          'Opcao';
-
-        if (entrada && entrada !== label) {
-          linhas.push(`*${entrada}* - ${label}`);
-        } else {
-          linhas.push(`*${label}*`);
-        }
-      }
-    }
-
-    if (linhas.length === 0) return titulo;
-    return `${titulo}\n\n${linhas.join('\n')}`;
-  }
-
-  private normalizarListPayload(payload: unknown): ZenviaListContent | null {
-    if (!this.isRecord(payload)) return null;
-
-    const body =
-      this.toStringOrNull(payload.body) ||
-      this.toStringOrNull(payload.description) ||
-      this.toStringOrNull(payload.title) ||
-      'Menu';
-    const button =
-      this.toStringOrNull(payload.button) ||
-      this.toStringOrNull(payload.buttonText) ||
-      'Ver opções';
-
-    const secoesRaw = Array.isArray(payload.sections) ? payload.sections : [];
-    const sections: ZenviaListSection[] = [];
-
-    for (const secaoRaw of secoesRaw) {
-      if (!this.isRecord(secaoRaw)) continue;
-      const rowsRaw = Array.isArray(secaoRaw.rows) ? secaoRaw.rows : [];
-      const rows: ZenviaListRow[] = [];
-
-      for (const rowRaw of rowsRaw) {
-        if (!this.isRecord(rowRaw)) continue;
-
-        const idOriginal =
-          this.toStringOrNull(rowRaw.id) ||
-          this.toStringOrNull(rowRaw.rowId) ||
-          this.toStringOrNull(rowRaw.value) ||
-          this.toStringOrNull(rowRaw.payload) ||
-          '';
-        const idNormalizado = this.normalizeEntrada(idOriginal);
-        const id = idNormalizado || idOriginal;
-
-        const title =
-          this.toStringOrNull(rowRaw.title) ||
-          this.toStringOrNull(rowRaw.text) ||
-          this.toStringOrNull(rowRaw.label) ||
-          id;
-        if (!id || !title) continue;
-
-        const description = this.toStringOrNull(rowRaw.description) || undefined;
-        rows.push({ id, title, description });
-      }
-
-      if (!rows.length) continue;
-
-      const title =
-        this.toStringOrNull(secaoRaw.title) ||
-        this.toStringOrNull(secaoRaw.name) ||
-        'Opções';
-      sections.push({ title, rows: rows.slice(0, 10) });
-    }
-
-    if (!sections.length) return null;
-
-    const content: ZenviaListContent = {
-      type: 'list',
-      body,
-      button,
-      sections: sections.slice(0, 10),
-    };
-
-    const header =
-      this.toStringOrNull(payload.header) ||
-      this.toStringOrNull(payload.cabecalho);
-    if (header) content.header = header;
-
-    const footer =
-      this.toStringOrNull(payload.footer) || this.toStringOrNull(payload.rodape);
-    if (footer) content.footer = footer;
-
-    return content;
+    return typeof atual === 'string' ? atual : null;
   }
 
   private normalizarWebhook(body: unknown): NormalizedInbound | null {
     if (!this.isRecord(body)) return null;
-
-    const firstMessage = Array.isArray(body.messages) ? body.messages[0] : null;
-
-    const from =
-      this.toStringOrNull(body.from) ||
-      this.extrairString(body, ['message', 'from']) ||
-      this.extrairString(firstMessage, ['from']);
-
-    const to =
-      this.toStringOrNull(body.to) ||
-      this.extrairString(body, ['message', 'to']) ||
-      this.extrairString(firstMessage, ['to']);
-
-    const interactiveValue =
-      this.extrairString(body, ['interactive', 'list_reply', 'id']) ||
-      this.extrairString(body, ['interactive', 'button_reply', 'id']) ||
-      this.extrairString(body, ['message', 'interactive', 'list_reply', 'id']) ||
-      this.extrairString(body, ['message', 'interactive', 'button_reply', 'id']) ||
-      this.extrairString(firstMessage, ['interactive', 'list_reply', 'id']) ||
-      this.extrairString(firstMessage, ['interactive', 'button_reply', 'id']) ||
-      this.extrairString(body, ['message', 'contents', 0, 'payload']) ||
-      this.extrairString(firstMessage, ['contents', 0, 'payload']) ||
-      this.extrairString(body, ['content', 'payload']);
-
-    const buttonValue =
-      this.extrairString(body, ['button', 'payload']) ||
-      this.extrairString(body, ['message', 'button', 'payload']) ||
-      this.extrairString(firstMessage, ['button', 'payload']);
-
-    const textValue =
-      this.extrairString(body, ['text']) ||
-      this.extrairString(body, ['message', 'text']) ||
-      this.extrairString(body, ['message', 'contents', 0, 'text']) ||
-      this.extrairString(firstMessage, ['text']) ||
-      this.extrairString(firstMessage, ['contents', 0, 'text']) ||
-      this.extrairString(body, ['content', 'text']);
-
-    const text = interactiveValue || buttonValue || textValue;
-    const sourceType: NormalizedInbound['sourceType'] = interactiveValue
-      ? 'interactive'
-      : buttonValue
-        ? 'button'
-        : textValue
-          ? 'text'
-          : 'unknown';
+    const firstMsg = Array.isArray(body.messages) ? body.messages[0] : null;
+    const from = this.toStringOrNull(body.from) || this.extrairStringPath(firstMsg, ['from']);
+    const to = this.toStringOrNull(body.to) || this.extrairStringPath(firstMsg, ['to']);
+    const text = this.extrairStringPath(body, ['message', 'contents', 0, 'text']) || 
+                 this.extrairStringPath(firstMsg, ['contents', 0, 'text']) ||
+                 this.extrairStringPath(body, ['message', 'contents', 0, 'payload']) ||
+                 this.extrairStringPath(firstMsg, ['contents', 0, 'payload']);
 
     if (!from || !to || !text) return null;
-
-    const nps_id =
-      this.extrairString(body, ['nps_id']) ||
-      this.extrairString(body, ['metadata', 'nps_id']) ||
-      this.extrairString(body, ['message', 'metadata', 'nps_id']) ||
-      this.extrairString(firstMessage, ['metadata', 'nps_id']);
-
-    return { from, to, text, nps_id, sourceType };
-  }
-
-  private async enviarMensagemViaSdk(
-    from: string,
-    to: string,
-    mensagem: string,
-    tokenLimpo: string,
-  ): Promise<FetchJsonResult> {
-    this.logger.log(
-      `[Zenvia][SDK][attempt] from=${this.maskPhone(from)} to=${this.maskPhone(to)} token=${this.maskToken(tokenLimpo)} textLen=${mensagem.length}`,
-    );
-    const tempClient = new Client(tokenLimpo);
-    const whatsappChannel = tempClient.getChannel('whatsapp');
-    const content = new TextContent(mensagem);
-    const response = await whatsappChannel.sendMessage(from, to, content);
-
-    const messageId =
-      this.extrairString(response, ['id']) ||
-      this.extrairString(response, ['messageId']) ||
-      this.extrairString(response, ['messages', 0, 'id']);
-
-    this.logger.log(
-      `[Zenvia][SDK][success] from=${this.maskPhone(from)} to=${this.maskPhone(to)} messageId=${messageId ?? 'null'} payload=${this.stringifySafe(response)}`,
-    );
-
-    return { messageId, payload: response };
-  }
-
-  private async enviarConteudoViaHttp(
-    from: string,
-    to: string,
-    content: Record<string, unknown>,
-    tokenLimpo: string,
-    zenviaBaseUrl: string,
-    zenviaHeaders: Record<string, string>,
-    logTag: string,
-  ): Promise<FetchJsonResult> {
-    const payload = {
-      from,
-      to,
-      contents: [content],
-    };
-
-    this.logger.log(
-      `[Zenvia][HTTP][${logTag}][attempt] url=${zenviaBaseUrl} from=${this.maskPhone(from)} to=${this.maskPhone(to)} token=${this.maskToken(tokenLimpo)} headers=${this.stringifySafe(this.maskHeaders(zenviaHeaders))} payload=${this.stringifySafe(payload, 1000)}`,
-    );
-
-    const res = await fetch(zenviaBaseUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-TOKEN': tokenLimpo,
-        ...zenviaHeaders,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const json = (await res.json().catch(() => ({}))) as unknown;
-    if (!res.ok) {
-      const detalhes = this.stringifySafe(json, 600);
-      this.logger.error(
-        `[Zenvia][HTTP][${logTag}][error] status=${res.status} from=${this.maskPhone(from)} to=${this.maskPhone(to)} payload=${detalhes}`,
-      );
-      throw new BadRequestException(
-        `Falha ao enviar mensagem via Zenvia. status=${res.status} detalhes=${detalhes}`,
-      );
-    }
-
-    const messageId =
-      this.extrairString(json, ['id']) ||
-      this.extrairString(json, ['messages', 0, 'id']) ||
-      this.extrairString(json, ['message', 'id']);
-
-    this.logger.log(
-      `[Zenvia][HTTP][${logTag}][success] status=${res.status} from=${this.maskPhone(from)} to=${this.maskPhone(to)} messageId=${messageId ?? 'null'} payload=${this.stringifySafe(json)}`,
-    );
-
-    return { messageId, payload: json };
-  }
-
-  private async enviarMensagemViaHttp(
-    from: string,
-    to: string,
-    mensagem: string,
-    tokenLimpo: string,
-    zenviaBaseUrl: string,
-    zenviaHeaders: Record<string, string>,
-  ): Promise<FetchJsonResult> {
-    return this.enviarConteudoViaHttp(
-      from,
-      to,
-      { type: 'text', text: mensagem },
-      tokenLimpo,
-      zenviaBaseUrl,
-      zenviaHeaders,
-      'text',
-    );
-  }
-
-  private async enviarBotoesViaHttp(
-    from: string,
-    to: string,
-    body: string,
-    buttons: ZenviaButtonItem[],
-    tokenLimpo: string,
-    zenviaBaseUrl: string,
-    zenviaHeaders: Record<string, string>,
-  ): Promise<FetchJsonResult> {
-    return this.enviarConteudoViaHttp(
-      from,
-      to,
-      {
-        type: 'button',
-        body,
-        buttons,
-      },
-      tokenLimpo,
-      zenviaBaseUrl,
-      zenviaHeaders,
-      'button',
-    );
-  }
-
-  private async enviarListaViaHttp(
-    from: string,
-    to: string,
-    content: ZenviaListContent,
-    tokenLimpo: string,
-    zenviaBaseUrl: string,
-    zenviaHeaders: Record<string, string>,
-  ): Promise<FetchJsonResult> {
-    return this.enviarConteudoViaHttp(
-      from,
-      to,
-      content,
-      tokenLimpo,
-      zenviaBaseUrl,
-      zenviaHeaders,
-      'list',
-    );
-  }
-
-  private async enviarMensagem(
-    from: string,
-    to: string,
-    mensagem: string,
-    zenviaToken: string,
-    zenviaBaseUrl: string,
-    zenviaHeaders: Record<string, string>,
-  ): Promise<FetchJsonResult> {
-    const tokenLimpo = zenviaToken.trim().replace(/^"(.*)"$/, '$1');
-
-    this.logger.log(
-      `[Zenvia][SEND][start] from=${this.maskPhone(from)} to=${this.maskPhone(to)} token=${this.maskToken(tokenLimpo)} baseUrl=${zenviaBaseUrl}`,
-    );
-
-    try {
-      return await this.enviarMensagemViaHttp(
-        from,
-        to,
-        mensagem,
-        tokenLimpo,
-        zenviaBaseUrl,
-        zenviaHeaders,
-      );
-    } catch (httpErr: unknown) {
-      const httpMsg = this.errorToString(httpErr);
-      this.logger.warn(
-        `[Zenvia][SEND][http-failed] ${httpMsg}. Tentando fallback SDK.`,
-      );
-      return this.enviarMensagemViaSdk(from, to, mensagem, tokenLimpo);
-    }
-  }
-
-  private criarTransicoesPorValidacao(
-    opcoes: string[],
-    estadoDestino: string,
-    fallbackWildcard = false,
-  ): TransicaoMemoria[] {
-    const transicoes = opcoes
-      .map((opcao) => this.normalizeEntrada(opcao))
-      .filter((entrada) => !!entrada)
-      .map((entrada) => ({ entrada, estadoDestino }));
-
-    if (transicoes.length === 0 || fallbackWildcard) {
-      transicoes.push({ entrada: '*', estadoDestino });
-    }
-
-    return transicoes;
-  }
-
-  private criarOpcoesInterativas(opcoes: string[]) {
-    return opcoes.map((opcao) => ({
-      entrada: this.normalizeEntrada(opcao),
-      label: opcao,
-      descricao: '',
-    }));
-  }
-
-  private criarRuntime(sessao: Omit<SessaoMemoria, 'runtime'>): SessaoRuntime {
-    const configs = new Map<string, EstadoConfigMemoria>();
-    const transicoes = new Map<string, TransicaoMemoria[]>();
-    const stateToIndex = new Map<string, number>();
-    const promptStateToIndex = new Map<string, number>();
-    const responseKeyByIndex: string[] = [];
-    const responseRequiredIndexes = new Set<number>();
-
-    for (let idx = 0; idx < sessao.itens.length; idx++) {
-      const item = sessao.itens[idx];
-      const stepState = `STEP_${idx + 1}`;
-      const nextState = idx + 1 < sessao.itens.length ? `STEP_${idx + 2}` : 'END';
-      const responseKey = `resp_${String(item.id)}`;
-      const tipo = this.normalizeTipo(item.tipo);
-
-      stateToIndex.set(stepState, idx);
-      responseKeyByIndex[idx] = responseKey;
-
-      if (item.exigeResposta) {
-        promptStateToIndex.set(stepState, idx);
-        responseRequiredIndexes.add(idx);
-      }
-
-      if (tipo === 'encerramento') {
-        configs.set(stepState, {
-          handler: '_handlerMensagem',
-          descricao: `Encerramento ${idx + 1}`,
-          config: {
-            mensagens: [item.mensagem],
-            transicaoAutomatica: true,
-          },
-        });
-        transicoes.set(stepState, [{ entrada: '*', estadoDestino: nextState }]);
-        continue;
-      }
-
-      if (tipo === 'botao') {
-        const botoes = this.criarOpcoesInterativas(item.opcoesValidacao);
-        const msgInvalidaBotao =
-          item.mensagemInvalida ??
-          (item.opcoesValidacao.length > 0
-            ? `Opcao invalida. Escolha uma das opcoes: ${item.opcoesValidacao.join(', ')}.`
-            : 'Opcao invalida.');
-        configs.set(stepState, {
-          handler: '_handlerBotoes',
-          descricao: `Botao ${idx + 1}`,
-          config: {
-            titulo: item.mensagem,
-            botoes,
-            mensagemInvalida: msgInvalidaBotao,
-            ...(item.mensagemExpiracao ? { mensagemExpiracao: item.mensagemExpiracao } : {}),
-          },
-        });
-        transicoes.set(
-          stepState,
-          this.criarTransicoesPorValidacao(
-            item.opcoesValidacao,
-            nextState,
-            item.opcoesValidacao.length === 0,
-          ),
-        );
-        continue;
-      }
-
-      if (tipo === 'lista') {
-        const opcoes = this.criarOpcoesInterativas(item.opcoesValidacao);
-        const msgInvalidaLista =
-          item.mensagemInvalida ??
-          (item.opcoesValidacao.length > 0
-            ? `Opcao invalida. Escolha uma das opcoes: ${item.opcoesValidacao.join(', ')}.`
-            : 'Opcao invalida.');
-        configs.set(stepState, {
-          handler: '_handlerLista',
-          descricao: `Lista ${idx + 1}`,
-          config: {
-            titulo: item.mensagem,
-            opcoes,
-            botaoTexto: 'Selecionar',
-            secaoTitulo: 'Opcoes',
-            mensagemInvalida: msgInvalidaLista,
-            ...(item.mensagemExpiracao ? { mensagemExpiracao: item.mensagemExpiracao } : {}),
-          },
-        });
-        transicoes.set(
-          stepState,
-          this.criarTransicoesPorValidacao(
-            item.opcoesValidacao,
-            nextState,
-            item.opcoesValidacao.length === 0,
-          ),
-        );
-        continue;
-      }
-
-      const msgInvalidaCaptura =
-        item.mensagemInvalida ??
-        (item.opcoesValidacao.length > 0
-          ? `Resposta invalida. Valores aceitos: ${item.opcoesValidacao.join(', ')}.`
-          : 'Resposta invalida. Tente novamente.');
-      configs.set(stepState, {
-        handler: '_handlerCapturar',
-        descricao: `Captura ${idx + 1}`,
-        config: {
-          mensagemPedir: item.mensagem,
-          campoSalvar: responseKey,
-          transicaoAutomatica: true,
-          mensagemInvalida: msgInvalidaCaptura,
-          ...(item.mensagemExpiracao ? { mensagemExpiracao: item.mensagemExpiracao } : {}),
-        },
-      });
-      transicoes.set(
-        stepState,
-        this.criarTransicoesPorValidacao(
-          item.opcoesValidacao,
-          nextState,
-          item.opcoesValidacao.length === 0,
-        ),
-      );
-    }
-
-    configs.set('END', {
-      handler: '_handlerMensagem',
-      descricao: 'Fim',
-      config: {
-        mensagens: [],
-        transicaoAutomatica: false,
-        aguardarEntrada: false,
-      },
-    });
-
-    const repo = new ZenviaEstadoRepoMemoria({
-      estadoInicial: 'STEP_1',
-      configs,
-      transicoes,
-    });
-
-    MEMORY_SESSIONS[sessao.nps_id] = {
-      nome: `Zenvia Flow - ${sessao.nps_id.split('-')[0]}`,
-      configs: Object.fromEntries(configs.entries()),
-      transicoes: Object.fromEntries(transicoes.entries()) as any,
-    };
-
-    const engine = new StateMachineEngine(repo as never, {
-      buscarKeywordAtiva: async () => null,
-    } as never);
-
-    const handler = new HandlerService(repo as never);
-    handler.failOnSendError = true;
-    const chatId = `zenvia:${sessao.nps_id}`;
-    const messageContext = { from: `${sessao.to}@zenvia` };
-
-    const enviarTextoNoCanal = async (
-      texto: string,
-      source: 'sendText' | 'sendListMessage',
-    ) => {
-      const estadoAtual =
-        engine.estadosUsuarios.get(chatId) ?? repo.getEstadoInicialSync();
-      const idx = stateToIndex.get(estadoAtual);
-      const item = typeof idx === 'number' ? sessao.itens[idx] : null;
-      this.logger.log(
-        `[Zenvia][FLOW][${source}] nps_id=${sessao.nps_id} estado=${estadoAtual} idx=${typeof idx === 'number' ? idx : 'null'} itemId=${item ? String(item.id) : 'null'} itemTipo=${item?.tipo ?? 'null'} from=${this.maskPhone(sessao.from)} to=${this.maskPhone(sessao.to)} text=${this.stringifySafe(texto, 500)}`,
-      );
-
-      const sent = await this.enviarMensagem(
-        sessao.from,
-        sessao.to,
-        texto,
-        sessao.zenviaToken,
-        sessao.zenviaBaseUrl,
-        sessao.zenviaHeaders,
-      );
-
-      if (item && !item.perguntaMessageId) {
-        item.perguntaMessageId = sent.messageId;
-        item.perguntaProviderResponse = sent.payload;
-      }
-
-      if (item?.tipo === 'encerramento') {
-        sessao.encerramentoExecutado = true;
-        if (!sessao.encerramentoExecutadoEm) {
-          sessao.encerramentoExecutadoEm = this.nowIso();
-        }
-        this.logger.log(
-          `[Zenvia][FLOW][encerramento] nps_id=${sessao.nps_id} estado=${estadoAtual} idx=${typeof idx === 'number' ? idx : 'null'} itemId=${String(item.id)}`,
-        );
-      }
-
-      this.logger.log(
-        `[Zenvia][FLOW][${source}:done] nps_id=${sessao.nps_id} estado=${estadoAtual} messageId=${sent.messageId ?? 'null'}`,
-      );
-      return sent.payload;
-    };
-
-    const enviarBotoesNoCanal = async (payload: unknown) => {
-      const estadoAtual =
-        engine.estadosUsuarios.get(chatId) ?? repo.getEstadoInicialSync();
-      const idx = stateToIndex.get(estadoAtual);
-      const item = typeof idx === 'number' ? sessao.itens[idx] : null;
-      const raw = (payload ?? {}) as ButtonsClientPayload;
-      const body =
-        this.toStringOrNull(raw.body) ||
-        this.toStringOrNull(raw.titulo) ||
-        'Escolha uma opção:';
-
-      const botoesBrutos = Array.isArray(raw.buttons) ? raw.buttons : [];
-      const buttons = botoesBrutos
-        .map((b) => {
-          if (!this.isRecord(b)) return null;
-          const id = this.toStringOrNull(b.id);
-          const title = this.toStringOrNull(b.title);
-          if (!id || !title) return null;
-          return { id, title };
-        })
-        .filter((b): b is ZenviaButtonItem => !!b)
-        .slice(0, 3);
-
-      if (!buttons.length) {
-        return enviarTextoNoCanal(body, 'sendText');
-      }
-
-      this.logger.log(
-        `[Zenvia][FLOW][sendButtonsMessage] nps_id=${sessao.nps_id} estado=${estadoAtual} idx=${typeof idx === 'number' ? idx : 'null'} itemId=${item ? String(item.id) : 'null'} from=${this.maskPhone(sessao.from)} to=${this.maskPhone(sessao.to)} buttons=${this.stringifySafe(buttons, 300)}`,
-      );
-
-      const tokenLimpo = sessao.zenviaToken.trim().replace(/^"(.*)"$/, '$1');
-      const sent = await this.enviarBotoesViaHttp(
-        sessao.from,
-        sessao.to,
-        body,
-        buttons,
-        tokenLimpo,
-        sessao.zenviaBaseUrl,
-        sessao.zenviaHeaders,
-      );
-
-      if (item && !item.perguntaMessageId) {
-        item.perguntaMessageId = sent.messageId;
-        item.perguntaProviderResponse = sent.payload;
-      }
-
-      this.logger.log(
-        `[Zenvia][FLOW][sendButtonsMessage:done] nps_id=${sessao.nps_id} estado=${estadoAtual} messageId=${sent.messageId ?? 'null'}`,
-      );
-      return sent.payload;
-    };
-
-    const enviarListaNoCanal = async (payload: unknown) => {
-      const estadoAtual =
-        engine.estadosUsuarios.get(chatId) ?? repo.getEstadoInicialSync();
-      const idx = stateToIndex.get(estadoAtual);
-      const item = typeof idx === 'number' ? sessao.itens[idx] : null;
-
-      const content = this.normalizarListPayload(payload);
-      if (!content) {
-        const textoLista = this.formatarListPayloadComoTexto(payload);
-        return enviarTextoNoCanal(textoLista, 'sendListMessage');
-      }
-
-      const totalRows = content.sections.reduce(
-        (acc, sec) => acc + sec.rows.length,
-        0,
-      );
-      this.logger.log(
-        `[Zenvia][FLOW][sendListMessage] nps_id=${sessao.nps_id} estado=${estadoAtual} idx=${typeof idx === 'number' ? idx : 'null'} itemId=${item ? String(item.id) : 'null'} from=${this.maskPhone(sessao.from)} to=${this.maskPhone(sessao.to)} sections=${content.sections.length} rows=${totalRows}`,
-      );
-
-      const tokenLimpo = sessao.zenviaToken.trim().replace(/^"(.*)"$/, '$1');
-      const sent = await this.enviarListaViaHttp(
-        sessao.from,
-        sessao.to,
-        content,
-        tokenLimpo,
-        sessao.zenviaBaseUrl,
-        sessao.zenviaHeaders,
-      );
-
-      if (item && !item.perguntaMessageId) {
-        item.perguntaMessageId = sent.messageId;
-        item.perguntaProviderResponse = sent.payload;
-      }
-
-      this.logger.log(
-        `[Zenvia][FLOW][sendListMessage:done] nps_id=${sessao.nps_id} estado=${estadoAtual} messageId=${sent.messageId ?? 'null'}`,
-      );
-      return sent.payload;
-    };
-
-    handler.client = {
-      sendText: async (_destino: string, texto: string) => {
-        await enviarTextoNoCanal(texto, 'sendText');
-      },
-      sendListMessage: async (_destino: string, payload: unknown) => {
-        return enviarListaNoCanal(payload);
-      },
-      sendButtonsMessage: async (_destino: string, payload: unknown) => {
-        return enviarBotoesNoCanal(payload);
-      },
-    };
-
-    engine.estadosUsuarios.set(chatId, repo.getEstadoInicialSync());
-
-    return {
-      repo,
-      engine,
-      handler,
-      chatId,
-      messageContext,
-      stateToIndex,
-      promptStateToIndex,
-      responseKeyByIndex,
-      responseRequiredIndexes,
-    };
-  }
-
-  private atualizarStatusSessao(sessao: SessaoMemoria) {
-    const respondidas = sessao.itens.filter(
-      (item, idx) =>
-        sessao.runtime.responseRequiredIndexes.has(idx) && item.resposta !== null,
-    ).length;
-    const totalEsperadas = sessao.runtime.responseRequiredIndexes.size;
-    sessao.currentIndex = respondidas;
-    if (totalEsperadas === 0 || respondidas >= totalEsperadas) {
-      sessao.status = 'completed';
-      this.sessoesAtivasPorPar.delete(this.normalizarPar(sessao.from, sessao.to));
-    } else {
-      sessao.status = 'active';
-    }
-    sessao.atualizadoEm = this.nowIso();
-  }
-
-  private getPublicSnapshot(sessao: SessaoMemoria) {
-    return {
-      nps_id: sessao.nps_id,
-      status: sessao.status,
-      from: sessao.from,
-      to: sessao.to,
-      currentIndex: sessao.currentIndex,
-      criadoEm: sessao.criadoEm,
-      atualizadoEm: sessao.atualizadoEm,
-      itens: sessao.itens.map((item) => ({
-        ordem: item.ordem,
-        mensagem: item.mensagem,
-        resposta: item.resposta,
-        perguntaMessageId: item.perguntaMessageId,
-        perguntaProviderResponse: item.perguntaProviderResponse,
-        respostaMessageId: item.respostaMessageId,
-        respondidoEm: item.respondidoEm,
-      })),
-    };
-  }
-
-  private montarResultadoNps(sessao: SessaoMemoria) {
-    return sessao.itens.map((item) => ({
-      ordem: item.ordem,
-      mensagem: item.mensagem,
-      resposta: item.resposta,
-    }));
-  }
-
-  private reconciliarEncerramentoExecutado(sessao: SessaoMemoria, motivo: string) {
-    if (sessao.encerramentoExecutado) return;
-
-    const itemEncerramento = sessao.itens.find((item) => item.tipo === 'encerramento');
-    if (!itemEncerramento) return;
-
-    const encerramentoEnviado = Boolean(
-      itemEncerramento.perguntaMessageId || itemEncerramento.perguntaProviderResponse,
-    );
-    if (!encerramentoEnviado) return;
-
-    sessao.encerramentoExecutado = true;
-    if (!sessao.encerramentoExecutadoEm) {
-      sessao.encerramentoExecutadoEm = this.nowIso();
-    }
-
-    this.logger.warn(
-      `[Zenvia][NPS][reconcile] nps_id=${sessao.nps_id} motivo=${motivo} encerramento_marcado_por_snapshot`,
-    );
-  }
-
-  private async enviarResultadoNps(sessao: SessaoMemoria, motivo: string) {
-    this.reconciliarEncerramentoExecutado(sessao, motivo);
-
-    if (!sessao.encerramentoExecutado) {
-      this.logger.log(
-        `[Zenvia][NPS][skip] nps_id=${sessao.nps_id} motivo=${motivo} reason=encerramento-nao-executado`,
-      );
-      return;
-    }
-    if (sessao.resultadoNpsEnviado) {
-      this.logger.log(
-        `[Zenvia][NPS][skip] nps_id=${sessao.nps_id} motivo=${motivo} reason=ja-enviado`,
-      );
-      return;
-    }
-    if (sessao.npsEmEnvio) {
-      this.logger.log(
-        `[Zenvia][NPS][skip] nps_id=${sessao.nps_id} motivo=${motivo} reason=envio-em-andamento`,
-      );
-      return;
-    }
-
-    const agoraIso = this.nowIso();
-    if (!sessao.npsPrimeiraTentativaEm) {
-      sessao.npsPrimeiraTentativaEm = agoraIso;
-    }
-    sessao.npsUltimaTentativaEm = agoraIso;
-    sessao.npsEmEnvio = true;
-
-    const payload: Record<string, unknown> = {
-      nps_id: sessao.nps_id,
-      conversa_id: sessao.conversa_id,
-      respostas: this.montarResultadoNps(sessao),
-    };
-
-    const headers: Record<string, string> = {
-      ...sessao.npsHeaders,
-      'Content-Type': 'application/json',
-    };
-
-    const endpointHeader =
-      this.getHeaderCaseInsensitive(headers, 'url_endpoint_nps') ||
-      this.getHeaderCaseInsensitive(headers, 'urlEndpointNps') ||
-      null;
-    const endpointNps = endpointHeader || this.npsEndpointUrl;
-    if (!endpointNps) {
-      sessao.npsEmEnvio = false;
-      this.logger.warn(
-        `[Zenvia][NPS][skip] nps_id=${sessao.nps_id} motivo=${motivo} reason=endpoint-nao-informado`,
-      );
-      return;
-    }
-
-    // Campo de controle interno: não deve ser encaminhado como header HTTP.
-    for (const key of Object.keys(headers)) {
-      const lower = key.toLowerCase();
-      if (lower === 'url_endpoint_nps' || lower === 'urlendpointnps') {
-        delete headers[key];
-      }
-    }
-
-    // Mantém os headers recebidos no start (payload.Headers) e completa
-    // somente o que estiver ausente.
-    const accessApplicationKey =
-      this.getHeaderCaseInsensitive(headers, 'Access-Application-Key') ||
-      this.npsApplicationKey;
-    headers['Access-Application-Key'] = accessApplicationKey;
-
-    const celularOperacao =
-      this.getHeaderCaseInsensitive(headers, 'celular_operacao') ||
-      // fallback mais seguro para operação: número de origem do canal
-      sessao.from;
-    headers.celular_operacao = celularOperacao;
-
-    const accessEnv = this.getHeaderCaseInsensitive(headers, 'Access-Env') || null;
-    if (accessEnv) headers['Access-Env'] = accessEnv;
-
-    try {
-      this.logger.log(
-        `[Zenvia][NPS][attempt] nps_id=${sessao.nps_id} motivo=${motivo} endpoint=${endpointNps} headers=${this.stringifySafe(this.maskHeaders(headers))} payload=${this.stringifySafe(payload, 1200)}`,
-      );
-
-      const res = await fetch(endpointNps, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
-      const body = await res.text().catch(() => '');
-
-      const sucessoNps =
-        res.status === 200 || res.status === 201 || res.status === 204;
-      if (!sucessoNps) {
-        this.logger.warn(
-          `[Zenvia][NPS][retry] nps_id=${sessao.nps_id} motivo=${motivo} status=${res.status} body=${this.stringifySafe(body, 800)}`,
-        );
-        return;
-      }
-
-      sessao.resultadoNpsEnviado = true;
-      this.logger.log(
-        `[Zenvia][NPS][sent] nps_id=${sessao.nps_id} motivo=${motivo} status=${res.status} endpoint=${endpointNps} body=${this.stringifySafe(body, 800)}`,
-      );
-      this.removerSessao(sessao.nps_id, `nps-success-${res.status}`);
-    } catch (err: unknown) {
-      this.logger.warn(
-        `[Zenvia][NPS][retry] nps_id=${sessao.nps_id} motivo=${motivo} erro=${this.errorToString(err)}`,
-      );
-    } finally {
-      sessao.npsEmEnvio = false;
-    }
-  }
-
-  private async iniciarFluxoOficial(sessao: SessaoMemoria): Promise<void> {
-    this.logger.log(
-      `[Zenvia][FLOW][start] nps_id=${sessao.nps_id} from=${this.maskPhone(sessao.from)} to=${this.maskPhone(sessao.to)} perguntas=${sessao.itens.length}`,
-    );
-
-    const estadoInicial = sessao.runtime.repo.getEstadoInicialSync();
-    await sessao.runtime.repo.salvarEstadoUsuario(
-      sessao.runtime.chatId,
-      estadoInicial,
-    );
-    sessao.runtime.engine.estadosUsuarios.set(sessao.runtime.chatId, estadoInicial);
-
-    await sessao.runtime.engine.process(
-      sessao.runtime.messageContext,
-      sessao.runtime.chatId,
-      '',
-      null,
-      sessao.runtime.handler,
-    );
-
-    const configInicial = await sessao.runtime.repo.obterConfigEstado(estadoInicial);
-    const nomeHandlerInicial = configInicial?.handler;
-    const handlerInicial =
-      nomeHandlerInicial && typeof nomeHandlerInicial === 'string'
-        ? (sessao.runtime.handler as unknown as Record<string, unknown>)[
-            nomeHandlerInicial
-          ]
-        : null;
-
-    if (typeof handlerInicial === 'function') {
-      await (handlerInicial as (...args: unknown[]) => Promise<void>).call(
-        sessao.runtime.handler,
-        sessao.runtime.messageContext,
-        sessao.runtime.chatId,
-        '',
-        sessao.runtime.engine,
-      );
-    } else {
-      this.logger.warn(
-        `[Zenvia][FLOW][start] handler inicial inválido/no-op: estado=${estadoInicial} handler=${String(nomeHandlerInicial ?? '')}`,
-      );
-    }
-
-    this.atualizarStatusSessao(sessao);
-    await this.salvarSessaoRedis(sessao);
-    await this.enviarResultadoNps(sessao, 'start');
-    this.logger.log(
-      `[Zenvia][FLOW][started] nps_id=${sessao.nps_id} status=${sessao.status} currentIndex=${sessao.currentIndex}`,
-    );
-  }
-
-  private async salvarSessaoRedis(sessao: SessaoMemoria) {
-    try {
-      const data = { ...sessao };
-      // Removemos o runtime antes de serializar pois ele contém instâncias/classes que não viram JSON
-      delete (data as any).runtime;
-      
-      const key = `zenvia:session:${sessao.nps_id}`;
-      await this.redis.set(key, JSON.stringify(data), 'EX', 43200); // 12h de expiração
-      
-      const pair = this.normalizarPar(sessao.from, sessao.to);
-      await this.redis.set(`zenvia:pair:${pair}`, sessao.nps_id, 'EX', 43200);
-    } catch (err) {
-      this.logger.warn(`Falha ao espelhar sessão no Redis: ${this.errorToString(err)}`);
-    }
-  }
-
-  private async recuperarSessaoRedis(nps_id: string): Promise<SessaoMemoria | null> {
-    try {
-      const dataRaw = await this.redis.get(`zenvia:session:${nps_id}`);
-      if (!dataRaw) return null;
-
-      const sessao = JSON.parse(dataRaw) as SessaoMemoria;
-      // Reconstitui o runtime dinamicamente
-      sessao.runtime = this.criarRuntime(sessao);
-      
-      // Re-injeta o estado do usuário no engine
-      const chatId = sessao.runtime.chatId;
-      const estadoUsuario = await sessao.runtime.repo.obterEstadoUsuario(chatId);
-      if (estadoUsuario) {
-        sessao.runtime.engine.estadosUsuarios.set(chatId, estadoUsuario);
-      }
-
-      // Adiciona de volta ao Map local (In-Memory Access)
-      this.sessoes.set(nps_id, sessao);
-      this.sessoesAtivasPorPar.set(this.normalizarPar(sessao.from, sessao.to), nps_id);
-      
-      return sessao;
-    } catch (err) {
-      this.logger.error(`Erro ao recuperar sessão ${nps_id} do Redis: ${this.errorToString(err)}`);
-      return null;
-    }
-  }
-
-  private async enviarCallback(sessao: SessaoMemoria, event: string) {
-    if (!sessao.callbackUrl) return;
-    try {
-      await fetch(sessao.callbackUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...sessao.callbackHeaders,
-        },
-        body: JSON.stringify({
-          event,
-          ...this.getPublicSnapshot(sessao),
-        }),
-      });
-      this.logger.log(
-        `[Zenvia][callback][success] nps_id=${sessao.nps_id} event=${event} callbackUrl=${sessao.callbackUrl}`,
-      );
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`[Zenvia] Falha no callback (${event}): ${msg}`);
-    }
-  }
-
-  private obterSecretRecebido(
-    headers: Record<string, string>,
-    body: unknown,
-  ): string {
-    const recebido =
-      headers['x-zenvia-secret'] ||
-      headers['x-webhook-secret'] ||
-      (this.isRecord(body) ? this.toStringOrNull(body.zenviaWebhookSecret) : '') ||
-      (this.isRecord(body) ? this.toStringOrNull(body.ZENVIA_WEBHOOK_SECRET) : '') ||
-      '';
-    return recebido;
-  }
-
-  private validarWebhookSecretSessao(
-    sessao: SessaoMemoria,
-    headers: Record<string, string>,
-    body: unknown,
-  ) {
-    if (!sessao.webhookSecret) return;
-    const recebido = this.obterSecretRecebido(headers, body);
-    if (recebido !== sessao.webhookSecret) {
-      this.logger.warn(
-        `[Zenvia][webhook][secret-invalid] nps_id=${sessao.nps_id} recebido=${this.maskToken(recebido)} esperado=${this.maskToken(sessao.webhookSecret)}`,
-      );
-      throw new BadRequestException('Webhook Zenvia com segredo inválido.');
-    }
-    this.logger.log(
-      `[Zenvia][webhook][secret-valid] nps_id=${sessao.nps_id}`,
-    );
-  }
-
-  private removerSessao(nps_id: string, reason = 'manual') {
-    const sessao = this.sessoes.get(nps_id);
-    if (!sessao) return;
-    this.sessoes.delete(nps_id);
-    this.sessoesAtivasPorPar.delete(this.normalizarPar(sessao.from, sessao.to));
-    delete MEMORY_SESSIONS[nps_id];
-    
-    void this.redis.del(`zenvia:session:${nps_id}`);
-    void this.redis.del(`zenvia:pair:${this.normalizarPar(sessao.from, sessao.to)}`);
-    
-    this.logger.log(
-      `[Zenvia][session][removed] nps_id=${nps_id} reason=${reason}`,
-    );
-  }
-
-  private limparExpiradas() {
-    const agora = Date.now();
-    for (const [nps_id, sessao] of this.sessoes.entries()) {
-      // --- Retry de envio do resultado NPS após encerramento ---
-      if (sessao.encerramentoExecutado && !sessao.resultadoNpsEnviado) {
-        const baseEncerramento =
-          Date.parse(sessao.encerramentoExecutadoEm || sessao.atualizadoEm) || agora;
-        const elapsedNps = agora - baseEncerramento;
-
-        if (elapsedNps >= this.npsMaxRetryMs) {
-          this.removerSessao(nps_id, 'nps-timeout-24h');
-          continue;
-        }
-
-        void this.enviarResultadoNps(sessao, 'retry-timer');
-        continue;
-      }
-
-      // --- Expiração por ociosidade do usuário ---
-      const configGlobal = this.idleExpiration.obterConfig();
-      const tempoEfetivoMs = sessao.tempoExpiracaoMs ?? configGlobal.tempoExpiracaoMs;
-
-      if (
-        sessao.status === 'active' &&
-        tempoEfetivoMs !== null &&
-        tempoEfetivoMs > 0 &&
-        !sessao.expiracaoEmAndamento
-      ) {
-        const ultimaAtividade = Date.parse(sessao.ultimaAtividadeEm);
-        if (!Number.isNaN(ultimaAtividade) && agora - ultimaAtividade >= tempoEfetivoMs) {
-          this.logger.warn(
-            `[Zenvia][expiracao][trigger] nps_id=${nps_id} ocioso por ${Math.round((agora - ultimaAtividade) / 1000)}s (limite=${tempoEfetivoMs / 1000}s)`,
-          );
-          void this.expirarSessaoPorOciosidade(sessao);
-          continue;
-        }
-      }
-
-      // --- TTL máximo da sessão (12h) ---
-      const atualizacao = Date.parse(sessao.atualizadoEm);
-      if (Number.isNaN(atualizacao)) continue;
-      if (agora - atualizacao <= this.ttlMs) continue;
-
-      this.removerSessao(nps_id, 'expired-ttl');
-    }
-  }
-
-  private async expirarSessaoPorOciosidade(sessao: SessaoMemoria) {
-    sessao.expiracaoEmAndamento = true;
-    const nps_id = sessao.nps_id;
-
-    try {
-      // 1. Encontra o item atual aguardando resposta para pegar a mensagem de expiração
-      const estadoAtual = sessao.runtime.engine.estadosUsuarios.get(sessao.runtime.chatId);
-      const idx = estadoAtual ? sessao.runtime.stateToIndex.get(estadoAtual) : undefined;
-      const itemAtual = typeof idx === 'number' ? sessao.itens[idx] : null;
-      
-      const configGlobal = this.idleExpiration.obterConfig();
-      const mensagemExpiracao = itemAtual?.mensagemExpiracao ?? configGlobal.mensagemExpiracao;
-
-      if (mensagemExpiracao) {
-        this.logger.log(
-          `[Zenvia][expiracao][sending-msg-expiracao] nps_id=${nps_id} mensagem="${mensagemExpiracao}"`,
-        );
-        await this.enviarMensagem(
-          sessao.from,
-          sessao.to,
-          mensagemExpiracao,
-          sessao.zenviaToken,
-          sessao.zenviaBaseUrl,
-          sessao.zenviaHeaders,
-        );
-      }
-
-      // 2. Busca e envia o item de encerramento do fluxo (se houver)
-      const itemEncerramento = sessao.itens.find(
-        (item) => this.normalizeTipo(item.tipo) === 'encerramento',
-      );
-
-      if (itemEncerramento) {
-        this.logger.log(
-          `[Zenvia][expiracao][sending-encerramento] nps_id=${nps_id} mensagem="${itemEncerramento.mensagem}"`,
-        );
-        try {
-          await this.enviarMensagem(
-            sessao.from,
-            sessao.to,
-            itemEncerramento.mensagem,
-            sessao.zenviaToken,
-            sessao.zenviaBaseUrl,
-            sessao.zenviaHeaders,
-          );
-        } catch (errEnc) {
-          this.logger.warn(
-            `[Zenvia][expiracao][encerramento-falhou] nps_id=${nps_id} erro=${this.errorToString(errEnc)}`,
-          );
-        }
-      }
-
-      // 3. Marca o encerramento e finaliza
-      sessao.encerramentoExecutado = true;
-      if (!sessao.encerramentoExecutadoEm) {
-        sessao.encerramentoExecutadoEm = this.nowIso();
-      }
-
-      this.atualizarStatusSessao(sessao);
-      await this.enviarCallback(sessao, 'expired');
-      await this.enviarResultadoNps(sessao, 'expiracao-ociosidade');
-
-      this.logger.log(
-        `[Zenvia][expiracao][done] nps_id=${nps_id}`,
-      );
-    } catch (err) {
-      this.logger.error(
-        `[Zenvia][expiracao][error] nps_id=${nps_id} erro=${this.errorToString(err)}`,
-      );
-    } finally {
-      sessao.expiracaoEmAndamento = false;
-      this.removerSessao(nps_id, 'expiracao-ociosidade');
-    }
+    return { from, to, text, nps_id: null, sourceType: 'text' };
   }
 
   async iniciarFluxo(body: unknown, query?: StartQueryInput) {
-    this.logger.log(
-      `[Zenvia][start][request] bodyType=${Array.isArray(body) ? 'array' : typeof body} query=${this.stringifySafe(query)}`,
-    );
+    const input = this.normalizeStartInput(body, query);
+    const chatId = `zenvia:${input.nps_id}`;
+    const flow = this.mapearParaDynamicFlow(input.itens);
 
-    const normalized = this.normalizeStartInput(body, query);
-    const pair = this.normalizarPar(normalized.from, normalized.to);
-
-    this.logger.log(
-      `[Zenvia][start][normalized] nps_id=${normalized.nps_id} from=${this.maskPhone(normalized.from)} to=${this.maskPhone(normalized.to)} perguntas=${normalized.itens.length} baseUrl=${normalized.zenviaBaseUrl} token=${this.maskToken(normalized.zenviaToken)} headers=${this.stringifySafe(this.maskHeaders(normalized.zenviaHeaders))} npsHeaders=${this.stringifySafe(this.maskHeaders(normalized.npsHeaders))} webhookSecret=${normalized.webhookSecret ? this.maskToken(normalized.webhookSecret) : 'null'}`,
-    );
-
-    const nps_idAtivo = (await this.redis.get(`zenvia:pair:${pair}`)) || this.sessoesAtivasPorPar.get(pair);
-    if (nps_idAtivo) {
-      this.logger.warn(
-        `[Zenvia][start][blocked] par já ativo nps_id=${nps_idAtivo} from=${this.maskPhone(normalized.from)} to=${this.maskPhone(normalized.to)}`,
-      );
-      throw new BadRequestException(
-        `Já existe sessão ativa para este par. nps_id=${nps_idAtivo}`,
-      );
-    }
-
-    const nps_id = normalized.nps_id;
-    if (this.sessoes.has(nps_id) || (await this.redis.get(`zenvia:session:${nps_id}`))) {
-      this.logger.warn(
-        `[Zenvia][start][blocked] nps_id já existente nps_id=${nps_id}`,
-      );
-      throw new BadRequestException(
-        `nps_id já existe e não pode ser reutilizado: ${nps_id}`,
-      );
-    }
-    const now = this.nowIso();
-
-    const baseSessao = {
-      nps_id,
-      conversa_id: normalized.conversa_id,
-      from: normalized.from,
-      to: normalized.to,
-      status: 'active' as SessaoStatus,
-      currentIndex: 0,
-      itens: normalized.itens,
-      callbackUrl: normalized.callbackUrl,
-      callbackHeaders: normalized.callbackHeaders,
-      npsHeaders: normalized.npsHeaders,
-      zenviaToken: normalized.zenviaToken,
-      zenviaBaseUrl: normalized.zenviaBaseUrl,
-      zenviaHeaders: normalized.zenviaHeaders,
-      webhookSecret: normalized.webhookSecret,
-      encerramentoExecutado: false,
-      encerramentoExecutadoEm: null,
-      resultadoNpsEnviado: false,
-      npsPrimeiraTentativaEm: null,
-      npsUltimaTentativaEm: null,
-      npsEmEnvio: false,
-      tempoExpiracaoMs: normalized.tempoExpiracaoMs,
-      ultimaAtividadeEm: now,
-      expiracaoEmAndamento: false,
-      criadoEm: now,
-      atualizadoEm: now,
+    const sessaoData = {
+      estado: 'STEP_1',
+      ultimaAtividadeEm: this.nowIso(),
+      dynamic_states: flow.states,
+      dynamic_transitions: flow.transitions,
+      meta: {
+        channel: 'zenvia',
+        nps_id: input.nps_id,
+        conversa_id: input.conversa_id,
+        from: input.from,
+        to: input.to,
+        zenviaToken: input.zenviaToken,
+        zenviaBaseUrl: input.zenviaBaseUrl,
+        zenviaHeaders: input.zenviaHeaders,
+        callbackUrl: input.callbackUrl,
+        callbackHeaders: input.callbackHeaders,
+        tempoExpiracaoMs: input.tempoExpiracaoMs,
+      }
     };
 
-    const runtime = this.criarRuntime(baseSessao);
+    await this.redis.set(`session:${chatId}`, JSON.stringify(sessaoData), 'EX', 604800);
+    const pair = this.normalizarPar(input.from, input.to);
+    await this.redis.set(`zenvia:pair:${pair}`, input.nps_id, 'EX', 604800);
 
-    const sessao: SessaoMemoria = {
-      ...baseSessao,
-      runtime,
-    };
-
-    this.sessoes.set(nps_id, sessao);
-    this.sessoesAtivasPorPar.set(pair, nps_id);
-    this.logger.log(
-      `[Zenvia][session][created] nps_id=${nps_id} from=${this.maskPhone(sessao.from)} to=${this.maskPhone(sessao.to)} perguntas=${sessao.itens.length}`,
-    );
-
-    try {
-      await this.iniciarFluxoOficial(sessao);
-      await this.enviarCallback(sessao, 'started');
-    } catch (err) {
-      this.sessoes.delete(nps_id);
-      this.sessoesAtivasPorPar.delete(pair);
-      this.logger.error(
-        `[Zenvia][start][failed] nps_id=${nps_id} erro=${this.errorToString(err)}`,
-      );
-      throw err;
-    }
-
-    this.logger.log(
-      `[Zenvia][start][success] nps_id=${nps_id} status=${sessao.status} currentIndex=${sessao.currentIndex}`,
-    );
-
-    return this.getPublicSnapshot(sessao);
-  }
-
-  encerrarSessao(nps_id: string) {
-    const sessao = this.sessoes.get(nps_id);
-    if (sessao) {
-      this.removerSessao(nps_id, 'manual-api-delete');
-    }
-
-    return {
-      ok: true,
-      nps_id,
-      mensagem: 'apagado com sucesso',
-    };
-  }
-
-  listarSessoesAtivas() {
-    const agora = Date.now();
-    return Array.from(this.sessoes.values()).map((sessao) => {
-      const ultimaAtividade = Date.parse(sessao.ultimaAtividadeEm);
-      const ociosaMs = agora - ultimaAtividade;
-      const tempoRestanteMs =
-        sessao.tempoExpiracaoMs !== null
-          ? Math.max(0, sessao.tempoExpiracaoMs - ociosaMs)
-          : null;
-
-      return {
-        nps_id: sessao.nps_id,
-        conversa_id: sessao.conversa_id,
-        from: sessao.from,
-        to: sessao.to,
-        status: sessao.status,
-        currentIndex: sessao.currentIndex,
-        totalItens: sessao.itens.length,
-        criadoEm: sessao.criadoEm,
-        ultimaAtividadeEm: sessao.ultimaAtividadeEm,
-        tempoExpiracaoMs: sessao.tempoExpiracaoMs,
-        tempoRestanteMs,
-        expiracaoEmAndamento: sessao.expiracaoEmAndamento,
-      };
+    const ctx = { from: `${input.to}@zenvia` };
+    this.handlerZenvia.setContext({
+      from: input.from,
+      to: input.to,
+      token: input.zenviaToken,
+      baseUrl: input.zenviaBaseUrl,
+      headers: input.zenviaHeaders,
     });
+
+    await this.handlerZenvia._handlerMensagem(ctx as any, chatId, '', this.engine);
+
+    return { ok: true, nps_id: input.nps_id, chatId };
   }
 
-  atualizarTempoExpiracao(nps_id: string, tempoExpiracaoMinutos: number | null) {
-    const sessao = this.sessoes.get(nps_id);
-    if (!sessao) {
-      throw new NotFoundException(`Sessão ${nps_id} não encontrada.`);
+  async processarWebhook(body: unknown) {
+    const inbound = this.normalizarWebhook(body);
+    if (!inbound) return { ok: false, reason: 'unsupported_format' };
+
+    const pair = this.normalizarPar(inbound.from, inbound.to);
+    const nps_id = await this.redis.get(`zenvia:pair:${pair}`);
+    if (!nps_id) return { ok: false, reason: 'no_active_session' };
+
+    const chatId = `zenvia:${nps_id}`;
+    const rawSessao = await this.redis.get(`session:${chatId}`);
+    if (rawSessao) {
+      const sessao = JSON.parse(rawSessao);
+      this.handlerZenvia.setContext({
+        from: sessao.meta.from,
+        to: sessao.meta.to,
+        token: sessao.meta.zenviaToken,
+        baseUrl: sessao.meta.zenviaBaseUrl,
+        headers: sessao.meta.zenviaHeaders,
+      });
     }
 
-    const tempoExpiracaoMs =
-      tempoExpiracaoMinutos !== null && tempoExpiracaoMinutos > 0
-        ? tempoExpiracaoMinutos * 60 * 1000
-        : null;
+    await this.engine.process(body, chatId, inbound.text, null, this.handlerZenvia);
 
-    sessao.tempoExpiracaoMs = tempoExpiracaoMs;
-    sessao.ultimaAtividadeEm = this.nowIso(); // Reinicia o timer
-    void this.salvarSessaoRedis(sessao);
+    const estadoFinal = await this.estadoRepo.obterEstadoUsuario(chatId);
+    if (estadoFinal === 'END') {
+      await this.finalizarFluxoUnificado(chatId);
+    }
 
-    this.logger.log(
-      `[Zenvia][expiracao][config] nps_id=${nps_id} tempoExpiracaoMinutos=${tempoExpiracaoMinutos ?? 'sem-expiracao'}`,
-    );
-
-    return {
-      ok: true,
-      nps_id,
-      tempoExpiracaoMs,
-      tempoExpiracaoMinutos,
-    };
+    return { ok: true, nps_id };
   }
 
-  obterResultadoArray(nps_id: string, limparAposRetorno = true) {
-    const sessao = this.sessoes.get(nps_id);
-    if (!sessao) {
-      throw new NotFoundException('nps_id não encontrado.');
+  private async finalizarFluxoUnificado(chatId: string) {
+    const sessaoRaw = await this.redis.get(`session:${chatId}`);
+    if (!sessaoRaw) return;
+    const sessao = JSON.parse(sessaoRaw);
+    const meta = sessao.meta;
+    const dados = this.engine.obterDados(chatId);
+
+    const respostas = Object.keys(dados)
+      .filter(k => k.startsWith('item_'))
+      .map(k => ({ chave: k, resposta: dados[k] }));
+
+    if (meta.callbackUrl) {
+      await fetch(meta.callbackUrl, {
+        method: 'POST',
+        headers: { ...meta.callbackHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nps_id: meta.nps_id,
+          conversa_id: meta.conversa_id,
+          status: 'completed',
+          respostas,
+        }),
+      }).catch(e => this.logger.error(`Erro callback: ${e}`));
     }
 
-    const resultado = this.montarResultadoNps(sessao);
-
-    if (limparAposRetorno) {
-      this.removerSessao(nps_id, 'resultado');
-    }
-
-    return resultado;
+    const pair = this.normalizarPar(meta.from, meta.to);
+    await this.redis.del(`session:${chatId}`);
+    await this.redis.del(`zenvia:pair:${pair}`);
+    this.engine.limparDados(chatId);
   }
 
-  async registrarResposta(
-    nps_id: string,
-    resposta: string,
-    respostaMessageId?: string | null,
-  ) {
-    const respostaLimpa = (resposta || '').trim();
-    if (!respostaLimpa) {
-      throw new BadRequestException('Campo "resposta" é obrigatório.');
-    }
+  async encerrarSessao(nps_id: string) {
+    const chatId = `zenvia:${nps_id}`;
+    await this.finalizarFluxoUnificado(chatId);
+    return { ok: true, nps_id, mensagem: 'encerrada' };
+  }
 
-    const sessao = this.sessoes.get(nps_id);
-    if (!sessao) {
-      throw new NotFoundException('nps_id não encontrado.');
-    }
-
-    this.logger.log(
-      `[Zenvia][answer][request] nps_id=${nps_id} status=${sessao.status} msgId=${respostaMessageId ?? 'null'} textLen=${respostaLimpa.length}`,
-    );
-
-    if (sessao.status !== 'active') {
-      this.logger.log(
-        `[Zenvia][answer][ignored] nps_id=${nps_id} reason=session-not-active`,
-      );
-      return this.getPublicSnapshot(sessao);
-    }
-
-    const estadoAntes = sessao.runtime.engine.estadosUsuarios.get(
-      sessao.runtime.chatId,
-    );
-
-    if (!estadoAntes) {
-      throw new BadRequestException('Sessão sem estado atual.');
-    }
-
-    const idx = sessao.runtime.promptStateToIndex.get(estadoAntes);
-    if (typeof idx !== 'number') {
-      this.logger.log(
-        `[Zenvia][answer][ignored] nps_id=${nps_id} reason=estado-nao-aguarda-resposta estado=${estadoAntes}`,
-      );
-      return this.getPublicSnapshot(sessao);
-    }
-
-    this.logger.log(
-      `[Zenvia][answer][processing] nps_id=${nps_id} estado=${estadoAntes} idx=${idx}`,
-    );
-
-    const dadosAntes = { ...sessao.runtime.engine.obterDados(sessao.runtime.chatId) };
-    const respostaKey = sessao.runtime.responseKeyByIndex[idx];
-    if (respostaKey) {
-      sessao.runtime.engine.salvarDado(
-        sessao.runtime.chatId,
-        respostaKey,
-        respostaLimpa,
-      );
-    }
-
-    await sessao.runtime.engine.process(
-      sessao.runtime.messageContext,
-      sessao.runtime.chatId,
-      respostaLimpa,
-      null,
-      sessao.runtime.handler,
-    );
-
-    const estadoDepois =
-      sessao.runtime.engine.estadosUsuarios.get(sessao.runtime.chatId) ??
-      estadoAntes;
-    const respostaConsumida = estadoDepois !== estadoAntes;
-
-    if (!respostaConsumida) {
-      sessao.runtime.engine.dadosCapturados.set(sessao.runtime.chatId, dadosAntes);
-      this.logger.log(
-        `[Zenvia][answer][ignored] nps_id=${nps_id} reason=resposta-invalida estado=${estadoAntes}`,
-      );
-      return this.getPublicSnapshot(sessao);
-    }
-
-    const idxProximoEstado = sessao.runtime.promptStateToIndex.get(estadoDepois);
-    if (
-      typeof idxProximoEstado === 'number' &&
-      idxProximoEstado !== idx &&
-      sessao.itens[idxProximoEstado]
-    ) {
-      const itemProximo = sessao.itens[idxProximoEstado];
-      const proximaPerguntaEnviada = Boolean(
-        itemProximo.perguntaMessageId || itemProximo.perguntaProviderResponse,
-      );
-      if (!proximaPerguntaEnviada) {
-        throw new BadRequestException(
-          `Falha ao enviar próxima etapa do fluxo. nps_id=${nps_id} estado=${estadoDepois}`,
-        );
+  async listarSessoesAtivas() {
+    const keys = await this.redis.keys('session:zenvia:*');
+    const result: any[] = [];
+    for (const key of keys) {
+      const raw = await this.redis.get(key);
+      if (raw) {
+        const s = JSON.parse(raw);
+        result.push({
+          nps_id: s.meta?.nps_id,
+          from: s.meta?.from,
+          to: s.meta?.to,
+          estado: s.estado,
+          ultimaAtividadeEm: s.ultimaAtividadeEm,
+        });
       }
     }
-
-    if (respostaKey) {
-      sessao.runtime.engine.salvarDado(
-        sessao.runtime.chatId,
-        respostaKey,
-        respostaLimpa,
-      );
-    }
-
-    const item = sessao.itens[idx];
-    item.resposta = respostaLimpa;
-    item.respostaMessageId = respostaMessageId || null;
-    item.respondidoEm = this.nowIso();
-
-    // Reset do timer de ociosidade: usuário respondeu
-    sessao.ultimaAtividadeEm = this.nowIso();
-
-    this.atualizarStatusSessao(sessao);
-    await this.salvarSessaoRedis(sessao);
-    await this.enviarResultadoNps(sessao, 'answered');
-    await this.enviarCallback(sessao, 'answered');
-
-    const fluxoCompleto =
-      sessao.currentIndex >= sessao.runtime.responseRequiredIndexes.size;
-    if (fluxoCompleto) {
-      await this.enviarCallback(sessao, 'completed');
-      this.logger.log(
-        `[Zenvia][flow][completed] nps_id=${nps_id}`,
-      );
-    }
-
-    this.logger.log(
-      `[Zenvia][answer][success] nps_id=${nps_id} idx=${idx} itemId=${String(item.id)} resposta=${this.stringifySafe(item.resposta, 500)} nextIndex=${sessao.currentIndex} status=${sessao.status}`,
-    );
-
-    return this.getPublicSnapshot(sessao);
+    return result;
   }
 
-  async processarWebhook(body: unknown, headers: Record<string, string>) {
-    this.logger.log(
-      `[Zenvia][webhook][request] headers=${this.stringifySafe(this.maskHeaders(headers || {}), 800)} body=${this.stringifySafe(body, 1200)}`,
-    );
+  private async limparExpiradas() {
+    await this.idleExpiration.verificarTodosOciosos();
+  }
 
-    const inbound = this.normalizarWebhook(body);
-
-    if (!inbound) {
-      this.logger.log('[Zenvia][webhook][ignored] reason=payload-sem-texto');
-      return { ok: true, ignored: true, reason: 'payload sem mensagem de texto' };
-    }
-
-    this.logger.log(
-      `[Zenvia][webhook][normalized] from=${this.maskPhone(inbound.from)} to=${this.maskPhone(inbound.to)} nps_id=${inbound.nps_id ?? 'null'} sourceType=${inbound.sourceType} textLen=${inbound.text.length}`,
-    );
-
-    const pair = this.normalizarPar(inbound.to, inbound.from);
-    let nps_idAtivo = await this.redis.get(`zenvia:pair:${pair}`) || this.sessoesAtivasPorPar.get(pair);
-    let nps_id = inbound.nps_id || nps_idAtivo || null;
-
-    if (!nps_id) {
-      this.logger.log(
-        `[Zenvia][webhook][ignored] reason=sessao-ativa-nao-encontrada from=${this.maskPhone(inbound.from)} to=${this.maskPhone(inbound.to)}`,
-      );
-      return { ok: true, ignored: true, reason: 'sessão ativa não encontrada' };
-    }
-
-    let sessao: SessaoMemoria | null | undefined = this.sessoes.get(nps_id);
-    if (!sessao) {
-      sessao = await this.recuperarSessaoRedis(nps_id);
-    }
-
-    if (!sessao && inbound.nps_id && nps_idAtivo && nps_idAtivo !== inbound.nps_id) {
-      this.logger.warn(
-        `[Zenvia][webhook][fallback] nps_id_inbound=${inbound.nps_id} não encontrado; tentando nps_id_ativo_par=${nps_idAtivo}`,
-      );
-      nps_id = nps_idAtivo;
-      sessao = this.sessoes.get(nps_id) ?? (await this.recuperarSessaoRedis(nps_id));
-    }
-
-    if (!sessao) {
-      this.logger.log(
-        `[Zenvia][webhook][ignored] reason=sessao-nao-encontrada nps_id=${nps_id}`,
-      );
-      return { ok: true, ignored: true, reason: 'sessão não encontrada' };
-    }
-
-    this.validarWebhookSecretSessao(sessao, headers, body);
-
-    const snapshot = await this.registrarResposta(nps_id, inbound.text);
-
-    this.logger.log(
-      `[Zenvia][webhook][success] nps_id=${nps_id} status=${snapshot.status} currentIndex=${snapshot.currentIndex}`,
-    );
-
-    return { ok: true, nps_id, snapshot };
+  async atualizarTempoExpiracao(nps_id: string, minutos: number | null) {
+    const chatId = `zenvia:${nps_id}`;
+    const raw = await this.redis.get(`session:${chatId}`);
+    if (!raw) throw new NotFoundException('Sessão não encontrada.');
+    const sessao = JSON.parse(raw);
+    sessao.meta.tempoExpiracaoMs = minutos && minutos > 0 ? minutos * 60 * 1000 : null;
+    await this.redis.set(`session:${chatId}`, JSON.stringify(sessao), 'EX', 604800);
+    return { ok: true, nps_id, tempoExpiracaoMs: sessao.meta.tempoExpiracaoMs };
   }
 }

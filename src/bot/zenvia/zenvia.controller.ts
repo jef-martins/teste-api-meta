@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Headers,
   HttpCode,
   Param,
   Patch,
@@ -17,10 +16,8 @@ export class ZenviaController {
   constructor(private readonly zenviaService: ZenviaService) {}
 
   /**
-   * Inicia uma execução em memória.
-   * Aceita body como array de etapas no formato:
-   * [{ ordem, tipo, texto, opcoes_validacao }]
-   * ou objeto { nps_id, from, to, itens|mensagens, ... }.
+   * Inicia uma execução em memória ou via Redis (NPS).
+   * Aceita body como array de etapas ou objeto estruturado.
    */
   @Post()
   iniciar(
@@ -43,7 +40,7 @@ export class ZenviaController {
   }
 
   /**
-   * Lista todas as sessões NPS ativas (para o painel admin).
+   * Lista todas as sessões NPS ativas.
    */
   @Get('sessoes')
   listarSessoes() {
@@ -52,7 +49,6 @@ export class ZenviaController {
 
   /**
    * Atualiza o tempo de expiração por ociosidade de uma sessão ativa.
-   * Body: { tempoExpiracaoMinutos: number | null }
    */
   @Patch(':nps_id/expiracao')
   @HttpCode(200)
@@ -65,27 +61,10 @@ export class ZenviaController {
 
   /**
    * Endpoint webhook para respostas de usuário vindas da Zenvia.
-   * Se ZENVIA_WEBHOOK_SECRET estiver configurado, validar header x-zenvia-secret.
    */
   @Post('webhook')
-  webhook(@Body() body: unknown, @Headers() headers: Record<string, string>) {
-    return this.zenviaService.processarWebhook(body, headers);
-  }
-
-  /**
-   * Permite registrar resposta manualmente por request.
-   * Útil para integrações externas que já recebem a resposta do usuário.
-   */
-  @Post(':nps_id/resposta')
-  responderManual(
-    @Param('nps_id') nps_id: string,
-    @Body() body: { resposta?: string; messageId?: string },
-  ) {
-    return this.zenviaService.registrarResposta(
-      nps_id,
-      body?.resposta || '',
-      body?.messageId || null,
-    );
+  webhook(@Body() body: unknown) {
+    return this.zenviaService.processarWebhook(body);
   }
 
   @Delete(':nps_id')
