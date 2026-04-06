@@ -128,6 +128,15 @@ export class HandlerMetaService {
     return String(err);
   }
 
+  /** Remove acentos/diacríticos e converte para minúsculas */
+  private normalizar(str: string): string {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
   private isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
@@ -507,7 +516,9 @@ export class HandlerMetaService {
 
     if (
       Array.isArray(proximoCampo.valoresAceitos) &&
-      !proximoCampo.valoresAceitos.includes(corpo)
+      !proximoCampo.valoresAceitos.some(
+        (v: string) => this.normalizar(v) === this.normalizar(corpo),
+      )
     ) {
       const msgInvalida =
         proximoCampo.mensagemInvalida ??
@@ -587,9 +598,10 @@ export class HandlerMetaService {
           chatId,
           'opcoes',
         );
+        const corpoNorm = this.normalizar(corpo);
         const match = opcoesMatch.find(
           (o: ItemInterativoNormalizado) =>
-            (o.label || '').toLowerCase() === corpo.toLowerCase(),
+            this.normalizar(o.label || '') === corpoNorm,
         );
         if (match) {
           proximo = await this.estadoRepo.buscarProximoEstado(
@@ -735,9 +747,10 @@ export class HandlerMetaService {
           chatId,
           'botoes',
         );
+        const corpoNorm = this.normalizar(corpo);
         const match = botoesMatch.find(
           (b: ItemInterativoNormalizado) =>
-            (b.label || '').toLowerCase() === corpo.toLowerCase(),
+            this.normalizar(b.label || '') === corpoNorm,
         );
         if (match) {
           proximo = await this.estadoRepo.buscarProximoEstado(
