@@ -5,6 +5,22 @@
 
 ---
 
+## 06/04/2026 — Fix: autosave colaborativo de componentes não propagava para fluxos
+
+### Backend (`telebots-backend-nestjs`)
+
+**Bugs corrigidos em `collaboration.service.ts`:**
+
+- **Bug 1 (principal):** Ao editar um componente via `ComponentEditor.vue` em modo Yjs colaborativo, as mudanças eram salvas apenas no componente. Os fluxos que usam esse componente nunca eram atualizados nem recompilados. O caminho REST (`custom-component.service.atualizar`) já fazia essa propagação, mas o caminho Yjs não.
+  - Adicionado método privado `findFlowsUsingComponent(componentId)` que verifica salas Yjs ativas e o banco para encontrar fluxos que usam o componente
+  - Em `persistUpdates`, após salvar o componente, chama `forceUpdateComponentInAllFlows` com os fluxos encontrados
+
+- **Bug 2 (secundário):** Após recompilação de fluxo via Yjs (`recompileFlow`), o evento `flow.updated` não era emitido. O `EstadoRepository` mantinha cache obsoleto com IDs de estados que já haviam sido deletados/recriados, causando erro `P2003` nos salvamentos de estado de usuários do bot.
+  - Em `recompileFlow`, após `flowService.recompilarFluxo`, adicionado `this.eventEmitter.emit('flow.updated')`
+  - Injetado `EventEmitter2` no construtor do `CollaborationService`
+
+---
+
 ## 19/03/2026 — Novas funcionalidades: hierarquia de usuários, roteamento e seed
 
 ### Backend (`telebots-backend-nestjs`)
