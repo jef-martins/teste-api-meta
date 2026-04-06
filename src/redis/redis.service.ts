@@ -113,4 +113,29 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
     this.memoryFallback.delete(key);
   }
+
+  /**
+   * Retorna chaves que correspondem ao padrão (ex: "session:*").
+   * Redis: usa KEYS (aceitável para uso admin). No fallback em memória, aplica filtro manual.
+   */
+  async keys(pattern: string): Promise<string[]> {
+    if (this.client) {
+      try {
+        return await this.client.keys(pattern);
+      } catch {
+        this.logger.warn(`Erro ao listar chaves no Redis (pattern: ${pattern}), usando fallback.`);
+      }
+    }
+
+    // Fallback: filtra memoryFallback pelo padrão simples (suporte a trailing *)
+    const prefix = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern;
+    const agora = Date.now();
+    return Array.from(this.memoryFallback.entries())
+      .filter(([k, v]) => {
+        if (!k.startsWith(prefix)) return false;
+        if (v.expires && agora > v.expires) return false;
+        return true;
+      })
+      .map(([k]) => k);
+  }
 }

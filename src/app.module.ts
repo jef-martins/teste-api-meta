@@ -19,6 +19,7 @@ import { ZenviaModule } from './bot/zenvia/zenvia.module';
 
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { RedisModule } from './redis/redis.module';
+import { BotEngineModule } from './bot/bot-engine.module';
 
 /**
  * Estratégia de canal por ambiente:
@@ -41,6 +42,7 @@ const botChannelModules = isDevelopment
     ConfigModule.forRoot({ isGlobal: true }),
     EventEmitterModule.forRoot(),
     RedisModule,
+    BotEngineModule,
     PrismaModule,
     AuthModule,
     UserModule,

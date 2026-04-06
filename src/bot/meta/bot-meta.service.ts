@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { StateMachineEngine } from '../state-machine.engine';
 import { HandlerMetaService } from './handler-meta.service';
 import { ConversationService } from '../../conversation/conversation.service';
+import { IdleExpirationService } from '../idle-expiration.service';
 
 export interface MetaContact {
   profile: {
@@ -54,6 +55,7 @@ export class BotMetaService {
     private engine: StateMachineEngine,
     private handler: HandlerMetaService,
     private conversationService: ConversationService,
+    private idleExpiration: IdleExpirationService,
   ) { }
 
   private getErrorMessage(err: unknown): string {
@@ -154,6 +156,9 @@ export class BotMetaService {
     try {
       // Persiste a mensagem no banco de dados
       await this.salvarNoBanco(mockMessage, from, phoneId, nome, corpo);
+
+      // Registra atividade para expiração por ociosidade
+      await this.idleExpiration.registrarAtividade(chatId);
 
       // Processa a mensagem pela máquina de estados
       await this.engine.process(

@@ -30,13 +30,26 @@ services:
       - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-postgres}?schema=public
       - DB_HOST=db
       - DB_PORT=5432
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     ports:
       - "${PORT:-3000}:3000"
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     command: sh -c "npx prisma migrate deploy && npx prisma db seed && npm run start:prod"
     restart: always
 
+  redis:
+    image: redis:7-alpine
+    container_name: telebots-backend-redis
+    ports:
+      - "6379:6379"
+    restart: always
+    volumes:
+      - redisdata:/data
+
 volumes:
   pgdata:
+  redisdata:

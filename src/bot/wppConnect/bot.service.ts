@@ -8,6 +8,7 @@ import { ConversationService } from '../../conversation/conversation.service';
 import { StateMachineEngine } from '../state-machine.engine';
 import { HandlerService } from '../handler.service';
 import { EstadoRepository } from '../estado.repository';
+import { IdleExpirationService } from '../idle-expiration.service';
 
 type WppMessage = {
   isGroupMsg?: boolean;
@@ -78,6 +79,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private handler: HandlerService,
     private conversationService: ConversationService,
     private estadoRepo: EstadoRepository,
+    private idleExpiration: IdleExpirationService,
   ) {
     this.sessao = process.env.BOT_SESSAO || 'sessao-bot-wpp';
   }
@@ -264,6 +266,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       corpo = (message.body || message.content || '').trim();
     }
 
+    await this.idleExpiration.registrarAtividade(chatId);
     await this.engine.process(message, chatId, corpo, nome, this.handler);
   }
 

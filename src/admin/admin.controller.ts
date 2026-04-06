@@ -16,14 +16,39 @@ import {
   TransicaoUpdateInput,
   TesteRequisicaoInput,
 } from './admin.service';
+import { IdleExpirationService } from '../bot/idle-expiration.service';
 
 @Controller('admin')
 export class AdminController {
-  constructor(private adminService: AdminService) { }
+  constructor(
+    private adminService: AdminService,
+    private idleExpiration: IdleExpirationService,
+  ) { }
 
   @Get('modo')
   obterModo() {
     return this.adminService.obterModo();
+  }
+
+  // ─── Expiração por Ociosidade (Meta/WPP) ─────────────────────────────────
+
+  @Get('config/expiracao-ociosidade')
+  async obterConfiguracaoExpiracao() {
+    return this.idleExpiration.obterConfig();
+  }
+
+  @Put('config/expiracao-ociosidade')
+  async salvarConfiguracaoExpiracao(
+    @Body() body: { tempoExpiracaoMinutos: number | null; mensagemExpiracao: string | null },
+  ) {
+    const tempoMs =
+      body.tempoExpiracaoMinutos !== null && body.tempoExpiracaoMinutos > 0
+        ? body.tempoExpiracaoMinutos * 60 * 1000
+        : null;
+    return this.idleExpiration.salvarConfig({
+      tempoExpiracaoMs: tempoMs,
+      mensagemExpiracao: body.mensagemExpiracao ?? null,
+    });
   }
 
   // ─── Estados ─────────────────────────────────────────────────────────────

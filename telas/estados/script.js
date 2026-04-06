@@ -821,3 +821,51 @@ async function desativarExpiracaoNps() {
     toast('Erro ao desativar expiração.', true);
   }
 }
+
+// ─── Configuração Global de Expiração (Meta/WPP) ──────────────────────────
+
+async function carregarConfigExpiracaoGlobal() {
+  try {
+    // Usamos o helper 'api' que já aponta para /api/admin
+    const config = await api('GET', '/config/expiracao-ociosidade');
+    if (!config) return;
+    
+    document.getElementById('global-expiracao-minutos').value = 
+      config.tempoExpiracaoMs ? Math.floor(config.tempoExpiracaoMs / 60000) : '';
+    document.getElementById('global-expiracao-mensagem').value = config.mensagemExpiracao || '';
+  } catch (e) {
+    console.error('Erro ao carregar expiração global:', e);
+  }
+}
+
+async function salvarConfigExpiracaoGlobal() {
+  const btn = document.getElementById('btn-save-global-config');
+  const minStr = document.getElementById('global-expiracao-minutos').value.trim();
+  const minutos = minStr ? parseInt(minStr) : null;
+  const mensagem = document.getElementById('global-expiracao-mensagem').value;
+  
+  if (minStr && (isNaN(minutos) || minutos < 0)) {
+    toast('Tempo de ociosidade deve ser um número válido.', true);
+    return;
+  }
+
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = 'Salvando...';
+  
+  try {
+    await api('PUT', '/config/expiracao-ociosidade', {
+      tempoExpiracaoMinutos: minutos,
+      mensagemExpiracao: mensagem || null
+    });
+    toast('Configuração global de ociosidade salva!');
+  } catch (e) {
+    toast('Falha ao salvar configuração global.', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+// Inicialização
+carregarConfigExpiracaoGlobal();

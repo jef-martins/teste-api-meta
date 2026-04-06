@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
-import { BotModule } from '../bot/wppConnect/bot.module';
 
+/**
+ * Módulo Administrativo para gerenciar fluxos, estados e transições.
+ * Acesso global ao BotEngineModule que contém os repositórios e serviços de expiração.
+ */
 @Module({
-  imports: [BotModule],
   controllers: [AdminController],
   providers: [AdminService],
 })
