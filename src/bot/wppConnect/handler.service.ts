@@ -88,7 +88,13 @@ type HandlerConfig = Record<string, unknown> & {
 
 type WppClient = {
   sendText: (destino: string, texto: string) => Promise<unknown>;
-  sendListMessage?: (destino: string, payload: unknown) => Promise<unknown>;
+  sendListMessage: (destino: string, payload: unknown) => Promise<unknown>;
+  sendButtons: (
+    destino: string,
+    titulo: string,
+    botoes: Array<{ id: string; text: string }>,
+    rodape: string,
+  ) => Promise<unknown>;
 };
 
 type DynamicHandler = (
@@ -96,14 +102,18 @@ type DynamicHandler = (
   chatId: string,
   corpo: string,
   engine: StateMachineEngine,
-) => Promise<unknown> | unknown;
+) => unknown;
 
 @Injectable()
 export class HandlerService {
   private readonly logger = new Logger(HandlerService.name);
 
   /** Set by BotService after WPPConnect initialization */
-  client: WppClient = { sendText: async () => undefined };
+  client: WppClient = {
+    sendText: () => Promise.resolve(undefined),
+    sendListMessage: () => Promise.resolve(undefined),
+    sendButtons: () => Promise.resolve(undefined),
+  };
 
   constructor(private estadoRepo: EstadoRepository) {}
 
@@ -122,6 +132,25 @@ export class HandlerService {
   private getErrorMessage(err: unknown): string {
     if (err instanceof Error) return err.message;
     return String(err);
+  }
+
+  private safeString(value: unknown): string {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return value.toString();
+    }
+    if (typeof value === 'object') return JSON.stringify(value);
+    return `${value as string}`;
+  }
+
+  /** Remove acentos/diacríticos e converte para minúsculas */
+  private normalizar(str: string): string {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
@@ -208,7 +237,7 @@ export class HandlerService {
 
     const obj = item as ItemInterativoObjeto;
 
-    const entrada = String(
+    const entrada = this.safeString(
       obj.entrada ??
         obj.id ??
         obj.rowId ??
@@ -219,7 +248,7 @@ export class HandlerService {
         obj.text ??
         '',
     ).trim();
-    const label = String(
+    const label = this.safeString(
       obj.label ??
         obj.title ??
         obj.text ??
@@ -237,7 +266,7 @@ export class HandlerService {
     return {
       entrada: entrada || label,
       label: label || entrada,
-      descricao: String(obj.descricao ?? obj.description ?? '').trim(),
+      descricao: this.safeString(obj.descricao ?? obj.description ?? '').trim(),
     };
   }
 
@@ -334,7 +363,10 @@ export class HandlerService {
       for (const assignment of assignments) {
         const key = assignment.key;
         const rawValue = assignment.value ?? '';
-        const interpolado = engine.interpolar(String(rawValue), dadosAtuais);
+        const interpolado = engine.interpolar(
+          this.safeString(rawValue),
+          dadosAtuais,
+        );
         if (key) engine.salvarDado(chatId, key, interpolado);
       }
       this.logger.log(
@@ -373,6 +405,8 @@ export class HandlerService {
           engine,
           '[auto-exit]',
         );
+      } else {
+        await engine.finalizarSessao(chatId);
       }
     }
   }
@@ -440,7 +474,10 @@ export class HandlerService {
       for (const assignment of captureAssignments) {
         const key = assignment.key;
         const rawValue = assignment.value ?? '';
-        const interpolado = engine.interpolar(String(rawValue), dadosAtuais);
+        const interpolado = engine.interpolar(
+          this.safeString(rawValue),
+          dadosAtuais,
+        );
         if (key) engine.salvarDado(chatId, key, interpolado);
       }
     }
@@ -480,7 +517,9 @@ export class HandlerService {
 
     if (
       Array.isArray(proximoCampo.valoresAceitos) &&
-      !proximoCampo.valoresAceitos.includes(corpo)
+      !proximoCampo.valoresAceitos.some(
+        (v: string) => this.normalizar(v) === this.normalizar(corpo),
+      )
     ) {
       const msgInvalida =
         proximoCampo.mensagemInvalida ??
@@ -510,7 +549,10 @@ export class HandlerService {
     }
 
     const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
-    if (!proximo) return;
+    if (!proximo) {
+      await engine.finalizarSessao(chatId);
+      return;
+    }
 
     await this.avancarEExecutar(
       proximo,
@@ -547,9 +589,10 @@ export class HandlerService {
           config.opcoes ?? [],
           'opcoes',
         );
+        const corpoNorm = this.normalizar(corpo);
         const match = opcoes.find(
           (o: ItemInterativoNormalizado) =>
-            (o.label || '').toLowerCase() === corpo.toLowerCase(),
+            this.normalizar(o.label || '') === corpoNorm,
         );
         if (match) {
           proximo = await this.estadoRepo.buscarProximoEstado(
@@ -613,7 +656,7 @@ export class HandlerService {
 
     try {
       await Promise.race([
-        this.client.sendListMessage!(destino, {
+        this.client.sendListMessage(destino, {
           buttonText: config.botaoTexto || 'Selecione:',
           description: titulo,
           sections: [
@@ -666,9 +709,10 @@ export class HandlerService {
           config.botoes ?? [],
           'botoes',
         );
+        const corpoNorm = this.normalizar(corpo);
         const match = botoes.find(
           (b: ItemInterativoNormalizado) =>
-            (b.label || '').toLowerCase() === corpo.toLowerCase(),
+            this.normalizar(b.label || '') === corpoNorm,
         );
         if (match) {
           proximo = await this.estadoRepo.buscarProximoEstado(
@@ -718,23 +762,35 @@ export class HandlerService {
       return;
     }
 
-    try {
-      const linhas = (config.botoes ?? [])
-        .map((b: ItemInterativoNormalizado) => `*${b.entrada}* - ${b.label}`)
-        .join('\n');
-      const rodape = config.rodape ? `\n\n_${config.rodape}_` : '';
-      const cabecalho = config.cabecalho ? `*${config.cabecalho}*\n\n` : '';
+    const destino = message.from;
+    const titulo = config.titulo ?? 'Escolha uma opção:';
+    const rodape = config.rodape ?? '';
 
-      await this.client.sendText(
-        message.from,
-        `${cabecalho}${config.titulo ?? 'Escolha uma opção:'}\n\n${linhas}${rodape}`,
-      );
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('sendButtons timeout após 5s')), 5000),
+    );
+
+    try {
+      await Promise.race([
+        this.client.sendButtons(
+          destino,
+          titulo,
+          botoes.map((b: ItemInterativoNormalizado) => ({
+            id: String(b.entrada),
+            text: String(b.label || b.entrada),
+          })),
+          rodape,
+        ),
+        timeout,
+      ]);
     } catch (err: unknown) {
-      this.logger.error(`Erro ao enviar botões: ${this.getErrorMessage(err)}`);
-      const linhas = (config.botoes ?? [])
+      this.logger.warn(
+        `[${chatId}] Fallback texto botões — motivo: ${this.getErrorMessage(err)}`,
+      );
+      const linhas = botoes
         .map((b: ItemInterativoNormalizado) => `*${b.entrada}* - ${b.label}`)
         .join('\n');
-      await this.enviarResposta(message, `${config.titulo ?? ''}\n\n${linhas}`);
+      await this.enviarResposta(message, `${titulo}\n\n${linhas}`);
     }
   }
 
@@ -881,7 +937,7 @@ export class HandlerService {
         }
         const res = await fetch(urlFinal, { headers });
         statusHttp = res.status;
-        respostaBody = await res.json();
+        respostaBody = await res.json().catch(() => ({}));
       } else {
         const res = await fetch(urlBase, {
           method: metodo,
@@ -889,7 +945,7 @@ export class HandlerService {
           body: JSON.stringify(bodyObj),
         });
         statusHttp = res.status;
-        respostaBody = await res.json();
+        respostaBody = await res.json().catch(() => ({}));
       }
 
       const respostaTexto = JSON.stringify(respostaBody);
@@ -948,7 +1004,7 @@ export class HandlerService {
           }
         } else {
           if (typeof valorExtraido !== 'object') {
-            valorParaTransicao = String(valorExtraido).toLowerCase();
+            valorParaTransicao = this.safeString(valorExtraido).toLowerCase();
           }
           let variaveis: Record<string, unknown> = {
             resposta: valorExtraido,
@@ -997,6 +1053,8 @@ export class HandlerService {
           engine,
           corpo,
         );
+      } else {
+        await engine.finalizarSessao(chatId);
       }
     }
   }
@@ -1020,7 +1078,10 @@ export class HandlerService {
     for (const assignment of assignments) {
       const key = assignment.key;
       const rawValue = assignment.value ?? '';
-      const interpolado = engine.interpolar(String(rawValue), dadosChat);
+      const interpolado = engine.interpolar(
+        this.safeString(rawValue),
+        dadosChat,
+      );
       if (key) engine.salvarDado(chatId, key, interpolado);
     }
 
@@ -1041,6 +1102,8 @@ export class HandlerService {
         engine,
         '[setVariable]',
       );
+    } else {
+      await engine.finalizarSessao(chatId);
     }
   }
 
@@ -1079,6 +1142,8 @@ export class HandlerService {
         engine,
         '[delay]',
       );
+    } else {
+      await engine.finalizarSessao(chatId);
     }
   }
 }

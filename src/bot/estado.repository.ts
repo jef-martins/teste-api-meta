@@ -41,6 +41,15 @@ export class EstadoRepository implements OnModuleInit {
     return String(err);
   }
 
+  /** Remove acentos/diacríticos e converte para minúsculas */
+  private normalizar(str: string): string {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
   private isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
@@ -113,7 +122,7 @@ export class EstadoRepository implements OnModuleInit {
         this.transicoesCache.set(t.estadoOrigem, lista);
       });
 
-      this.estadoInicialCache = estadoInicialNode?.estado || 'NOVO';
+      this.estadoInicialCache = estadoInicialNode?.estado ?? null;
 
       this.logger.log(
         `Cache atualizado: ${this.configCache.size} estados, ${this.transicoesCache.size} origens de transição.`,
@@ -167,33 +176,46 @@ export class EstadoRepository implements OnModuleInit {
     try {
       const transicoes = this.transicoesCache.get(estadoAtual) || [];
 
-      // Exact match first in cache
-      const exactMatch = transicoes.find((t) => t.entrada === entrada);
+      // Busca explícita por wildcard (ex: auto-transição)
+      if (entrada === '*') {
+        const wildcard = transicoes.find((t) => t.entrada === '*');
+        if (wildcard) return wildcard.estadoDestino;
+
+        const dbWildcard = await this.prisma.botEstadoTransicao.findFirst({
+          where: { estadoOrigem: estadoAtual, entrada: '*', ativo: true },
+          select: { estadoDestino: true },
+        });
+        return dbWildcard?.estadoDestino ?? null;
+      }
+
+      const entradaNorm = this.normalizar(entrada);
+
+      // Match in cache (accent + case insensitive)
+      const exactMatch = transicoes.find(
+        (t) => t.entrada !== '*' && this.normalizar(t.entrada) === entradaNorm,
+      );
       if (exactMatch) return exactMatch.estadoDestino;
 
       // Wildcard fallback in cache
-      if (acceptWildcard && entrada !== '*') {
+      if (acceptWildcard) {
         const wildcardMatch = transicoes.find((t) => t.entrada === '*');
         if (wildcardMatch) return wildcardMatch.estadoDestino;
       }
 
-      // Fallback to database if not found in cache (e.g. cache hasn't loaded properly)
-      let row = await this.prisma.botEstadoTransicao.findFirst({
-        where: {
-          estadoOrigem: estadoAtual,
-          entrada: { equals: entrada, mode: 'insensitive' },
-          ativo: true,
-        },
-        select: { estadoDestino: true },
+      // Fallback to database if not found in cache
+      const dbRows = await this.prisma.botEstadoTransicao.findMany({
+        where: { estadoOrigem: estadoAtual, ativo: true },
+        select: { entrada: true, estadoDestino: true },
       });
-      if (row) return row.estadoDestino;
 
-      if (acceptWildcard && entrada !== '*') {
-        row = await this.prisma.botEstadoTransicao.findFirst({
-          where: { estadoOrigem: estadoAtual, entrada: '*', ativo: true },
-          select: { estadoDestino: true },
-        });
-        if (row) return row.estadoDestino;
+      const dbMatch = dbRows.find((r) => {
+        return r.entrada !== '*' && this.normalizar(r.entrada) === entradaNorm;
+      });
+      if (dbMatch) return dbMatch.estadoDestino;
+
+      if (acceptWildcard) {
+        const dbWildcard = dbRows.find((r) => r.entrada === '*');
+        if (dbWildcard) return dbWildcard.estadoDestino;
       }
       return null;
     } catch (err: unknown) {
@@ -253,14 +275,35 @@ export class EstadoRepository implements OnModuleInit {
           update: { estadoAtual: estado, nome: nome || undefined },
           create: { chatId, estadoAtual: estado, nome: nome || undefined },
         })
-        .catch((err: unknown) =>
-          this.logger.error(
-            `Erro ao salvar no banco em background: ${this.getErrorMessage(err)}`,
-          ),
-        );
+        .catch((err: any) => {
+          if (err?.code === 'P2003') {
+            this.logger.warn(
+              `[${chatId}] Estado '${estado}' não existe mais no banco (fluxo atualizado?). Salvamento abortado, fluxo será reiniciado na próxima mensagem.`,
+            );
+          } else {
+            this.logger.error(
+              `Erro ao salvar no banco em background [${chatId}]: ${this.getErrorMessage(err)}`,
+            );
+          }
+        });
     } catch (err: unknown) {
       this.logger.error(
         `Erro ao salvar estado do usuário no Redis/DB: ${this.getErrorMessage(err)}`,
+      );
+    }
+  }
+
+  async limparEstadoUsuario(chatId: string) {
+    try {
+      await this.redis.del(`session:${chatId}`);
+      await this.prisma.botEstadoUsuario
+        .delete({ where: { chatId } })
+        .catch(() => {
+          /* registro pode não existir */
+        });
+    } catch (err: unknown) {
+      this.logger.error(
+        `Erro ao limpar estado do usuário [${chatId}]: ${this.getErrorMessage(err)}`,
       );
     }
   }
@@ -351,7 +394,7 @@ export class EstadoRepository implements OnModuleInit {
     }
   }
 
-  async obterEstadoInicial(): Promise<string> {
+  async obterEstadoInicial(): Promise<string | null> {
     try {
       if (this.estadoInicialCache) {
         return this.estadoInicialCache;
@@ -366,9 +409,24 @@ export class EstadoRepository implements OnModuleInit {
         },
         select: { estado: true },
       });
-      return row?.estado || 'NOVO';
+      // Retorna null quando não há estado start ativo
+      // (evita persistir 'NOVO' — que não existe no banco — quebrando a FK constraint)
+      return row?.estado ?? null;
     } catch {
-      return 'NOVO';
+      return null;
+    }
+  }
+
+  async obterFluxoAtivo(): Promise<string | null> {
+    try {
+      const fluxoAtivo = await this.prisma.botFluxo.findFirst({
+        where: { ativo: true },
+        select: { id: true },
+      });
+      return fluxoAtivo?.id ?? null;
+    } catch (err: any) {
+      this.logger.error(`Erro ao obter fluxo ativo: ${err.message}`);
+      return null;
     }
   }
 }

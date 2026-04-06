@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import * as os from 'os';
+import * as v8 from 'v8';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface SnapshotServidor {
@@ -143,6 +144,7 @@ export class MonitoringService {
     const usedMem = totalMem - freeMem;
     const percentualUsada = Math.round((usedMem / totalMem) * 100);
     const heap = process.memoryUsage();
+    const heapStats = v8.getHeapStatistics();
     const heapPercent = Math.round((heap.heapUsed / heap.heapTotal) * 100);
 
     const [
@@ -236,6 +238,7 @@ export class MonitoringService {
       heap: {
         usadoBytes: heap.heapUsed,
         totalBytes: heap.heapTotal,
+        limiteBytes: heapStats.heap_size_limit,
         rssBytes: heap.rss,
         externalBytes: heap.external,
         percentualUsado: heapPercent,

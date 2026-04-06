@@ -164,6 +164,22 @@ export class OrganizationController {
     );
   }
 
+  @Patch('organizacoes/:orgId/sub-orgs/:subOrgId/collab')
+  toggleCollab(
+    @Param('orgId') orgId: string,
+    @Param('subOrgId') subOrgId: string,
+    @Req() req: any,
+    @Body() body: { collabEnabled: boolean },
+  ) {
+    return this.orgService.toggleCollabSubOrg(
+      orgId,
+      subOrgId,
+      req.user.id,
+      req.user.master,
+      body.collabEnabled,
+    );
+  }
+
   @Post('organizacoes/:orgId/sub-orgs/:subOrgId/transferir')
   transferirSubOrg(
     @Param('subOrgId') subOrgId: string,

@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import * as Y from 'yjs';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,6 +14,8 @@ import type {
 const PERSIST_DEBOUNCE_MS = 2000;
 const RECOMPILE_DEBOUNCE_MS = 10000; // Recompile bot state less often (every 10s max)
 const ROOM_CLEANUP_TIMEOUT_MS = 30000;
+const COMPACT_THRESHOLD = 100;     // Compact after this many accumulated updates
+const COMPACT_MIN_INTERVAL_MS = 60_000; // Never compact more than once per minute
 
 interface Room {
   doc: Y.Doc;
@@ -26,6 +29,10 @@ interface Room {
   roomType: 'flow' | 'component';
   /** The actual entity ID (flowId or componentId) */
   entityId: string;
+  /** In-memory count of stored Yjs updates — avoids a DB count() on every persist */
+  storedUpdateCount: number;
+  /** Timestamp of last compaction — throttles compaction frequency */
+  lastCompactedAt: number;
 }
 
 type ComponentJsonPayload = {
@@ -41,7 +48,8 @@ export class CollaborationService implements OnModuleDestroy {
   constructor(
     private prisma: PrismaService,
     private flowService: FlowService,
-  ) {}
+    private eventEmitter: EventEmitter2,
+  ) { }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -98,6 +106,34 @@ export class CollaborationService implements OnModuleDestroy {
     this.rooms.clear();
   }
 
+  /** Returns collab settings for the sub-org that owns the given flow (null = no restriction) */
+  async getFlowCollabInfo(flowId: string): Promise<{ collabEnabled: boolean; collabDisabledByMaster: boolean } | null> {
+    const flow = await this.prisma.botFluxo.findUnique({
+      where: { id: flowId },
+      select: { subOrganizacaoId: true },
+    });
+    if (!flow?.subOrganizacaoId) return null;
+    const subOrg = await this.prisma.subOrganizacao.findUnique({
+      where: { id: flow.subOrganizacaoId },
+      select: { collabEnabled: true, collabDisabledByMaster: true },
+    });
+    return subOrg ?? null;
+  }
+
+  /** Returns collab settings for the sub-org that owns the given component (null = no restriction) */
+  async getComponentCollabInfo(componentId: string): Promise<{ collabEnabled: boolean; collabDisabledByMaster: boolean } | null> {
+    const component = await this.prisma.componentePersonalizado.findUnique({
+      where: { id: componentId },
+      select: { subOrganizacaoId: true },
+    });
+    if (!component?.subOrganizacaoId) return null;
+    const subOrg = await this.prisma.subOrganizacao.findUnique({
+      where: { id: component.subOrganizacaoId },
+      select: { collabEnabled: true, collabDisabledByMaster: true },
+    });
+    return subOrg ?? null;
+  }
+
   async getOrCreateRoom(flowId: string): Promise<Room> {
     let room = this.rooms.get(flowId);
     if (room) {
@@ -119,8 +155,11 @@ export class CollaborationService implements OnModuleDestroy {
       needsRecompile: false,
       roomType: 'flow',
       entityId: flowId,
+      storedUpdateCount: 0,
+      lastCompactedAt: 0,
     };
 
+    room.storedUpdateCount = await this.prisma.yjsUpdate.count({ where: { flowId } });
     await this.loadFlowState(flowId, doc);
 
     this.rooms.set(flowId, room);
@@ -150,8 +189,11 @@ export class CollaborationService implements OnModuleDestroy {
       needsRecompile: false,
       roomType: 'component',
       entityId: componentId,
+      storedUpdateCount: 0,
+      lastCompactedAt: 0,
     };
 
+    room.storedUpdateCount = await this.prisma.yjsComponentUpdate.count({ where: { componentId } });
     await this.loadComponentState(componentId, doc);
 
     this.rooms.set(roomKey, room);
@@ -220,6 +262,85 @@ export class CollaborationService implements OnModuleDestroy {
     }, PERSIST_DEBOUNCE_MS);
   }
 
+  /**
+   * Updates all Yjs rooms (active or inactive) that contain a custom component with the given ID.
+   * This ensures the real-time canvas ALWAYS matches the database without overriding it on sync.
+   */
+  async forceUpdateComponentInAllFlows(
+    componentId: string,
+    nodesJson: { nodes: FlowNode[]; connections: FlowConnection[] },
+    flowIds: string[],
+  ) {
+    for (const flowId of flowIds) {
+      try {
+        const isRoomActive = this.rooms.has(flowId);
+        
+        // If inactive, gets created in memory
+        const room = await this.getOrCreateRoom(flowId);
+
+        const nodesMap = room.doc.getMap('nodes');
+        const nodes = this.getMapValues<FlowNode>(nodesMap);
+
+        let modificado = false;
+        let localUpdate: Uint8Array | null = null;
+
+        const onUpdate = (update: Uint8Array) => {
+          // If there are multiple transacts (unlikely), concatenate them. But we only have one.
+          localUpdate = update;
+        };
+
+        room.doc.on('update', onUpdate);
+
+        room.doc.transact(() => {
+          for (const node of nodes) {
+            if (
+              node.type === 'customComponent' &&
+              node.properties?.componentId === componentId
+            ) {
+              const updatedNode = {
+                ...node,
+                properties: {
+                  ...node.properties,
+                  internalNodes: nodesJson.nodes || [],
+                  internalConnections: nodesJson.connections || [],
+                },
+              };
+              nodesMap.set(node.id, updatedNode);
+              modificado = true;
+            }
+          }
+        });
+        room.doc.off('update', onUpdate);
+
+        if (modificado && localUpdate) {
+          room.pendingUpdates.push(localUpdate);
+          room.needsRecompile = true;
+
+          if (!isRoomActive) {
+            // Persist immediately if the room is not actively used
+            await this.persistUpdates(flowId, room);
+            // Delete from memory to not leak
+            this.rooms.delete(flowId);
+            this.logger.debug(
+              `Componente ${componentId} atualizado no YjsHistory inativo do fluxo ${flowId}`,
+            );
+          } else {
+            // If active, debounce via schedule
+            this.schedulePersist(flowId, room);
+            this.logger.debug(
+              `Componente ${componentId} atualizado na sala Yjs ativa do fluxo ${flowId}`,
+            );
+          }
+        } else if (!isRoomActive) {
+          // Room just loaded by us but had no changes, clear it from memory
+          this.rooms.delete(flowId);
+        }
+      } catch (err) {
+        this.logger.error(`Falha ao forcar update no fluxo ${flowId}`, err);
+      }
+    }
+  }
+
   private async persistUpdates(roomKey: string, room: Room) {
     if (room.pendingUpdates.length === 0) return;
 
@@ -234,18 +355,31 @@ export class CollaborationService implements OnModuleDestroy {
             update: Buffer.from(mergedUpdate),
           },
         });
+        room.storedUpdateCount++;
         await this.syncComponentJsonFromDoc(room.entityId, room.doc);
-        await this.compactComponentUpdatesIfNeeded(room.entityId);
-        this.logger.debug(
-          `Updates persistidos para componente ${room.entityId}`,
-        );
+        if (this.shouldCompact(room)) {
+          await this.compactComponentUpdatesIfNeeded(room.entityId, room);
+        }
+        // Propagate component changes to all flows that use this component
+        const nodesMap = room.doc.getMap('nodes');
+        const connectionsMap = room.doc.getMap('connections');
+        const nodes = this.getMapValues<FlowNode>(nodesMap);
+        const connections = this.getMapValues<FlowConnection>(connectionsMap);
+        const flowIds = await this.findFlowsUsingComponent(room.entityId);
+        if (flowIds.length > 0) {
+          await this.forceUpdateComponentInAllFlows(room.entityId, { nodes, connections }, flowIds);
+        }
+        this.logger.debug(`Updates persistidos para componente ${room.entityId}`);
       } else {
         const flowId = room.entityId;
         await this.prisma.yjsUpdate.create({
           data: { flowId, update: Buffer.from(mergedUpdate) },
         });
+        room.storedUpdateCount++;
         await this.syncFlowJsonFromDoc(flowId, room.doc);
-        await this.compactUpdatesIfNeeded(flowId);
+        if (this.shouldCompact(room)) {
+          await this.compactUpdatesIfNeeded(flowId, room);
+        }
         room.needsRecompile = true;
         this.scheduleRecompile(roomKey, room);
         this.logger.debug(`Updates persistidos para fluxo ${flowId}`);
@@ -282,12 +416,56 @@ export class CollaborationService implements OnModuleDestroy {
           connections,
           variables,
         });
+        this.eventEmitter.emit('flow.updated');
         this.logger.debug(`Fluxo ${flowId} recompilado`);
       }
     } catch (error) {
       this.logger.error(`Falha ao recompilar fluxo ${flowId}`, error);
       room.needsRecompile = true;
     }
+  }
+
+  /**
+   * Returns IDs of all flows that contain at least one customComponent node
+   * referencing the given componentId. Checks active Yjs rooms (live state)
+   * first, then falls back to the persisted flowJson in the database.
+   */
+  private async findFlowsUsingComponent(componentId: string): Promise<string[]> {
+    const flowIds = new Set<string>();
+
+    // Check active Yjs rooms (most up-to-date state)
+    for (const [, room] of this.rooms) {
+      if (room.roomType !== 'flow') continue;
+      const nodesMap = room.doc.getMap('nodes');
+      for (const node of this.getMapValues<FlowNode>(nodesMap)) {
+        if (node.type === 'customComponent' && node.properties?.componentId === componentId) {
+          flowIds.add(room.entityId);
+          break;
+        }
+      }
+    }
+
+    // Check DB for flows not currently in active Yjs rooms
+    const fluxos = await this.prisma.botFluxo.findMany({
+      where: { flowJson: { not: Prisma.AnyNull } },
+      select: { id: true, flowJson: true },
+    });
+
+    for (const fluxo of fluxos) {
+      if (flowIds.has(fluxo.id)) continue;
+      if (!this.isRecord(fluxo.flowJson)) continue;
+      const nodes = Array.isArray((fluxo.flowJson as Record<string, unknown>).nodes)
+        ? ((fluxo.flowJson as Record<string, unknown>).nodes as FlowNode[])
+        : [];
+      for (const node of nodes) {
+        if (node.type === 'customComponent' && node.properties?.componentId === componentId) {
+          flowIds.add(fluxo.id);
+          break;
+        }
+      }
+    }
+
+    return Array.from(flowIds);
   }
 
   private async syncFlowJsonFromDoc(flowId: string, doc: Y.Doc) {
@@ -331,15 +509,21 @@ export class CollaborationService implements OnModuleDestroy {
     }
   }
 
-  private async compactUpdatesIfNeeded(flowId: string) {
-    const count = await this.prisma.yjsUpdate.count({ where: { flowId } });
-    if (count < 50) return;
+  private shouldCompact(room: Room): boolean {
+    if (room.storedUpdateCount < COMPACT_THRESHOLD) return false;
+    const now = Date.now();
+    if (now - room.lastCompactedAt < COMPACT_MIN_INTERVAL_MS) return false;
+    return true;
+  }
 
+  private async compactUpdatesIfNeeded(flowId: string, room: Room) {
     const allUpdates = await this.prisma.yjsUpdate.findMany({
       where: { flowId },
       orderBy: { criadoEm: 'asc' },
       select: { id: true, update: true },
     });
+
+    if (allUpdates.length < 2) return;
 
     const merged = Y.mergeUpdates(
       allUpdates.map((u) => new Uint8Array(u.update)),
@@ -352,9 +536,9 @@ export class CollaborationService implements OnModuleDestroy {
       }),
     ]);
 
-    this.logger.log(
-      `Compactados ${allUpdates.length} updates em 1 para fluxo ${flowId}`,
-    );
+    room.storedUpdateCount = 1;
+    room.lastCompactedAt = Date.now();
+    this.logger.log(`Compactados ${allUpdates.length} updates em 1 para fluxo ${flowId}`);
   }
 
   private async loadFlowState(flowId: string, doc: Y.Doc) {
@@ -487,7 +671,7 @@ export class CollaborationService implements OnModuleDestroy {
     }
   }
 
-  private async compactComponentUpdatesIfNeeded(componentId: string) {
+  private async compactComponentUpdatesIfNeeded(componentId: string, room: Room) {
     const count = await this.prisma.yjsComponentUpdate.count({
       where: { componentId },
     });
@@ -498,6 +682,8 @@ export class CollaborationService implements OnModuleDestroy {
       orderBy: { criadoEm: 'asc' },
       select: { id: true, update: true },
     });
+
+    if (allUpdates.length < 2) return;
 
     const merged = Y.mergeUpdates(
       allUpdates.map((u) => new Uint8Array(u.update)),
@@ -510,9 +696,9 @@ export class CollaborationService implements OnModuleDestroy {
       }),
     ]);
 
-    this.logger.log(
-      `Compactados ${allUpdates.length} updates em 1 para componente ${componentId}`,
-    );
+    room.storedUpdateCount = 1;
+    room.lastCompactedAt = Date.now();
+    this.logger.log(`Compactados ${allUpdates.length} updates em 1 para componente ${componentId}`);
   }
 
   private async cleanupRoom(flowId: string) {

@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -64,6 +65,8 @@ type VariavelDb = {
 
 @Injectable()
 export class FlowService {
+  private readonly logger = new Logger(FlowService.name);
+
   constructor(
     private prisma: PrismaService,
     private converter: FlowConverterService,
@@ -212,10 +215,24 @@ export class FlowService {
   }
 
   async obter(id: string, usuarioId: string, isMaster = false) {
-    const fluxo = await this.prisma.botFluxo.findUnique({ where: { id } });
+    const fluxo = await this.prisma.botFluxo.findUnique({
+      where: { id },
+      include: {
+        subOrganizacao: {
+          select: { id: true, collabEnabled: true, collabDisabledByMaster: true },
+        },
+      },
+    });
     if (!fluxo) throw new NotFoundException('Fluxo não encontrado');
 
     await this.verificarAcessoFluxo(fluxo, usuarioId, isMaster);
+
+    const collabInfo = fluxo.subOrganizacao
+      ? {
+          collabEnabled: fluxo.subOrganizacao.collabEnabled,
+          collabDisabledByMaster: fluxo.subOrganizacao.collabDisabledByMaster,
+        }
+      : null;
 
     if (fluxo.flowJson) {
       return {
@@ -224,6 +241,8 @@ export class FlowService {
         description: fluxo.descricao,
         version: fluxo.versao,
         ativo: fluxo.ativo,
+        subOrganizacaoId: fluxo.subOrganizacaoId,
+        collabInfo,
         ...(fluxo.flowJson as object),
       };
     }
@@ -257,6 +276,8 @@ export class FlowService {
       description: fluxo.descricao,
       version: fluxo.versao,
       ativo: fluxo.ativo,
+      subOrganizacaoId: fluxo.subOrganizacaoId,
+      collabInfo,
       ...flowData,
     };
   }
@@ -415,6 +436,98 @@ export class FlowService {
   }
 
   // ─── Compilação pública (usada pelo CollaborationService) ─────────────────
+
+  /**
+   * Propaga a atualização de um componente personalizado para todos os fluxos
+   * que contêm nós do tipo `customComponent` referenciando esse componente.
+   *
+   * Para cada fluxo afetado:
+   * 1. Atualiza internalNodes/internalConnections do nó no flowJson
+   * 2. Persiste o novo flowJson
+   * 3. Recompila a máquina de estados
+   */
+  async atualizarNosDoComponente(
+    componenteId: string,
+    nodesJson: { nodes: FlowNode[]; connections: FlowConnection[] },
+  ): Promise<{ fluxosAtualizados: number; flowIds: string[] }> {
+    // Buscar todos os fluxos com flowJson não-nulo
+    const fluxos = await this.prisma.botFluxo.findMany({
+      where: { flowJson: { not: Prisma.AnyNull } },
+      select: { id: true, flowJson: true },
+    });
+
+    let fluxosAtualizados = 0;
+    const modifiedFlowIds: string[] = [];
+
+    for (const fluxo of fluxos) {
+      if (!fluxo.flowJson || typeof fluxo.flowJson !== 'object' || Array.isArray(fluxo.flowJson)) {
+        continue;
+      }
+
+      const flowJson = fluxo.flowJson as Record<string, unknown>;
+      const nodes = Array.isArray(flowJson.nodes) ? (flowJson.nodes as FlowNode[]) : [];
+
+      // Verificar se algum nó referencia o componente
+      let modificado = false;
+      const nodesAtualizados = nodes.map((node) => {
+        if (
+          node.type === 'customComponent' &&
+          node.properties?.componentId === componenteId
+        ) {
+          modificado = true;
+          return {
+            ...node,
+            properties: {
+              ...node.properties,
+              internalNodes: nodesJson.nodes || [],
+              internalConnections: nodesJson.connections || [],
+            },
+          };
+        }
+        return node;
+      });
+
+      if (!modificado) continue;
+
+      try {
+        // Atualizar flowJson no banco
+        const novoFlowJson = { ...flowJson, nodes: nodesAtualizados } as Prisma.InputJsonValue;
+        await this.prisma.botFluxo.update({
+          where: { id: fluxo.id },
+          data: { flowJson: novoFlowJson },
+        });
+
+        // Recompilar a máquina de estados
+        const connections = Array.isArray(flowJson.connections)
+          ? (flowJson.connections as FlowConnection[])
+          : [];
+        const variables = Array.isArray(flowJson.variables)
+          ? (flowJson.variables as FlowVariable[])
+          : [];
+
+        await this.recompilarFluxo(fluxo.id, {
+          nodes: nodesAtualizados,
+          connections,
+          variables,
+        });
+
+        fluxosAtualizados++;
+        this.logger.log(
+          `Fluxo ${fluxo.id} atualizado com novo conteúdo do componente ${componenteId}`,
+        );
+        modifiedFlowIds.push(fluxo.id);
+      } catch (err) {
+        this.logger.error(
+          `Falha ao atualizar fluxo ${fluxo.id} com componente ${componenteId}`,
+          err,
+        );
+        // Não propaga o erro — a atualização do componente em si foi bem-sucedida
+      }
+    }
+
+    this.eventEmitter.emit('flow.updated');
+    return { fluxosAtualizados, flowIds: modifiedFlowIds };
+  }
 
   async recompilarFluxo(flowId: string, flowJson: FlowJsonPayload) {
     const { estados, transicoes } = this.converter.flowToStateMachine(flowJson);
