@@ -1697,7 +1697,7 @@ export class ZenviaService implements OnModuleDestroy {
     const nps_id = sessao.nps_id;
 
     try {
-      // Encontra a mensagem de expiração do item atual aguardando resposta
+      // 1. Encontra o item atual aguardando resposta para pegar a mensagem de expiração
       const estadoAtual = sessao.runtime.engine.estadosUsuarios.get(sessao.runtime.chatId);
       const idx = estadoAtual ? sessao.runtime.stateToIndex.get(estadoAtual) : undefined;
       const itemAtual = typeof idx === 'number' ? sessao.itens[idx] : null;
@@ -1705,7 +1705,7 @@ export class ZenviaService implements OnModuleDestroy {
 
       if (mensagemExpiracao) {
         this.logger.log(
-          `[Zenvia][expiracao][sending] nps_id=${nps_id} mensagem="${mensagemExpiracao}"`,
+          `[Zenvia][expiracao][sending-msg-expiracao] nps_id=${nps_id} mensagem="${mensagemExpiracao}"`,
         );
         await this.enviarMensagem(
           sessao.from,
@@ -1717,6 +1717,32 @@ export class ZenviaService implements OnModuleDestroy {
         );
       }
 
+      // 2. Busca e envia o item de encerramento do fluxo (se houver)
+      const itemEncerramento = sessao.itens.find(
+        (item) => this.normalizeTipo(item.tipo) === 'encerramento',
+      );
+
+      if (itemEncerramento) {
+        this.logger.log(
+          `[Zenvia][expiracao][sending-encerramento] nps_id=${nps_id} mensagem="${itemEncerramento.mensagem}"`,
+        );
+        try {
+          await this.enviarMensagem(
+            sessao.from,
+            sessao.to,
+            itemEncerramento.mensagem,
+            sessao.zenviaToken,
+            sessao.zenviaBaseUrl,
+            sessao.zenviaHeaders,
+          );
+        } catch (errEnc) {
+          this.logger.warn(
+            `[Zenvia][expiracao][encerramento-falhou] nps_id=${nps_id} erro=${this.errorToString(errEnc)}`,
+          );
+        }
+      }
+
+      // 3. Marca o encerramento e finaliza
       sessao.encerramentoExecutado = true;
       if (!sessao.encerramentoExecutadoEm) {
         sessao.encerramentoExecutadoEm = this.nowIso();
