@@ -134,7 +134,16 @@ export class StateMachineEngine {
     let estadoAtualUsuario = this.estadosUsuarios.get(chatId);
     if (!estadoAtualUsuario) {
       const estadoSalvo = await this.estadoRepo.obterEstadoUsuario(chatId);
-      estadoAtualUsuario = estadoSalvo ?? estadoPadrao;
+      estadoAtualUsuario = estadoSalvo ?? estadoPadrao ?? undefined;
+
+      // Se não há fluxo ativo, não processa a mensagem
+      if (!estadoAtualUsuario) {
+        this.logger.warn(
+          `[${chatId}] nenhum fluxo ativo encontrado. Mensagem ignorada.`,
+        );
+        return;
+      }
+
       this.estadosUsuarios.set(chatId, estadoAtualUsuario);
 
       if (estadoSalvo && !this.estadosAvisados.has(chatId)) {
@@ -199,14 +208,22 @@ export class StateMachineEngine {
     }
 
     const estadoAtual = this.estadosUsuarios.get(chatId) ?? estadoPadrao;
+    // Se não há estado atual nem estado padrão (sem fluxo ativo), ignora a mensagem
+    if (!estadoAtual) {
+      this.logger.warn(`[${chatId}] nenhum fluxo ativo — mensagem ignorada.`);
+      return;
+    }
     const config = (await this.estadoRepo.obterConfigEstado(
       estadoAtual,
     )) as EstadoConfig | null;
 
     if (!config) {
       this.logger.warn(
-        `Estado "${estadoAtual}" não encontrado/ativo. Reiniciando para ${estadoPadrao}.`,
+        `Estado "${estadoAtual}" não encontrado/ativo. ${estadoPadrao ? `Reiniciando para ${estadoPadrao}.` : 'Nenhum estado inicial disponível — mensagem ignorada.'}`,
       );
+      if (!estadoPadrao) return; // Sem fluxo ativo, não há para onde ir
+      // Limpa o estado em memória para forçar re-leitura na próxima mensagem
+      this.estadosUsuarios.delete(chatId);
       await this.avancarEstado(chatId, estadoPadrao, entradaBruta, nome);
       return;
     }
@@ -239,9 +256,11 @@ export class StateMachineEngine {
         }
 
         this.logger.log(
-          `[${chatId}] sem transição no estado "${estadoAtual}" -> reiniciando fluxo a partir de "${estadoPadrao}"`,
+          `[${chatId}] sem transição no estado "${estadoAtual}" -> reiniciando fluxo a partir de "${estadoPadrao ?? 'inicio'}"`,
         );
         this.estadosAvisados.delete(chatId);
+
+        if (!estadoPadrao) return; // Sem estado inicial, ignora
 
         await this.avancarEstado(chatId, estadoPadrao, entradaBruta, nome);
 

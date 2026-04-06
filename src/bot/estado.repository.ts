@@ -34,7 +34,7 @@ export class EstadoRepository implements OnModuleInit {
   constructor(
     private prisma: PrismaService,
     private redis: RedisService,
-  ) {}
+  ) { }
 
   private getErrorMessage(err: unknown): string {
     if (err instanceof Error) return err.message;
@@ -113,7 +113,7 @@ export class EstadoRepository implements OnModuleInit {
         this.transicoesCache.set(t.estadoOrigem, lista);
       });
 
-      this.estadoInicialCache = estadoInicialNode?.estado || 'NOVO';
+      this.estadoInicialCache = estadoInicialNode?.estado ?? null;
 
       this.logger.log(
         `Cache atualizado: ${this.configCache.size} estados, ${this.transicoesCache.size} origens de transição.`,
@@ -253,11 +253,17 @@ export class EstadoRepository implements OnModuleInit {
           update: { estadoAtual: estado, nome: nome || undefined },
           create: { chatId, estadoAtual: estado, nome: nome || undefined },
         })
-        .catch((err: unknown) =>
-          this.logger.error(
-            `Erro ao salvar no banco em background: ${this.getErrorMessage(err)}`,
-          ),
-        );
+        .catch((err: any) => {
+          if (err?.code === 'P2003') {
+            this.logger.warn(
+              `[${chatId}] Estado '${estado}' não existe mais no banco (fluxo atualizado?). Salvamento abortado, fluxo será reiniciado na próxima mensagem.`,
+            );
+          } else {
+            this.logger.error(
+              `Erro ao salvar no banco em background [${chatId}]: ${this.getErrorMessage(err)}`,
+            );
+          }
+        });
     } catch (err: unknown) {
       this.logger.error(
         `Erro ao salvar estado do usuário no Redis/DB: ${this.getErrorMessage(err)}`,
@@ -351,7 +357,7 @@ export class EstadoRepository implements OnModuleInit {
     }
   }
 
-  async obterEstadoInicial(): Promise<string> {
+  async obterEstadoInicial(): Promise<string | null> {
     try {
       if (this.estadoInicialCache) {
         return this.estadoInicialCache;
@@ -366,9 +372,11 @@ export class EstadoRepository implements OnModuleInit {
         },
         select: { estado: true },
       });
-      return row?.estado || 'NOVO';
+      // Retorna null quando não há estado start ativo
+      // (evita persistir 'NOVO' — que não existe no banco — quebrando a FK constraint)
+      return row?.estado ?? null;
     } catch {
-      return 'NOVO';
+      return null;
     }
   }
 
