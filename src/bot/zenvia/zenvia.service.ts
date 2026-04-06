@@ -13,13 +13,19 @@ import { RedisService } from '../../redis/redis.service';
 
 type PrimitiveId = string | number;
 
+type OpcoesValidacaoObjeto = {
+  validation?: unknown;
+  mensagem_resposta_invalida?: string;
+  mensagem_expiracao?: string;
+};
+
 type InputItem = {
   id?: PrimitiveId;
   ordem?: number;
   tipo?: string;
   texto?: string;
-  opcoes_validacao?: string | null;
-  opcoesValidacao?: string | null;
+  opcoes_validacao?: string | number | null | OpcoesValidacaoObjeto;
+  opcoesValidacao?: string | number | null | OpcoesValidacaoObjeto;
   mensagem?: string;
 };
 
@@ -29,6 +35,8 @@ type ItemResposta = {
   tipo: string;
   mensagem: string;
   opcoesValidacao: string[];
+  mensagemInvalida: string | null;
+  mensagemExpiracao: string | null;
   exigeResposta: boolean;
   resposta: string | null;
   perguntaMessageId: string | null;
@@ -354,8 +362,27 @@ export class ZenviaService implements OnModuleDestroy {
       .toLowerCase();
   }
 
+  private extrairOpcoesValidacaoDoObjeto(value: unknown): {
+    opcoes: string[];
+    mensagemInvalida: string | null;
+    mensagemExpiracao: string | null;
+  } {
+    if (!this.isRecord(value)) {
+      return { opcoes: this.parseOpcoesValidacao(value), mensagemInvalida: null, mensagemExpiracao: null };
+    }
+    const mensagemInvalida = this.toStringOrNull(value.mensagem_resposta_invalida);
+    const mensagemExpiracao = this.toStringOrNull(value.mensagem_expiracao);
+    const opcoes = this.parseOpcoesValidacao(value.validation);
+    return { opcoes, mensagemInvalida, mensagemExpiracao };
+  }
+
   private parseOpcoesValidacao(value: unknown): string[] {
     if (value === null || value === undefined) return [];
+
+    // Se for objeto estruturado, extrai apenas o campo 'validation'
+    if (this.isRecord(value)) {
+      return this.parseOpcoesValidacao(value.validation);
+    }
 
     let parts: string[] = [];
     if (typeof value === 'string') {
@@ -502,9 +529,9 @@ export class ZenviaService implements OnModuleDestroy {
         const mensagem =
           this.toStringOrNull(raw?.texto) || this.toStringOrNull(raw?.mensagem);
         const id = ordem;
-        const opcoesValidacao = this.parseOpcoesValidacao(
-          raw?.opcoes_validacao ?? raw?.opcoesValidacao,
-        );
+        const rawOpcoes = raw?.opcoes_validacao ?? raw?.opcoesValidacao;
+        const { opcoes: opcoesValidacao, mensagemInvalida, mensagemExpiracao } =
+          this.extrairOpcoesValidacaoDoObjeto(rawOpcoes);
         const exigeResposta = this.tipoExigeResposta(tipo);
 
         if (!mensagem) {
@@ -519,6 +546,8 @@ export class ZenviaService implements OnModuleDestroy {
           tipo,
           mensagem,
           opcoesValidacao,
+          mensagemInvalida,
+          mensagemExpiracao,
           exigeResposta,
           resposta: null,
           perguntaMessageId: null,
@@ -987,16 +1016,19 @@ export class ZenviaService implements OnModuleDestroy {
 
       if (tipo === 'botao') {
         const botoes = this.criarOpcoesInterativas(item.opcoesValidacao);
+        const msgInvalidaBotao =
+          item.mensagemInvalida ??
+          (item.opcoesValidacao.length > 0
+            ? `Opcao invalida. Escolha uma das opcoes: ${item.opcoesValidacao.join(', ')}.`
+            : 'Opcao invalida.');
         configs.set(stepState, {
           handler: '_handlerBotoes',
           descricao: `Botao ${idx + 1}`,
           config: {
             titulo: item.mensagem,
             botoes,
-            mensagemInvalida:
-              item.opcoesValidacao.length > 0
-                ? `Opcao invalida. Escolha uma das opcoes: ${item.opcoesValidacao.join(', ')}.`
-                : 'Opcao invalida.',
+            mensagemInvalida: msgInvalidaBotao,
+            ...(item.mensagemExpiracao ? { mensagemExpiracao: item.mensagemExpiracao } : {}),
           },
         });
         transicoes.set(
@@ -1012,6 +1044,11 @@ export class ZenviaService implements OnModuleDestroy {
 
       if (tipo === 'lista') {
         const opcoes = this.criarOpcoesInterativas(item.opcoesValidacao);
+        const msgInvalidaLista =
+          item.mensagemInvalida ??
+          (item.opcoesValidacao.length > 0
+            ? `Opcao invalida. Escolha uma das opcoes: ${item.opcoesValidacao.join(', ')}.`
+            : 'Opcao invalida.');
         configs.set(stepState, {
           handler: '_handlerLista',
           descricao: `Lista ${idx + 1}`,
@@ -1020,10 +1057,8 @@ export class ZenviaService implements OnModuleDestroy {
             opcoes,
             botaoTexto: 'Selecionar',
             secaoTitulo: 'Opcoes',
-            mensagemInvalida:
-              item.opcoesValidacao.length > 0
-                ? `Opcao invalida. Escolha uma das opcoes: ${item.opcoesValidacao.join(', ')}.`
-                : 'Opcao invalida.',
+            mensagemInvalida: msgInvalidaLista,
+            ...(item.mensagemExpiracao ? { mensagemExpiracao: item.mensagemExpiracao } : {}),
           },
         });
         transicoes.set(
@@ -1037,6 +1072,11 @@ export class ZenviaService implements OnModuleDestroy {
         continue;
       }
 
+      const msgInvalidaCaptura =
+        item.mensagemInvalida ??
+        (item.opcoesValidacao.length > 0
+          ? `Resposta invalida. Valores aceitos: ${item.opcoesValidacao.join(', ')}.`
+          : 'Resposta invalida. Tente novamente.');
       configs.set(stepState, {
         handler: '_handlerCapturar',
         descricao: `Captura ${idx + 1}`,
@@ -1044,10 +1084,8 @@ export class ZenviaService implements OnModuleDestroy {
           mensagemPedir: item.mensagem,
           campoSalvar: responseKey,
           transicaoAutomatica: true,
-          mensagemInvalida:
-            item.opcoesValidacao.length > 0
-              ? `Resposta invalida. Valores aceitos: ${item.opcoesValidacao.join(', ')}.`
-              : 'Resposta invalida. Tente novamente.',
+          mensagemInvalida: msgInvalidaCaptura,
+          ...(item.mensagemExpiracao ? { mensagemExpiracao: item.mensagemExpiracao } : {}),
         },
       });
       transicoes.set(
