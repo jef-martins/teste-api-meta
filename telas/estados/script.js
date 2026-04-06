@@ -677,25 +677,26 @@ function renderizarSessoesNps(sessoes) {
     const tempoRestanteMs = s.tempoExpiracaoMs !== null
       ? Math.max(0, s.tempoExpiracaoMs - ociosaMs)
       : null;
-    const progresso = `${s.currentIndex}/${s.totalItens}`;
+    const current = Number(s.currentIndex || 0);
+    const total = Number(s.totalItens || 0);
+    const progresso = total > 0 ? `${current}/${total}` : '—';
+    const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+    
     const expiracaoLabel = s.expiracaoEmAndamento
       ? '<span style="color:#f85149; font-weight:700; animation: pulse 1s infinite;">⚡ Expirando...</span>'
       : formatarDuracao(tempoRestanteMs);
-    const tempoExpiracaoMinutos = s.tempoExpiracaoMs !== null
-      ? Math.round(s.tempoExpiracaoMs / 60000)
-      : '';
 
     return `
     <tr data-nps-id="${escapeHtml(s.nps_id)}" data-tempo-expiracao-ms="${s.tempoExpiracaoMs ?? ''}" data-ultima-atividade="${s.ultimaAtividadeEm}">
       <td><code style="color:#79c0ff; font-size:11px;" title="${escapeHtml(s.nps_id)}">${escapeHtml(formatarIdCurto(s.nps_id))}</code></td>
       <td style="font-size:12px;">
-        <span style="color:var(--muted);">${escapeHtml(s.from)}</span><br>
-        <span>→ ${escapeHtml(s.to)}</span>
+        <span style="color:var(--muted);">${escapeHtml(s.from || '—')}</span><br>
+        <span>→ ${escapeHtml(s.to || '—')}</span>
       </td>
       <td>
         <div style="display:flex; align-items:center; gap:6px;">
           <div style="background:var(--surface2); border-radius:4px; height:6px; flex:1; overflow:hidden;">
-            <div style="background:#388bfd; height:100%; width:${Math.round((s.currentIndex / Math.max(s.totalItens, 1)) * 100)}%;"></div>
+            <div style="background:#388bfd; height:100%; width:${percent}%;"></div>
           </div>
           <span style="font-size:12px; color:var(--muted);">${progresso}</span>
         </div>

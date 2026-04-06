@@ -508,12 +508,23 @@ export class ZenviaService implements OnModuleDestroy {
       const raw = await this.redis.get(key);
       if (raw) {
         const s = JSON.parse(raw);
+        
+        // Calcula progresso: extrai o número de STEP_N
+        const matchStep = (s.estado || '').match(/STEP_(\d+)/);
+        const currentIndex = matchStep ? parseInt(matchStep[1], 10) : 0;
+        
+        // Conta total de etapas (ignorando o estado 'END')
+        const totalItens = Object.keys(s.dynamic_states || {}).filter(k => k.startsWith('STEP_')).length;
+
         result.push({
           nps_id: s.meta?.nps_id,
           from: s.meta?.from,
           to: s.meta?.to,
           estado: s.estado,
           ultimaAtividadeEm: s.ultimaAtividadeEm,
+          tempoExpiracaoMs: s.meta?.tempoExpiracaoMs ?? null,
+          currentIndex,
+          totalItens,
         });
       }
     }
