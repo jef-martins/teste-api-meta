@@ -52,6 +52,13 @@ type WppMessage = {
 type WppClient = {
   close: () => Promise<unknown>;
   sendText: (destino: string, texto: string) => Promise<unknown>;
+  sendButtons: (
+    destino: string,
+    titulo: string,
+    botoes: Array<{ id: string; text: string }>,
+    rodape: string,
+  ) => Promise<unknown>;
+  sendListMessage: (destino: string, payload: unknown) => Promise<unknown>;
   onMessage: (callback: (message: WppMessage) => Promise<void> | void) => void;
 };
 

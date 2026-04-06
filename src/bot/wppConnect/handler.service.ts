@@ -88,7 +88,13 @@ type HandlerConfig = Record<string, unknown> & {
 
 type WppClient = {
   sendText: (destino: string, texto: string) => Promise<unknown>;
-  sendListMessage?: (destino: string, payload: unknown) => Promise<unknown>;
+  sendListMessage: (destino: string, payload: unknown) => Promise<unknown>;
+  sendButtons: (
+    destino: string,
+    titulo: string,
+    botoes: Array<{ id: string; text: string }>,
+    rodape: string,
+  ) => Promise<unknown>;
 };
 
 type DynamicHandler = (
@@ -103,7 +109,11 @@ export class HandlerService {
   private readonly logger = new Logger(HandlerService.name);
 
   /** Set by BotService after WPPConnect initialization */
-  client: WppClient = { sendText: async () => undefined };
+  client: WppClient = {
+    sendText: async () => undefined,
+    sendListMessage: async () => undefined,
+    sendButtons: async () => undefined,
+  };
 
   constructor(private estadoRepo: EstadoRepository) {}
 
@@ -613,7 +623,7 @@ export class HandlerService {
 
     try {
       await Promise.race([
-        this.client.sendListMessage!(destino, {
+        this.client.sendListMessage(destino, {
           buttonText: config.botaoTexto || 'Selecione:',
           description: titulo,
           sections: [
@@ -718,23 +728,35 @@ export class HandlerService {
       return;
     }
 
-    try {
-      const linhas = (config.botoes ?? [])
-        .map((b: ItemInterativoNormalizado) => `*${b.entrada}* - ${b.label}`)
-        .join('\n');
-      const rodape = config.rodape ? `\n\n_${config.rodape}_` : '';
-      const cabecalho = config.cabecalho ? `*${config.cabecalho}*\n\n` : '';
+    const destino = message.from;
+    const titulo = config.titulo ?? 'Escolha uma opção:';
+    const rodape = config.rodape ?? '';
 
-      await this.client.sendText(
-        message.from,
-        `${cabecalho}${config.titulo ?? 'Escolha uma opção:'}\n\n${linhas}${rodape}`,
-      );
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('sendButtons timeout após 5s')),
+        5000,
+      ),
+    );
+
+    try {
+      await Promise.race([
+        this.client.sendButtons(destino, titulo, botoes.map(
+          (b: ItemInterativoNormalizado) => ({
+            id: String(b.entrada),
+            text: String(b.label || b.entrada),
+          }),
+        ), rodape),
+        timeout,
+      ]);
     } catch (err: unknown) {
-      this.logger.error(`Erro ao enviar botões: ${this.getErrorMessage(err)}`);
-      const linhas = (config.botoes ?? [])
+      this.logger.warn(
+        `[${chatId}] Fallback texto botões — motivo: ${this.getErrorMessage(err)}`,
+      );
+      const linhas = botoes
         .map((b: ItemInterativoNormalizado) => `*${b.entrada}* - ${b.label}`)
         .join('\n');
-      await this.enviarResposta(message, `${config.titulo ?? ''}\n\n${linhas}`);
+      await this.enviarResposta(message, `${titulo}\n\n${linhas}`);
     }
   }
 
