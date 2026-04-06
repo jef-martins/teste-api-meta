@@ -129,6 +129,7 @@ type SessaoRuntime = {
 
 type SessaoMemoria = {
   executionId: string;
+  conversa_id: string | null;
   from: string;
   to: string;
   status: SessaoStatus;
@@ -154,6 +155,7 @@ type SessaoMemoria = {
 
 type StartInput = {
   executionId?: string;
+  conversa_id?: string;
   from?: string;
   to?: string;
   itens?: InputItem[];
@@ -233,9 +235,7 @@ export class ZenviaService implements OnModuleDestroy {
   private readonly ttlMs = 1000 * 60 * 60 * 12;
   private readonly npsMaxRetryMs = 1000 * 60 * 60 * 24;
   private readonly cleanupTimer: NodeJS.Timeout;
-  private readonly npsEndpointUrl =
-    process.env.ZENVIA_NPS_ENDPOINT_URL ??
-    'http://localhost/homologation-api-chatboot-proxy/chatboot/salvaRespostaNps';
+  private readonly npsEndpointUrl = process.env.ZENVIA_NPS_ENDPOINT_URL || null;
   private readonly npsApplicationKey =
     process.env.ZENVIA_NPS_APPLICATION_KEY ??
     '9a2a4e71f8457120000d1258d663119c12637315';
@@ -396,6 +396,7 @@ export class ZenviaService implements OnModuleDestroy {
     query?: StartQueryInput,
   ): {
     executionId: string;
+    conversa_id: string | null;
     from: string;
     to: string;
     itens: ItemResposta[];
@@ -420,6 +421,7 @@ export class ZenviaService implements OnModuleDestroy {
     const executionId =
       this.toStringOrNull(query?.executionId) ||
       this.toStringOrNull(payload.executionId);
+    const conversa_id = this.toStringOrNull(payload.conversa_id);
     const from =
       this.toStringOrNull(query?.from) ||
       this.toStringOrNull(payload.from) ||
@@ -543,6 +545,7 @@ export class ZenviaService implements OnModuleDestroy {
 
     return {
       executionId,
+      conversa_id,
       from,
       to,
       itens,
@@ -1339,38 +1342,62 @@ export class ZenviaService implements OnModuleDestroy {
     sessao.npsUltimaTentativaEm = agoraIso;
     sessao.npsEmEnvio = true;
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       executionId: sessao.executionId,
       respostas: this.montarResultadoNps(sessao),
     };
-
-    const accessApplicationKey =
-      this.getHeaderCaseInsensitive(
-        sessao.npsHeaders,
-        'Access-Application-Key',
-      ) || this.npsApplicationKey;
-    const celularOperacao =
-      this.getHeaderCaseInsensitive(sessao.npsHeaders, 'celular_operacao') ||
-      sessao.to;
-    const accessEnv =
-      this.getHeaderCaseInsensitive(sessao.npsHeaders, 'Access-Env') || null;
+    if (sessao.conversa_id) {
+      payload.conversa_id = sessao.conversa_id;
+    }
 
     const headers: Record<string, string> = {
       ...sessao.npsHeaders,
       'Content-Type': 'application/json',
-      'Access-Application-Key': accessApplicationKey,
-      celular_operacao: celularOperacao,
     };
-    if (accessEnv) {
-      headers['Access-Env'] = accessEnv;
+
+    const endpointHeader =
+      this.getHeaderCaseInsensitive(headers, 'url_endpoint_nps') ||
+      this.getHeaderCaseInsensitive(headers, 'urlEndpointNps') ||
+      null;
+    const endpointNps = endpointHeader || this.npsEndpointUrl;
+    if (!endpointNps) {
+      sessao.npsEmEnvio = false;
+      this.logger.warn(
+        `[Zenvia][NPS][skip] executionId=${sessao.executionId} motivo=${motivo} reason=endpoint-nao-informado`,
+      );
+      return;
     }
+
+    // Campo de controle interno: não deve ser encaminhado como header HTTP.
+    for (const key of Object.keys(headers)) {
+      const lower = key.toLowerCase();
+      if (lower === 'url_endpoint_nps' || lower === 'urlendpointnps') {
+        delete headers[key];
+      }
+    }
+
+    // Mantém os headers recebidos no start (payload.Headers) e completa
+    // somente o que estiver ausente.
+    const accessApplicationKey =
+      this.getHeaderCaseInsensitive(headers, 'Access-Application-Key') ||
+      this.npsApplicationKey;
+    headers['Access-Application-Key'] = accessApplicationKey;
+
+    const celularOperacao =
+      this.getHeaderCaseInsensitive(headers, 'celular_operacao') ||
+      // fallback mais seguro para operação: número de origem do canal
+      sessao.from;
+    headers.celular_operacao = celularOperacao;
+
+    const accessEnv = this.getHeaderCaseInsensitive(headers, 'Access-Env') || null;
+    if (accessEnv) headers['Access-Env'] = accessEnv;
 
     try {
       this.logger.log(
-        `[Zenvia][NPS][attempt] executionId=${sessao.executionId} motivo=${motivo} endpoint=${this.npsEndpointUrl} payload=${this.stringifySafe(payload, 1200)}`,
+        `[Zenvia][NPS][attempt] executionId=${sessao.executionId} motivo=${motivo} endpoint=${endpointNps} headers=${this.stringifySafe(this.maskHeaders(headers))} payload=${this.stringifySafe(payload, 1200)}`,
       );
 
-      const res = await fetch(this.npsEndpointUrl, {
+      const res = await fetch(endpointNps, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
@@ -1388,7 +1415,7 @@ export class ZenviaService implements OnModuleDestroy {
 
       sessao.resultadoNpsEnviado = true;
       this.logger.log(
-        `[Zenvia][NPS][sent] executionId=${sessao.executionId} motivo=${motivo} status=${res.status} endpoint=${this.npsEndpointUrl} body=${this.stringifySafe(body, 800)}`,
+        `[Zenvia][NPS][sent] executionId=${sessao.executionId} motivo=${motivo} status=${res.status} endpoint=${endpointNps} body=${this.stringifySafe(body, 800)}`,
       );
       this.removerSessao(sessao.executionId, `nps-success-${res.status}`);
     } catch (err: unknown) {
@@ -1575,6 +1602,7 @@ export class ZenviaService implements OnModuleDestroy {
 
     const baseSessao = {
       executionId,
+      conversa_id: normalized.conversa_id,
       from: normalized.from,
       to: normalized.to,
       status: 'active' as SessaoStatus,
