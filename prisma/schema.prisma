@@ -39,6 +39,8 @@ model BotFluxo {
   subOrganizacaoId      String?  @map("sub_organizacao_id")
   ultimoModificadoPorId String?  @map("ultimo_modificado_por_id")
   ultimoModificadorNome String?  @map("ultimo_modificador_nome") @db.VarChar(100)
+  tempoExpiracaoMinutos Int?     @map("tempo_expiracao_minutos")
+  mensagemExpiracao     String?  @map("mensagem_expiracao") @db.Text
   criadoEm              DateTime @default(now()) @map("criado_em") @db.Timestamptz()
   atualizadoEm          DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz()
 

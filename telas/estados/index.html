@@ -60,7 +60,7 @@
       </table>
     </div>
 
-    <!-- ══════════ SESSÕES NPS ATIVAS ══════════ -->
+    <!-- SESSÕES NPS ATIVAS -->
     <div id="sessoes-nps-wrapper" style="margin-top: 28px;">
       <div class="section-header" style="margin-bottom: 0;">
         <h2>⏱️ Sessões NPS Ativas</h2>
@@ -81,38 +81,10 @@
         Nenhuma sessão NPS ativa no momento.
       </div>
     </div>
-
-    <!-- ══════════ CONFIGURAÇÃO GLOBAL (META/WPP) ══════════ -->
-    <div id="config-global-wrapper" style="margin-top: 28px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px;">
-      <div class="section-header" style="margin-bottom: 16px;">
-        <h2 style="margin:0">⚙️ Configuração de Ociosidade (Meta/WPP)</h2>
-        <span style="font-size:12px; color:var(--muted); margin-left:10px;">Aplica-se a todos os chatIds exceto API Zenvia</span>
-      </div>
-      
-      <div style="display:grid; grid-template-columns: 200px 1fr; gap:20px; align-items:start;">
-        <div>
-          <label style="display:block; font-size:13px; font-weight:500; margin-bottom:6px;">Tempo de Ociosidade</label>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <input type="number" id="global-expiracao-minutos" class="input" style="width:80px" placeholder="0">
-            <span style="font-size:13px; color:var(--muted)">minutos</span>
-          </div>
-          <p style="font-size:11px; color:var(--muted); margin-top:8px;">Use 0 ou vazio para desativar a expiração global.</p>
-        </div>
-        
-        <div>
-          <label style="display:block; font-size:13px; font-weight:500; margin-bottom:6px;">Mensagem de Expiração</label>
-          <textarea id="global-expiracao-mensagem" class="input" style="width:100%; min-height:80px; resize:vertical; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px 12px; font-family:inherit; font-size:13px;" placeholder="Sua sessão expirou por inatividade..."></textarea>
-        </div>
-      </div>
-      
-      <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border); display:flex; justify-content:flex-end;">
-        <button class="btn btn-primary" onclick="salvarConfigExpiracaoGlobal()" id="btn-save-global-config">Salvar Configuração</button>
-      </div>
-    </div>
   </div>
 
   <div class="page" id="page-estados" style="display: none;">
-    <!-- ═══════════════════════ ABA ESTADOS ═══════════════════════ -->
+    <!-- ABA ESTADOS -->
     <div class="section-header">
       <div style="display:flex; align-items:center; gap: 12px;">
         <button class="btn btn-ghost" onclick="window.location.href='index.html'">← Voltar</button>
@@ -133,7 +105,7 @@
     </table>
   </div>
 
-  <!-- ═══════════════════════ MODAL ESTADO ═══════════════════════ -->
+  <!-- MODAL ESTADO -->
   <div class="overlay" id="modal-estado">
     <div class="modal">
       <div class="modal-header">
@@ -186,7 +158,7 @@
     </div>
   </div>
 
-  <!-- ═══════════════════════ MODAL EDITOR DE JSON ═══════════════════════ -->
+  <!-- MODAL EDITOR DE JSON -->
   <div class="overlay" id="modal-json" style="z-index: 300;">
     <div class="modal" style="width: 600px;">
       <div class="modal-header">
@@ -221,7 +193,7 @@
 
   <div id="toast">Sucesso!</div>
 
-  <!-- ═══════════════════════ MODAL TESTE REQUISIÇÃO ═══════════════════════ -->
+  <!-- MODAL TESTE REQUISIÇÃO -->
   <div class="overlay" id="modal-test-req" style="z-index: 400;">
     <div class="modal" style="width: 700px;">
       <div class="modal-header">
@@ -243,7 +215,7 @@
       </div>
     </div>
   </div>
-  <!-- ══════════ MODAL EXPIRAÇÃO NPS ══════════ -->
+  <!-- MODAL EXPIRAÇÃO NPS -->
   <div class="overlay" id="modal-expiracao-nps" style="z-index: 400;">
     <div class="modal" style="width: 480px;">
       <div class="modal-header">

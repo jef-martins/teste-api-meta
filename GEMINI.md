@@ -30,3 +30,8 @@ Para garantir a eficiência e focar apenas no código-fonte original, siga estas
 
 6. **Sempre me responda em portugues do brasil.**
    - Sempre que for me responder, faça em portugues do brasil.
+
+7. **Unificação de Plataforma (Meta, WPP e Zenvia)**:
+   - Toda e QUALQUER nova funcionalidade, alteração ou correção deve ser implementada de forma 100% unificada.
+   - O projeto deve operar como uma plataforma única de bot. Regras de negócio, motor de estados (`StateMachineEngine`), repositório (`EstadoRepository`) e sistema de expiração (`IdleExpirationService`) devem ser compartilhados por todos os canais.
+   - As particularidades de cada canal (Meta, WPPConnect, Zenvia) devem ser restritas exclusivamente aos seus respectivos adaptadores e handlers de transporte, mantendo o núcleo do bot agnóstico.

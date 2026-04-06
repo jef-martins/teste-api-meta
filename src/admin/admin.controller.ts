@@ -8,14 +8,14 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
-import {
-  AdminService,
+import { AdminService } from './admin.service';
+import type {
   EstadoInput,
   EstadoUpdateInput,
   TransicaoInput,
   TransicaoUpdateInput,
   TesteRequisicaoInput,
-} from './admin.service';
+} from './interfaces/admin-input.interface';
 import { IdleExpirationService } from '../bot/idle-expiration.service';
 
 @Controller('admin')
@@ -30,28 +30,22 @@ export class AdminController {
     return this.adminService.obterModo();
   }
 
-  // ─── Expiração por Ociosidade (Meta/WPP) ─────────────────────────────────
+  // EXPIRAÇÃO POR OCIOSIDADE: Configurada individualmente por Fluxo ou Dinamicamente via Sessão.
 
-  @Get('config/expiracao-ociosidade')
-  async obterConfiguracaoExpiracao() {
-    return this.idleExpiration.obterConfig();
+  @Get('fluxos/:flowId/expiracao')
+  async obterExpiracaoFluxo(@Param('flowId') flowId: string) {
+    return this.adminService.obterExpiracaoFluxo(flowId);
   }
 
-  @Put('config/expiracao-ociosidade')
-  async salvarConfiguracaoExpiracao(
+  @Put('fluxos/:flowId/expiracao')
+  async salvarExpiracaoFluxo(
+    @Param('flowId') flowId: string,
     @Body() body: { tempoExpiracaoMinutos: number | null; mensagemExpiracao: string | null },
   ) {
-    const tempoMs =
-      body.tempoExpiracaoMinutos !== null && body.tempoExpiracaoMinutos > 0
-        ? body.tempoExpiracaoMinutos * 60 * 1000
-        : null;
-    return this.idleExpiration.salvarConfig({
-      tempoExpiracaoMs: tempoMs,
-      mensagemExpiracao: body.mensagemExpiracao ?? null,
-    });
+    return this.adminService.salvarExpiracaoFluxo(flowId, body);
   }
 
-  // ─── Estados ─────────────────────────────────────────────────────────────
+  // Estados
 
   @Get('fluxos')
   listarFluxos() {
@@ -83,7 +77,7 @@ export class AdminController {
     return this.adminService.excluirEstado(estado);
   }
 
-  // ─── Transições ──────────────────────────────────────────────────────────
+  // Transições
 
   @Get('transicoes')
   listarTransicoes(@Query('flowId') flowId?: string) {
@@ -105,7 +99,7 @@ export class AdminController {
     return this.adminService.excluirTransicao(id);
   }
 
-  // ─── Teste de Requisição ─────────────────────────────────────────────────
+  // Teste de Requisição
 
   @Post('testar-req')
   testarRequisicao(@Body() body: TesteRequisicaoInput) {

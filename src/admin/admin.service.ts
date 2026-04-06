@@ -2,41 +2,20 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EstadoRepository } from '../bot/estado.repository';
+import { RedisService } from '../redis/redis.service';
 import {
   DEFAULT_ESTADOS,
   DEFAULT_TRANSICOES,
   MEMORY_SESSIONS,
-} from '../bot/meta/default-state-machine.config';
+} from '../bot/default-state-machine.config';
+import {
+  EstadoInput,
+  EstadoUpdateInput,
+  TransicaoInput,
+  TransicaoUpdateInput,
+  TesteRequisicaoInput,
+} from './interfaces/admin-input.interface';
 
-export class EstadoInput {
-  estado!: string;
-  handler!: string;
-  descricao?: string;
-  config?: unknown;
-}
-
-export class EstadoUpdateInput {
-  handler!: string;
-  descricao?: string;
-  config?: unknown;
-  ativo?: boolean;
-}
-
-export class TransicaoInput {
-  estado_origem!: string;
-  entrada!: string;
-  estado_destino!: string;
-}
-
-export class TransicaoUpdateInput extends TransicaoInput {
-  ativo?: boolean;
-}
-
-export class TesteRequisicaoInput {
-  config!: unknown;
-  valor?: string;
-  variaveis?: Record<string, string>;
-}
 
 type FluxoBancoPainel = {
   id: string;
@@ -67,6 +46,7 @@ export class AdminService {
   constructor(
     private prisma: PrismaService,
     private estadoRepository: EstadoRepository,
+    private redis: RedisService,
   ) {
     this.initMemoryTransitions();
   }
@@ -155,6 +135,10 @@ export class AdminService {
           nome: true,
           descricao: true,
           ativo: true,
+          // @ts-ignore
+          tempoExpiracaoMinutos: true,
+          // @ts-ignore
+          mensagemExpiracao: true,
           subOrganizacao: {
             select: {
               id: true,
@@ -165,17 +149,18 @@ export class AdminService {
         },
       });
 
-      const fluxos = rows
-        .map((row) => ({
-          id: row.id,
-          nome: row.nome,
-          descricao: row.descricao ?? null,
-          ativo: row.ativo,
-          organizacaoId: row.subOrganizacao?.organizacao?.id ?? null,
-          organizacaoNome: row.subOrganizacao?.organizacao?.nome ?? null,
-          subOrganizacaoId: row.subOrganizacao?.id ?? null,
-          subOrganizacaoNome: row.subOrganizacao?.nome ?? null,
-        }))
+      const fluxos = (rows as any[]).map((row) => ({
+        id: row.id,
+        nome: row.nome,
+        descricao: row.descricao ?? null,
+        ativo: row.ativo,
+        tempoExpiracaoMinutos: row.tempoExpiracaoMinutos ?? null,
+        mensagemExpiracao: row.mensagemExpiracao ?? null,
+        organizacaoId: row.subOrganizacao?.organizacao?.id ?? null,
+        organizacaoNome: row.subOrganizacao?.organizacao?.nome ?? null,
+        subOrganizacaoId: row.subOrganizacao?.id ?? null,
+        subOrganizacaoNome: row.subOrganizacao?.nome ?? null,
+      }))
         .sort((a, b) => {
           const orgA = a.organizacaoNome ?? '';
           const orgB = b.organizacaoNome ?? '';
@@ -192,7 +177,7 @@ export class AdminService {
     }
   }
 
-  private montarFluxosMemoria(fluxosBanco: FluxoBancoPainel[]) {
+  private async montarFluxosMemoria(fluxosBanco: FluxoBancoPainel[]) {
     const isPadrao = this.isDefaultMode();
     const mapaBanco = new Map(fluxosBanco.map((f) => [f.id, f]));
     const mapaMemoria = new Map<string, FluxoMemoriaPainel>();
@@ -222,13 +207,14 @@ export class AdminService {
       });
     }
 
+    // --- Sessões Legadas (em memória) ---
     for (const [id, session] of Object.entries(MEMORY_SESSIONS)) {
       const estados = Object.keys(session.configs).length;
       const transicoes = this.contarTransicoesMemoria(session.transicoes);
       mapaMemoria.set(id, {
         id,
         nome: session.nome || 'Sessão em memória',
-        descricao: 'Sessão temporária carregada via Zenvia API',
+        descricao: 'Sessão temporária carregada via Zenvia API (Legado)',
         ativo: true,
         origem: 'sessao_zenvia',
         estados,
@@ -237,6 +223,36 @@ export class AdminService {
         subOrganizacaoNome: null,
         navegavel: true,
       });
+    }
+
+    // --- Sessões Uni (em Redis) ---
+    const keys = await this.redis.keys('session:zenvia:*');
+    for (const key of keys) {
+      const raw = await this.redis.get(key);
+      if (raw) {
+        const sessao = JSON.parse(raw);
+        const id = key.replace('session:', '');
+        const estados = Object.keys(sessao.dynamic_states || {}).length;
+        // Simplificação: transições em Redis podem ser volumosas, aqui mostramos o total
+        let totalTrans = 0;
+        if (sessao.dynamic_transitions) {
+          const transitionsMap = sessao.dynamic_transitions as Record<string, any[]>;
+          totalTrans = Object.values(transitionsMap).reduce((acc: number, curr: any[]) => acc + (curr?.length || 0), 0);
+        }
+
+        mapaMemoria.set(id, {
+          id,
+          nome: `NPS Zenvia: ${id.replace('zenvia:', '')}`,
+          descricao: `Sessão ativa unificada para NPS Zenvia. ChatId: ${id}`,
+          ativo: true,
+          origem: 'sessao_zenvia',
+          estados,
+          transicoes: totalTrans,
+          organizacaoNome: null,
+          subOrganizacaoNome: null,
+          navegavel: true,
+        });
+      }
     }
 
     if (isPadrao && !mapaMemoria.has('')) {
@@ -265,7 +281,7 @@ export class AdminService {
     return {
       bancoConectado,
       fluxosBanco: fluxos,
-      fluxosMemoria: this.montarFluxosMemoria(fluxos),
+      fluxosMemoria: await this.montarFluxosMemoria(fluxos),
     };
   }
 
@@ -290,6 +306,23 @@ export class AdminService {
   // ─── Estados ─────────────────────────────────────────────────────────────
 
   async listarEstados(flowId?: string) {
+    if (flowId && flowId.startsWith('zenvia:')) {
+      const raw = await this.redis.get(`session:${flowId}`);
+      if (raw) {
+        const sessao = JSON.parse(raw);
+        return Object.entries(sessao.dynamic_states || {})
+          .map(([estado, data]: [string, any]) => ({
+            estado,
+            handler: data.handler,
+            descricao: data.descricao,
+            ativo: true,
+            config: data.config,
+          }))
+          .sort((a, b) => a.estado.localeCompare(b.estado));
+      }
+      return [];
+    }
+
     if (flowId && MEMORY_SESSIONS[flowId]) {
       return Object.entries(MEMORY_SESSIONS[flowId].configs)
         .map(([estado, data]) => ({
@@ -392,9 +425,30 @@ export class AdminService {
     return { ok: true };
   }
 
-  // ─── Transições ──────────────────────────────────────────────────────────
+  // Transições
 
   async listarTransicoes(flowId?: string) {
+    if (flowId && flowId.startsWith('zenvia:')) {
+      const raw = await this.redis.get(`session:${flowId}`);
+      if (raw) {
+        const sessao = JSON.parse(raw);
+        const transicoes: any[] = [];
+        for (const [estadoOrigem, lista] of Object.entries(sessao.dynamic_transitions || {})) {
+          for (const t of lista as any[]) {
+            transicoes.push({
+              id: t.id,
+              estado_origem: estadoOrigem,
+              entrada: t.entrada,
+              estado_destino: t.estadoDestino,
+              ativo: true,
+            });
+          }
+        }
+        return transicoes.sort((a, b) => a.estado_origem.localeCompare(b.estado_origem));
+      }
+      return [];
+    }
+
     if (flowId && MEMORY_SESSIONS[flowId]) {
       const transicoes: Array<{
         id: string | undefined;
@@ -546,7 +600,7 @@ export class AdminService {
     return { ok: true };
   }
 
-  // ─── Teste de Requisição ─────────────────────────────────────────────────
+  // Teste de Requisição
 
   async testarRequisicao(data: TesteRequisicaoInput) {
     const { config, valor, variaveis } = data;
@@ -650,5 +704,41 @@ export class AdminService {
     } catch (err: unknown) {
       return { status: 500, erro: this.getErrorMessage(err) };
     }
+  }
+
+  async obterExpiracaoFluxo(flowId: string) {
+    if (!flowId || flowId === 'padrao') {
+      return { tempoExpiracaoMinutos: null, mensagemExpiracao: null };
+    }
+    try {
+      const flow = await (this.prisma.botFluxo as any).findUnique({
+        where: { id: flowId },
+        select: { tempoExpiracaoMinutos: true, mensagemExpiracao: true },
+      });
+      return {
+        tempoExpiracaoMinutos: (flow as any)?.tempoExpiracaoMinutos ?? null,
+        mensagemExpiracao: (flow as any)?.mensagemExpiracao ?? null,
+      };
+    } catch {
+      return { tempoExpiracaoMinutos: null, mensagemExpiracao: null };
+    }
+  }
+
+  async salvarExpiracaoFluxo(
+    flowId: string,
+    body: { tempoExpiracaoMinutos: number | null; mensagemExpiracao: string | null },
+  ) {
+    if (!flowId || flowId === 'padrao') {
+      throw new Error(
+        'Não é possível configurar expiração individual para o fluxo padrão via esta API.',
+      );
+    }
+    return (this.prisma.botFluxo as any).update({
+      where: { id: flowId },
+      data: {
+        tempoExpiracaoMinutos: body.tempoExpiracaoMinutos,
+        mensagemExpiracao: body.mensagemExpiracao,
+      },
+    });
   }
 }

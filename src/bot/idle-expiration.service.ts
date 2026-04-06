@@ -8,11 +8,12 @@ import { RedisService } from '../redis/redis.service';
 import { EstadoRepository } from './estado.repository';
 import { HandlerService } from './handler.service';
 
-/**
- * Chave Redis onde a configuração global de expiração por ociosidade fica armazenada.
- * Formato: { tempoExpiracaoMs: number | null, mensagemExpiracao: string | null }
- */
-const CONFIG_KEY = 'bot:config:expiracao-ociosidade';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  DEFAULT_ESTADOS,
+  MEMORY_SESSIONS,
+} from './default-state-machine.config';
+
 
 /**
  * Prefixo das sessões de usuário no Redis.
@@ -29,66 +30,27 @@ export type ConfigExpiracaoOciosidade = {
 export class IdleExpirationService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(IdleExpirationService.name);
   private checkTimer: NodeJS.Timeout | null = null;
-  private config: ConfigExpiracaoOciosidade = {
-    tempoExpiracaoMs: null,
-    mensagemExpiracao: null,
-  };
 
   constructor(
     private redis: RedisService,
     private estadoRepository: EstadoRepository,
     private handler: HandlerService,
+    private prisma: PrismaService,
   ) {}
 
   async onModuleInit() {
-    await this.carregarConfig();
     // Verifica chatIds ociosos a cada 60 segundos
-    this.checkTimer = setInterval(() => void this.verificarOciosos(), 60_000);
-    this.logger.log(
-      `[IdleExpiration][init] tempoExpiracaoMs=${this.config.tempoExpiracaoMs ?? 'desativado'}`,
-    );
+    this.checkTimer = setInterval(() => void this.verificarTodosOciosos(), 60_000);
+    this.logger.log(`[IdleExpiration][init] Operando em modo estritamente por fluxo (Opção B).`);
   }
 
   onModuleDestroy() {
     if (this.checkTimer) clearInterval(this.checkTimer);
   }
 
-  // ─── Config ──────────────────────────────────────────────────────────────
 
-  async carregarConfig(): Promise<ConfigExpiracaoOciosidade> {
-    try {
-      const raw = await this.redis.get(CONFIG_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as ConfigExpiracaoOciosidade;
-        this.config = {
-          tempoExpiracaoMs: typeof parsed.tempoExpiracaoMs === 'number' ? parsed.tempoExpiracaoMs : null,
-          mensagemExpiracao: typeof parsed.mensagemExpiracao === 'string' ? parsed.mensagemExpiracao : null,
-        };
-      }
-    } catch (err) {
-      this.logger.warn(`[IdleExpiration][config-load-error] ${String(err)}`);
-    }
-    return this.config;
-  }
 
-  async salvarConfig(config: ConfigExpiracaoOciosidade): Promise<ConfigExpiracaoOciosidade> {
-    this.config = config;
-    try {
-      await this.redis.set(CONFIG_KEY, JSON.stringify(config));
-      this.logger.log(
-        `[IdleExpiration][config-saved] tempoExpiracaoMs=${config.tempoExpiracaoMs ?? 'desativado'} mensagem="${config.mensagemExpiracao ?? ''}"`,
-      );
-    } catch (err) {
-      this.logger.warn(`[IdleExpiration][config-save-error] ${String(err)}`);
-    }
-    return this.config;
-  }
-
-  obterConfig(): ConfigExpiracaoOciosidade {
-    return { ...this.config };
-  }
-
-  // ─── Rastreamento de atividade ────────────────────────────────────────────
+  // Rastreamento de atividade
 
   /**
    * Chamado sempre que um chatId (Meta/WPP) processa uma mensagem.
@@ -111,43 +73,63 @@ export class IdleExpirationService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ─── Verificação de ociosos ────────────────────────────────────────────────
 
-  private async verificarOciosos(): Promise<void> {
-    if (!this.config.tempoExpiracaoMs || this.config.tempoExpiracaoMs <= 0) return;
+  // Verificação de ociosos
+  
+  private flowCache = new Map<string, { ms: number; msg: string | null }>();
 
+  async verificarTodosOciosos(): Promise<void> {
     try {
       const chaves = await this.redis.keys(`${SESSION_PREFIX}*`);
       const agora = Date.now();
+      this.flowCache.clear(); // Limpa cache de fluxos a cada varredura para pegar atualizações do banco
 
       for (const chave of chaves) {
-        // Ignora sessões Zenvia (são gerenciadas pelo ZenviaService)
-        if (!chave.startsWith(SESSION_PREFIX)) continue;
         const chatId = chave.slice(SESSION_PREFIX.length);
-        if (!chatId || chatId.includes('zenvia')) continue;
+        if (!chatId) continue;
 
         try {
           const raw = await this.redis.get(chave);
           if (!raw) continue;
 
-          let sessao: Record<string, unknown>;
-          try { sessao = JSON.parse(raw) as Record<string, unknown>; } catch { continue; }
+          let sessao: any;
+          try { sessao = JSON.parse(raw); } catch { continue; }
 
           const ultimaAtividade = typeof sessao.ultimaAtividadeEm === 'string'
             ? Date.parse(sessao.ultimaAtividadeEm)
             : null;
 
-          // Se nunca houve atividade registrada via este serviço, ignora
           if (!ultimaAtividade || isNaN(ultimaAtividade)) continue;
 
+          // DETERMINAÇÃO DO TIMEOUT (POR PRIORIDADE)
+          let tempoLimiteMs = 0;
+          let msgExpiracao: string | null = null;
+
+          // 1. Prioridade Máxima: Configuração Dinâmica na Sessão (Zenvia NPS)
+          if (sessao.meta && typeof sessao.meta.tempoExpiracaoMs === 'number') {
+            tempoLimiteMs = sessao.meta.tempoExpiracaoMs;
+          }
+
+          // 2. Segunda Prioridade: Configuração por Fluxo (Banco ou Memória)
+          if (tempoLimiteMs <= 0 && sessao.flowId) {
+            const flowCfg = await this.obterConfigFluxo(sessao.flowId);
+            if (flowCfg && flowCfg.ms > 0) {
+              tempoLimiteMs = flowCfg.ms;
+              if (flowCfg.msg) msgExpiracao = flowCfg.msg;
+            }
+          }
+
+
+          if (!tempoLimiteMs || tempoLimiteMs <= 0) continue;
+
           const ociosaMs = agora - ultimaAtividade;
-          if (ociosaMs < this.config.tempoExpiracaoMs) continue;
+          if (ociosaMs < tempoLimiteMs) continue;
 
           this.logger.warn(
-            `[IdleExpiration][trigger] chatId=${chatId} ocioso=${Math.round(ociosaMs / 1000)}s (limite=${this.config.tempoExpiracaoMs / 1000}s)`,
+            `[IdleExpiration][trigger] chatId=${chatId} flowId=${sessao.flowId || 'global'} ocioso=${Math.round(ociosaMs / 1000)}s (limite=${tempoLimiteMs / 1000}s)`,
           );
 
-          await this.expirarChatId(chatId, sessao);
+          await this.expirarChatId(chatId, sessao, msgExpiracao);
         } catch (errInner) {
           this.logger.error(`[IdleExpiration][check-error] chatId=${chave} ${String(errInner)}`);
         }
@@ -157,26 +139,83 @@ export class IdleExpirationService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async expirarChatId(chatId: string, sessao: Record<string, unknown>): Promise<void> {
+  private async obterConfigFluxo(flowId: string): Promise<{ ms: number; msg: string | null } | null> {
+    if (this.flowCache.has(flowId)) return this.flowCache.get(flowId)!;
+
+    let config: { ms: number; msg: string | null } | null = null;
+
+    if (process.env.BOT_STATE_MACHINE_PADRAO === 'true') {
+      // Modo Memória
+      if (flowId === '') {
+         // O fluxo padrão ('') não tem config de timeout individual no código legado,
+         // então retorna null para usar o global.
+      } else if (MEMORY_SESSIONS[flowId]) {
+         // Se houver alguma config futura em MEMORY_SESSIONS, pegaria aqui.
+      }
+    } else {
+      // Modo Banco
+      try {
+        const flow = await (this.prisma.botFluxo as any).findUnique({
+          where: { id: flowId },
+          select: { tempoExpiracaoMinutos: true, mensagemExpiracao: true }
+        });
+        if (flow) {
+          config = {
+            ms: (flow.tempoExpiracaoMinutos || 0) * 60 * 1000,
+            msg: flow.mensagemExpiracao || null
+          };
+        }
+      } catch (err) {
+        this.logger.error(`[IdleExpiration][flow-config-error] flowId=${flowId} ${String(err)}`);
+      }
+    }
+
+    if (config) this.flowCache.set(flowId, config);
+    return config;
+  }
+
+  private async expirarChatId(chatId: string, sessao: any, msgOverride?: string | null): Promise<void> {
     try {
-      // 1. Envia mensagem de expiração se configurada
-      if (this.config.mensagemExpiracao && this.handler?.client?.sendText) {
+      const estadoAtual = sessao.estado || (await this.estadoRepository.obterEstadoInicial());
+      const configEstado = await this.estadoRepository.obterConfigEstado(estadoAtual, chatId);
+
+      // PRIORIDADE DE MENSAGEM: Estado > Fluxo/Sessão (msgOverride)
+      let msgTrigger = (configEstado?.config as any)?.mensagemExpiracao || msgOverride;
+
+      if (msgTrigger) {
         try {
-          await this.handler.client.sendText(chatId, this.config.mensagemExpiracao);
-          this.logger.log(`[IdleExpiration][msg-sent] chatId=${chatId}`);
-        } catch (errMsg) {
-          this.logger.warn(`[IdleExpiration][msg-error] chatId=${chatId} ${String(errMsg)}`);
+          await this.handler.client?.sendText(chatId, String(msgTrigger));
+        } catch (e) {
+          this.logger.warn(`[IdleExpiration][msg-error] chatId=${chatId} ${e}`);
         }
       }
 
-      // 2. Reseta para o estado inicial do fluxo
-      const estadoInicial = await this.estadoRepository.obterEstadoInicial();
-      const nome = typeof sessao.nome === 'string' ? sessao.nome : undefined;
-      await this.estadoRepository.salvarEstadoUsuario(chatId, estadoInicial, nome);
+      // 2. Comportamento pós-expiração
+      if (chatId.startsWith('zenvia:')) {
+        // Para fluxos dinâmicos Zenvia (NPS), encerramos a sessão e enviamos callback 'expired'
+        this.logger.log(`[IdleExpiration][zenvia-end] nps_id=${sessao.meta?.nps_id}`);
+        await this.redis.del(`${SESSION_PREFIX}${chatId}`);
+        const pair = `${sessao.meta?.from}::${sessao.meta?.to}`;
+        await this.redis.del(`zenvia:pair:${pair}`);
 
-      this.logger.log(
-        `[IdleExpiration][reset] chatId=${chatId} estado=${estadoInicial}`,
-      );
+        if (sessao.meta?.callbackUrl) {
+           fetch(sessao.meta.callbackUrl, {
+             method: 'POST',
+             headers: { ...sessao.meta.callbackHeaders, 'Content-Type': 'application/json' },
+             body: JSON.stringify({
+               nps_id: sessao.meta.nps_id,
+               conversa_id: sessao.meta.conversa_id,
+               status: 'expired',
+               motivo: 'idle_timeout'
+             })
+           }).catch(() => {});
+        }
+      } else {
+        // Para Meta/WPP, resetamos para o estado inicial
+        const estadoInicial = await this.estadoRepository.obterEstadoInicial();
+        await this.estadoRepository.salvarEstadoUsuario(chatId, estadoInicial, sessao.nome);
+        this.logger.log(`[IdleExpiration][reset] chatId=${chatId} -> ${estadoInicial}`);
+      }
     } catch (err) {
       this.logger.error(`[IdleExpiration][expire-error] chatId=${chatId} ${String(err)}`);
     }
