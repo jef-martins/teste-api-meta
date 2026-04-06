@@ -8,8 +8,9 @@ import {
 import { Client, TextContent } from '@zenvia/sdk';
 import { HandlerService } from '../handler.service';
 import { StateMachineEngine } from '../state-machine.engine';
-import { MEMORY_SESSIONS } from '../meta/default-state-machine.config';
+import { MEMORY_SESSIONS } from '../default-state-machine.config';
 import { RedisService } from '../../redis/redis.service';
+import { IdleExpirationService } from '../idle-expiration.service';
 
 type PrimitiveId = string | number;
 
@@ -256,7 +257,10 @@ export class ZenviaService implements OnModuleDestroy {
     process.env.ZENVIA_NPS_APPLICATION_KEY ??
     '9a2a4e71f8457120000d1258d663119c12637315';
 
-  constructor(private redis: RedisService) {
+  constructor(
+    private redis: RedisService,
+    private idleExpiration: IdleExpirationService,
+  ) {
     this.cleanupTimer = setInterval(() => this.limparExpiradas(), 60_000);
   }
 
@@ -1671,16 +1675,19 @@ export class ZenviaService implements OnModuleDestroy {
       }
 
       // --- Expiração por ociosidade do usuário ---
+      const configGlobal = this.idleExpiration.obterConfig();
+      const tempoEfetivoMs = sessao.tempoExpiracaoMs ?? configGlobal.tempoExpiracaoMs;
+
       if (
         sessao.status === 'active' &&
-        sessao.tempoExpiracaoMs !== null &&
-        sessao.tempoExpiracaoMs > 0 &&
+        tempoEfetivoMs !== null &&
+        tempoEfetivoMs > 0 &&
         !sessao.expiracaoEmAndamento
       ) {
         const ultimaAtividade = Date.parse(sessao.ultimaAtividadeEm);
-        if (!Number.isNaN(ultimaAtividade) && agora - ultimaAtividade >= sessao.tempoExpiracaoMs) {
+        if (!Number.isNaN(ultimaAtividade) && agora - ultimaAtividade >= tempoEfetivoMs) {
           this.logger.warn(
-            `[Zenvia][expiracao][trigger] nps_id=${nps_id} ocioso por ${Math.round((agora - ultimaAtividade) / 1000)}s (limite=${sessao.tempoExpiracaoMs / 1000}s)`,
+            `[Zenvia][expiracao][trigger] nps_id=${nps_id} ocioso por ${Math.round((agora - ultimaAtividade) / 1000)}s (limite=${tempoEfetivoMs / 1000}s)`,
           );
           void this.expirarSessaoPorOciosidade(sessao);
           continue;
@@ -1705,7 +1712,9 @@ export class ZenviaService implements OnModuleDestroy {
       const estadoAtual = sessao.runtime.engine.estadosUsuarios.get(sessao.runtime.chatId);
       const idx = estadoAtual ? sessao.runtime.stateToIndex.get(estadoAtual) : undefined;
       const itemAtual = typeof idx === 'number' ? sessao.itens[idx] : null;
-      const mensagemExpiracao = itemAtual?.mensagemExpiracao ?? null;
+      
+      const configGlobal = this.idleExpiration.obterConfig();
+      const mensagemExpiracao = itemAtual?.mensagemExpiracao ?? configGlobal.mensagemExpiracao;
 
       if (mensagemExpiracao) {
         this.logger.log(
