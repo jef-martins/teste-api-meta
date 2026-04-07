@@ -276,9 +276,14 @@ export class GlobalKeywordService implements OnModuleInit {
     return this.keywordsMemoria.find((item) => item.id === id) ?? null;
   }
 
-  private buscarMemoriaPorKeyword(keyword: string) {
+  private buscarMemoriaPorKeyword(keyword: string, flowId: string | null) {
+    const flowIdNorm = this.normalizarFlowContexto(flowId);
     return (
-      this.keywordsMemoria.find((item) => item.keyword === keyword) ?? null
+      this.keywordsMemoria.find(
+        (item) =>
+          item.keyword === keyword &&
+          this.normalizarFlowContexto(item.flowId) === flowIdNorm,
+      ) ?? null
     );
   }
 
@@ -303,8 +308,10 @@ export class GlobalKeywordService implements OnModuleInit {
     await this.validarEstadoDestino(estadoDestino, flowId);
 
     if (this.isDefaultMode()) {
-      if (this.buscarMemoriaPorKeyword(keyword)) {
-        throw new ConflictException('Já existe uma keyword com esse valor.');
+      if (this.buscarMemoriaPorKeyword(keyword, flowId)) {
+        throw new ConflictException(
+          'Já existe essa keyword cadastrada para este fluxo.',
+        );
       }
 
       const agora = new Date();
@@ -322,9 +329,11 @@ export class GlobalKeywordService implements OnModuleInit {
       return this.serializar(registro);
     }
 
-    const existente = await this.repository.buscarPorKeyword(keyword);
+    const existente = await this.repository.buscarPorKeyword(keyword, flowId);
     if (existente) {
-      throw new ConflictException('Já existe uma keyword com esse valor.');
+      throw new ConflictException(
+        'Já existe essa keyword cadastrada para este fluxo.',
+      );
     }
 
     const criado = await this.repository.criar({
@@ -351,9 +360,11 @@ export class GlobalKeywordService implements OnModuleInit {
         throw new NotFoundException('Atalho de navegação não encontrado.');
       }
 
-      const duplicada = this.buscarMemoriaPorKeyword(keyword);
+      const duplicada = this.buscarMemoriaPorKeyword(keyword, flowId);
       if (duplicada && duplicada.id !== id) {
-        throw new ConflictException('Já existe uma keyword com esse valor.');
+        throw new ConflictException(
+          'Já existe essa keyword cadastrada para este fluxo.',
+        );
       }
 
       atual.keyword = keyword;
@@ -370,9 +381,11 @@ export class GlobalKeywordService implements OnModuleInit {
       throw new NotFoundException('Atalho de navegação não encontrado.');
     }
 
-    const duplicada = await this.repository.buscarPorKeyword(keyword);
+    const duplicada = await this.repository.buscarPorKeyword(keyword, flowId);
     if (duplicada && duplicada.id !== id) {
-      throw new ConflictException('Já existe uma keyword com esse valor.');
+      throw new ConflictException(
+        'Já existe essa keyword cadastrada para este fluxo.',
+      );
     }
 
     const atualizado = await this.repository.atualizar(id, {

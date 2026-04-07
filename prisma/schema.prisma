@@ -109,7 +109,7 @@ model BotEstadoTransicao {
 
 model BotKeywordGlobal {
   id            String   @id @default(uuid())
-  keyword       String   @unique @db.VarChar(150)
+  keyword       String   @db.VarChar(150)
   flowId        String?  @map("flow_id")
   estadoDestino String   @map("estado_destino") @db.VarChar(100)
   ativo         Boolean  @default(true)
@@ -119,6 +119,7 @@ model BotKeywordGlobal {
   fluxo   BotFluxo?       @relation(fields: [flowId], references: [id], onDelete: Restrict)
   destino BotEstadoConfig @relation(fields: [estadoDestino], references: [estado], onDelete: Restrict)
 
+  @@unique([keyword, flowId])
   @@index([flowId])
   @@index([estadoDestino])
   @@index([ativo])

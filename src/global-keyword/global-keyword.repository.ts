@@ -146,13 +146,28 @@ export class GlobalKeywordRepository {
     }
   }
 
-  async buscarPorKeyword(keyword: string): Promise<KeywordCache | null> {
+  async buscarPorKeyword(
+    keyword: string,
+    flowId: string | null,
+  ): Promise<KeywordCache | null> {
+    const flowIdNorm = this.normalizarFlowId(flowId);
+
     if (!this.prisma.isConnected) {
-      return this.cache.find((k) => k.keyword === keyword) ?? null;
+      return (
+        this.cache.find(
+          (k) =>
+            k.keyword === keyword && this.normalizarFlowId(k.flowId) === flowIdNorm,
+        ) ?? null
+      );
     }
     try {
       const encontrado = await this.prisma.botKeywordGlobal.findUnique({
-        where: { keyword },
+        where: {
+          keyword_flowId: {
+            keyword,
+            flowId: flowIdNorm,
+          },
+        },
         select: {
           id: true,
           keyword: true,
@@ -167,9 +182,14 @@ export class GlobalKeywordRepository {
       return encontrado ? this.toCacheRecord(encontrado) : null;
     } catch (err: unknown) {
       this.logger.warn(
-        `{"event":"db_down","msg":"Erro ao buscarPorKeyword '${keyword}' — usando cache","error":"${this.getErrorMessage(err)}"}`,
+        `{"event":"db_down","msg":"Erro ao buscarPorKeyword '${keyword}' flowId '${flowIdNorm}' — usando cache","error":"${this.getErrorMessage(err)}"}`,
       );
-      return this.cache.find((k) => k.keyword === keyword) ?? null;
+      return (
+        this.cache.find(
+          (k) =>
+            k.keyword === keyword && this.normalizarFlowId(k.flowId) === flowIdNorm,
+        ) ?? null
+      );
     }
   }
 
