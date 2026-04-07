@@ -17,7 +17,7 @@ import {
 } from './interfaces/admin-input.interface';
 
 
-type FluxoBancoPainel = {
+export interface FluxoBancoPainel {
   id: string;
   nome: string;
   descricao: string | null;
@@ -26,9 +26,9 @@ type FluxoBancoPainel = {
   organizacaoNome: string | null;
   subOrganizacaoId: string | null;
   subOrganizacaoNome: string | null;
-};
+}
 
-type FluxoMemoriaPainel = {
+export interface FluxoMemoriaPainel {
   id: string;
   nome: string;
   descricao: string;
@@ -39,7 +39,7 @@ type FluxoMemoriaPainel = {
   organizacaoNome: string | null;
   subOrganizacaoNome: string | null;
   navegavel: boolean;
-};
+}
 
 @Injectable()
 export class AdminService {
@@ -286,16 +286,16 @@ export class AdminService {
   }
 
   // ─── Fluxos ─────────────────────────────────────────────────────────────
-  
+
   async listarFluxos() {
     if (this.isDefaultMode()) {
-       const fluxos: Array<{ id: string; nome: string; descricao?: string; ativo: boolean }> = [
-         { id: '', nome: 'Memória (Padrão)', ativo: true }
-       ];
-       for (const [id, session] of Object.entries(MEMORY_SESSIONS)) {
-         fluxos.push({ id, nome: session.nome, descricao: 'Sessão temporária via Zenvia API', ativo: true });
-       }
-       return fluxos;
+      const fluxos: Array<{ id: string; nome: string; descricao?: string; ativo: boolean }> = [
+        { id: '', nome: 'Memória (Padrão)', ativo: true }
+      ];
+      for (const [id, session] of Object.entries(MEMORY_SESSIONS)) {
+        fluxos.push({ id, nome: session.nome, descricao: 'Sessão temporária via Zenvia API', ativo: true });
+      }
+      return fluxos;
     }
     return this.prisma.botFluxo.findMany({
       select: { id: true, nome: true, descricao: true, ativo: true },
@@ -480,7 +480,7 @@ export class AdminService {
       if (flowId && flowId !== '') {
         return [];
       }
-      
+
       const transicoes: Array<{
         id: string | undefined;
         estado_origem: string;
