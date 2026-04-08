@@ -13,6 +13,7 @@ import {
   DEFAULT_ESTADOS,
   MEMORY_SESSIONS,
 } from './default-state-machine.config';
+import { ConfigExpiracaoOciosidade } from './interfaces/bot.interface';
 
 
 /**
@@ -21,10 +22,7 @@ import {
  */
 const SESSION_PREFIX = 'session:';
 
-export type ConfigExpiracaoOciosidade = {
-  tempoExpiracaoMs: number | null;
-  mensagemExpiracao: string | null;
-};
+
 
 @Injectable()
 export class IdleExpirationService implements OnModuleInit, OnModuleDestroy {

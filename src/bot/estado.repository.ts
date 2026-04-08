@@ -7,39 +7,15 @@ import {
   DEFAULT_ESTADOS,
   DEFAULT_TRANSICOES,
 } from './default-state-machine.config';
+import {
+  EstadoConfigCacheItem,
+  FluxoMemoriaResumo,
+  SessaoCache,
+  SyncTask,
+  TransicaoCacheItem,
+} from './interfaces/bot.interface';
 
-type EstadoConfigCacheItem = {
-  handler: string;
-  descricao: string | null;
-  flowId: string | null;
-  config: Prisma.JsonValue;
-};
 
-type TransicaoCacheItem = {
-  entrada: string;
-  estadoDestino: string;
-};
-
-type SessaoCache = {
-  estado?: string;
-  nome?: string | null;
-  flowId?: string | null;
-  ultimaAtividadeEm?: string;
-  meta?: {
-    tempoExpiracaoMs?: number | null;
-  };
-};
-
-type FluxoMemoriaResumo = {
-  flowId: string | null;
-  estados: number;
-  transicoes: number;
-};
-
-type SyncTask = {
-  type: 'state_update' | 'transition';
-  data: any;
-};
 
 @Injectable()
 export class EstadoRepository implements OnModuleInit {

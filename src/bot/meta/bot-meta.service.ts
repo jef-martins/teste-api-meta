@@ -3,42 +3,9 @@ import { StateMachineEngine } from '../state-machine.engine';
 import { HandlerMetaService } from './handler-meta.service';
 import { ConversationService } from '../../conversation/conversation.service';
 import { IdleExpirationService } from '../idle-expiration.service';
+import { MetaMessageItem, MetaValue } from './interfaces/meta.interface';
 
-export interface MetaContact {
-  profile: {
-    name: string;
-  };
-  wa_id: string;
-}
 
-export interface MetaMessageItem {
-  from: string;
-  id: string;
-  timestamp: string;
-  type: 'text' | 'interactive' | 'button' | string;
-  text?: {
-    body: string;
-  };
-  interactive?: {
-    type: 'list_reply' | 'button_reply';
-    list_reply?: { id: string; title: string };
-    button_reply?: { id: string; title: string };
-  };
-  button?: {
-    payload: string;
-    text: string;
-  };
-}
-
-export interface MetaValue {
-  messaging_product: string;
-  metadata: {
-    display_phone_number: string;
-    phone_number_id: string;
-  };
-  contacts?: MetaContact[];
-  messages?: MetaMessageItem[];
-}
 
 @Injectable()
 export class BotMetaService {

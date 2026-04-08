@@ -13,118 +13,18 @@ import { StateMachineEngine } from '../state-machine.engine';
 import { RedisService } from '../../redis/redis.service';
 import { IdleExpirationService } from '../idle-expiration.service';
 import { HandlerZenviaService } from './handler-zenvia.service';
+import {
+  FetchJsonResult,
+  InputItem,
+  ItemResposta,
+  NormalizedInbound,
+  PrimitiveId,
+  StartInput,
+  StartQueryInput,
+} from './interfaces/zenvia.interface';
+import { SessaoCache } from '../interfaces/bot.interface';
 
-type PrimitiveId = string | number;
 
-type OpcoesValidacaoObjeto = {
-  validation?: unknown;
-  mensagem_resposta_invalida?: string;
-  mensagem_expiracao?: string;
-};
-
-type InputItem = {
-  id?: PrimitiveId;
-  ordem?: number;
-  tipo?: string;
-  texto?: string;
-  opcoes_validacao?: string | number | null | OpcoesValidacaoObjeto;
-  opcoesValidacao?: string | number | null | OpcoesValidacaoObjeto;
-  mensagem?: string;
-};
-
-type ItemResposta = {
-  id: PrimitiveId;
-  ordem: number;
-  tipo: string;
-  mensagem: string;
-  opcoesValidacao: string[];
-  mensagemInvalida: string | null;
-  mensagemExpiracao: string | null;
-  exigeResposta: boolean;
-  resposta: string | null;
-  perguntaMessageId: string | null;
-  perguntaProviderResponse: unknown | null;
-  respostaMessageId: string | null;
-  respondidoEm: string | null;
-};
-
-type SessaoStatus = 'active' | 'completed';
-
-type StartInput = {
-  nps_id?: string;
-  conversa_id?: string;
-  from?: string;
-  to?: string;
-  itens?: InputItem[];
-  mensagens?: InputItem[];
-  callbackUrl?: string;
-  callbackHeaders?: Record<string, string>;
-  headers?: Record<string, string>;
-  Headers?: Record<string, string>;
-  zenviaToken?: string;
-  zenviaBaseUrl?: string;
-  zenviaWebhookSecret?: string;
-  zenviaHeaders?: Record<string, string>;
-  ZENVIA_TOKEN?: string;
-  ZENVIA_WHATSAPP_FROM?: string;
-  ZENVIA_BASE_URL?: string;
-  ZENVIA_WEBHOOK_SECRET?: string;
-  tempo_expiracao_minutos?: number | null;
-  tempoExpiracaoMinutos?: number | null;
-};
-
-type NormalizedInbound = {
-  from: string;
-  to: string;
-  text: string;
-  nps_id: string | null;
-  sourceType: 'interactive' | 'button' | 'text' | 'unknown';
-};
-
-type FetchJsonResult = {
-  messageId: string | null;
-  payload: unknown;
-};
-
-type ZenviaButtonItem = {
-  id: string;
-  title: string;
-};
-
-type ButtonsClientPayload = {
-  body?: unknown;
-  titulo?: unknown;
-  buttons?: unknown;
-};
-
-type ZenviaListRow = {
-  id: string;
-  title: string;
-  description?: string;
-};
-
-type ZenviaListSection = {
-  title: string;
-  rows: ZenviaListRow[];
-};
-
-type ZenviaListContent = {
-  type: 'list';
-  body: string;
-  button: string;
-  sections: ZenviaListSection[];
-  header?: string;
-  footer?: string;
-};
-
-type StartQueryInput = {
-  to?: string;
-  from?: string;
-  token?: string;
-  baseUrl?: string;
-  webhookSecret?: string;
-  nps_id?: string;
-};
 
 @Injectable()
 export class ZenviaService implements OnModuleDestroy {
@@ -403,7 +303,7 @@ export class ZenviaService implements OnModuleDestroy {
 
     if (!from || !to || !text) return null;
     return { from, to, text, nps_id, sourceType: 'text' };
-  }http://localhost:3000/api/zenvia/d6262542-4482-4428-8229-e6df35d739e6
+  }
 
   async iniciarFluxo(body: unknown, query?: StartQueryInput) {
     const input = this.normalizeStartInput(body, query);
@@ -421,7 +321,7 @@ export class ZenviaService implements OnModuleDestroy {
     // Ensure absolute clean slate in memory for repeated flow initiation
     this.engine.limparSessaoCompleta(chatId);
 
-    const sessaoData = {
+    const sessaoData: SessaoCache & { dynamic_states: any, dynamic_transitions: any } = {
       estado: 'INICIO',
       ultimaAtividadeEm: this.nowIso(),
       dynamic_states: flow.states,

@@ -2,19 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { EstadoRepository } from '../estado.repository';
 import { HandlerService } from '../handler.service';
 import { StateMachineEngine } from '../state-machine.engine';
+import { ZenviaSessionContext } from './interfaces/zenvia.interface';
 
 @Injectable()
 export class HandlerZenviaService extends HandlerService {
   private readonly zenviaLogger = new Logger(HandlerZenviaService.name);
 
   /** Configuração para o contexto de execução atual (NPS context) */
-  private sessionContext: {
-    from: string;
-    to: string;
-    token: string;
-    baseUrl: string;
-    headers: Record<string, string>;
-  } | null = null;
+  private sessionContext: ZenviaSessionContext | null = null;
 
   constructor(estadoRepo: EstadoRepository) {
     super(estadoRepo);
@@ -33,7 +28,7 @@ export class HandlerZenviaService extends HandlerService {
     };
   }
 
-  setContext(ctx: { from: string, to: string, token: string, baseUrl: string, headers: Record<string, string> }) {
+  setContext(ctx: ZenviaSessionContext) {
     this.sessionContext = ctx;
   }
 

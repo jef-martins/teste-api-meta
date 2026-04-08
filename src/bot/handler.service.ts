@@ -2,6 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { EstadoRepository } from './estado.repository';
 import { StateMachineEngine } from './state-machine.engine';
 import * as crypto from 'crypto';
+import {
+  Assignment,
+  CampoCaptura,
+  DynamicHandler,
+  HandlerConfig,
+  HandlerMessage,
+  ItemInterativoNormalizado,
+  ItemInterativoObjeto,
+  WppClient,
+} from './interfaces/bot.interface';
 
 /**
  * Implements all step handlers for the bot state machine.
@@ -10,100 +20,8 @@ import * as crypto from 'crypto';
  * Handlers: _handlerMensagem, _handlerCapturar, _handlerLista,
  *           _handlerBotoes, _handlerRequisicao, _handlerDelay
  */
-type ItemInterativoNormalizado = {
-  entrada: string;
-  label: string;
-  descricao: string;
-};
 
-type ItemInterativoObjeto = {
-  entrada?: unknown;
-  label?: unknown;
-  descricao?: unknown;
-  description?: unknown;
-  id?: unknown;
-  rowId?: unknown;
-  value?: unknown;
-  payload?: unknown;
-  title?: unknown;
-  text?: unknown;
-  [key: string]: unknown;
-};
-type HandlerMessage = {
-  from: string;
-  [key: string]: unknown;
-};
 
-type Assignment = {
-  key?: string;
-  value?: unknown;
-  [key: string]: unknown;
-};
-
-type CampoCaptura = {
-  nome: string;
-  mensagemPedir: string;
-  valoresAceitos?: string[];
-  mensagemInvalida?: string;
-  [key: string]: unknown;
-};
-
-type HandlerConfig = Record<string, unknown> & {
-  mensagens?: string[];
-  assignments?: Assignment[];
-  transicaoAutomatica?: boolean;
-  transicao_automatica?: boolean;
-  campos?: CampoCaptura[];
-  mensagemPedir?: string;
-  mensagemInvalida?: string;
-  campoSalvar?: string;
-  campoEnviar?: string;
-  mensagemConfirmacao?: string;
-  opcoes?: ItemInterativoObjeto[] | ItemInterativoNormalizado[];
-  botoes?: ItemInterativoObjeto[] | ItemInterativoNormalizado[];
-  titulo?: string;
-  botaoTexto?: string;
-  secaoTitulo?: string;
-  rodape?: string;
-  cabecalho?: string;
-  body?: Record<string, unknown>;
-  camposEnviar?: string[];
-  palavraSair?: string;
-  apiId?: string;
-  routeId?: string;
-  url?: string;
-  metodo?: string;
-  headers?: Record<string, string>;
-  campoResposta?: string;
-  variavelResposta?: string;
-  mensagemErro?: string;
-  mensagemNaoEncontrado?: string;
-  mensagemSucesso?: string;
-  separador?: string;
-  limparDados?: boolean;
-  duracao?: number;
-  unidade?: string;
-  mensagem?: string;
-};
-
-type WppClient = {
-  sendText: (destino: string, texto: string, chatId?: string) => Promise<unknown>;
-  sendListMessage?: (destino: string, payload: unknown, chatId?: string) => Promise<unknown>;
-  sendButtons?: (
-    destino: string,
-    titulo: string,
-    botoes: Array<{ id: string; text: string }>,
-    rodape: string,
-  ) => Promise<unknown>;
-  sendButtonsMessage?: (destino: string, payload: unknown, chatId?: string) => Promise<unknown>;
-};
-
-type DynamicHandler = (
-  message: HandlerMessage,
-  chatId: string,
-  corpo: string,
-  engine: StateMachineEngine,
-) => unknown;
 
 @Injectable()
 export class HandlerService {

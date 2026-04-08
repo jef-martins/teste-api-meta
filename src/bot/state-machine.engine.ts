@@ -1,20 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EstadoRepository } from './estado.repository';
 import { GlobalKeywordService } from '../global-keyword/global-keyword.service';
+import { DelegateHandler, EstadoConfig } from './interfaces/bot.interface';
 
-type DelegateHandler = (
-  message: unknown,
-  chatId: string,
-  corpo: string,
-  engine: StateMachineEngine,
-) => Promise<void> | void;
 
-type EstadoConfig = {
-  handler: string;
-  descricao?: string | null;
-  flowId?: string | null;
-  config?: unknown;
-};
 
 @Injectable()
 export class StateMachineEngine {
