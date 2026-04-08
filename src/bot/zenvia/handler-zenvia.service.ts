@@ -23,13 +23,12 @@ export class HandlerZenviaService extends HandlerService {
       sendText: async (destino: string, texto: string, chatId?: string) => {
         await this.enviarNoZenvia(destino, texto, chatId);
       },
-      sendListMessage: async (destino: string, payload: unknown) => {
+      sendListMessage: async (destino: string, payload: unknown, chatId?: string) => {
           // Implementação simplificada: converte em texto para canais legados
-          // O ZenviaService tem sua própria lógica de lista, mas aqui unificamos via HandlerService.
-          await this.enviarNoZenvia(destino, 'Escolha uma opção:\n\n' + JSON.stringify(payload));
+          await this.enviarNoZenvia(destino, 'Escolha uma opção:\n\n' + JSON.stringify(payload), chatId);
       },
-      sendButtonsMessage: async (destino: string, payload: unknown) => {
-          await this.enviarNoZenvia(destino, 'Escolha uma opção:\n\n' + JSON.stringify(payload));
+      sendButtonsMessage: async (destino: string, payload: unknown, chatId?: string) => {
+          await this.enviarNoZenvia(destino, 'Escolha uma opção:\n\n' + JSON.stringify(payload), chatId);
       }
     };
   }
@@ -47,13 +46,13 @@ export class HandlerZenviaService extends HandlerService {
         const sessaoRaw = await this.estadoRepo.redis.get(`session:${chatId}`);
         if (sessaoRaw) {
           const sessao = JSON.parse(sessaoRaw);
-          if (sessao.zenviaToken && sessao.zenviaBaseUrl) {
+          if (sessao.meta && sessao.meta.zenviaToken) {
             this.setContext({
-              from: sessao.from,
-              to: sessao.to,
-              token: sessao.zenviaToken,
-              baseUrl: sessao.zenviaBaseUrl,
-              headers: sessao.zenviaHeaders || {},
+              from: sessao.meta.from,
+              to: sessao.meta.to,
+              token: sessao.meta.zenviaToken,
+              baseUrl: sessao.meta.zenviaBaseUrl,
+              headers: sessao.meta.zenviaHeaders || {},
             });
           }
         }

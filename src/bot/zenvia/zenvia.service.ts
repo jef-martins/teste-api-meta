@@ -476,7 +476,14 @@ export class ZenviaService implements OnModuleDestroy {
       });
     }
 
-    await this.engine.process(body, chatId, inbound.text, null, this.handlerZenvia);
+    const messageForEngine = {
+      ...(typeof body === 'object' ? body : {}),
+      from: inbound.from,
+      to: inbound.to,
+      chatId: chatId,
+    };
+
+    await this.engine.process(messageForEngine, chatId, inbound.text, null, this.handlerZenvia);
 
     const estadoFinal = await this.estadoRepo.obterEstadoUsuario(chatId);
     if (estadoFinal === 'END') {

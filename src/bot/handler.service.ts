@@ -88,14 +88,14 @@ type HandlerConfig = Record<string, unknown> & {
 
 type WppClient = {
   sendText: (destino: string, texto: string, chatId?: string) => Promise<unknown>;
-  sendListMessage?: (destino: string, payload: unknown) => Promise<unknown>;
+  sendListMessage?: (destino: string, payload: unknown, chatId?: string) => Promise<unknown>;
   sendButtons?: (
     destino: string,
     titulo: string,
     botoes: Array<{ id: string; text: string }>,
     rodape: string,
   ) => Promise<unknown>;
-  sendButtonsMessage?: (destino: string, payload: unknown) => Promise<unknown>;
+  sendButtonsMessage?: (destino: string, payload: unknown, chatId?: string) => Promise<unknown>;
 };
 
 type DynamicHandler = (
@@ -681,7 +681,7 @@ export class HandlerService {
             },
           ],
           footer: config.rodape || '',
-        }),
+        }, (message as any).chatId),
         timeout,
       ]);
     } catch (err: unknown) {
@@ -803,7 +803,7 @@ export class HandlerService {
         await this.client.sendButtonsMessage(destino, {
           body: titulo,
           buttons: botoesPayload,
-        });
+        }, (message as any).chatId);
       } else {
         const linhas = (config.botoes ?? [])
           .map((b: ItemInterativoNormalizado) => `*${b.entrada}* - ${b.label}`)
