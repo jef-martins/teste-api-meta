@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -402,11 +403,19 @@ export class ZenviaService implements OnModuleDestroy {
 
     if (!from || !to || !text) return null;
     return { from, to, text, nps_id, sourceType: 'text' };
-  }
+  }http://localhost:3000/api/zenvia/d6262542-4482-4428-8229-e6df35d739e6
 
   async iniciarFluxo(body: unknown, query?: StartQueryInput) {
     const input = this.normalizeStartInput(body, query);
     const chatId = `zenvia:${input.nps_id}`;
+
+    const existingSession = await this.redis.get(`session:${chatId}`);
+    if (existingSession) {
+      throw new ConflictException(
+        `O fluxo para o NPS ${input.nps_id} já está em andamento. Encerre-o primeiro realizando uma requisição DELETE para /api/zenvia/${input.nps_id}`
+      );
+    }
+
     const flow = this.mapearParaDynamicFlow(input.itens);
 
     // Ensure absolute clean slate in memory for repeated flow initiation
