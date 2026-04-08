@@ -403,6 +403,7 @@ export class ZenviaService implements OnModuleDestroy {
     await this.engine.process(messageForEngine, chatId, inbound.text, null, this.handlerZenvia);
 
     const estadoFinal = await this.estadoRepo.obterEstadoUsuario(chatId);
+    this.logger.log(`[Zenvia] Mensagem processada para ${chatId}. Estado Final: ${estadoFinal}`);
     if (estadoFinal === 'END') {
       await this.finalizarFluxoUnificado(chatId);
     }
@@ -412,7 +413,10 @@ export class ZenviaService implements OnModuleDestroy {
 
   private async finalizarFluxoUnificado(chatId: string) {
     const sessaoRaw = await this.redis.get(`session:${chatId}`);
-    if (!sessaoRaw) return;
+    if (!sessaoRaw) {
+      this.logger.warn(`[Zenvia] Tentativa de finalizar fluxo para ${chatId}, mas sessão não foi encontrada no Redis.`);
+      return;
+    }
     const sessao = JSON.parse(sessaoRaw);
     const meta = sessao.meta;
     const dados = this.engine.obterDados(chatId);
@@ -422,6 +426,7 @@ export class ZenviaService implements OnModuleDestroy {
       .map(k => ({ chave: k, resposta: dados[k] }));
 
     if (meta.callbackUrl) {
+      this.logger.log(`[Zenvia] Enviando callback para ${meta.callbackUrl} | NPS: ${meta.nps_id} | Respostas: ${respostas.length}`);
       await fetch(meta.callbackUrl, {
         method: 'POST',
         headers: { ...meta.callbackHeaders, 'Content-Type': 'application/json' },
@@ -431,7 +436,57 @@ export class ZenviaService implements OnModuleDestroy {
           status: 'completed',
           respostas,
         }),
-      }).catch(e => this.logger.error(`Erro callback: ${e}`));
+      })
+      .then(async res => {
+        if (!res.ok) {
+          const body = await res.text().catch(() => 'N/A');
+          this.logger.error(`[Zenvia] Falha no callback 1 (salvaRespostaNps): Status ${res.status} | Resposta: ${body}`);
+        } else {
+          this.logger.log(`[Zenvia] Callback 1 (salvaRespostaNps) enviado com sucesso.`);
+
+          // Se sucesso (200, 201, 204), realiza o segundo disparo (finalizaConversa)
+          if ([200, 201, 204].includes(res.status)) {
+            try {
+              // Constrói a URL para o segundo callback baseada na URL do primeiro
+              const urlObj = new URL(meta.callbackUrl);
+              const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+              const finalizaUrl = `${baseUrl}/api-chatboot-proxy-telezap/chatboot/finalizaConversa`;
+              
+              // Busca a chave de aplicação nos headers salvos (case-insensitive)
+              const appKey = meta.zenviaHeaders?.['access-application-key'] || 
+                             meta.zenviaHeaders?.['Access-Application-Key'] ||
+                             meta.zenviaHeaders?.['access_application_key'];
+
+              this.logger.log(`[Zenvia] Enviando callback 2 (finalizaConversa) para ${finalizaUrl}`);
+              
+              await fetch(finalizaUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'access-application-key': appKey || '',
+                },
+                body: JSON.stringify({
+                  fluxo: 'whatsapp',
+                  celular: meta.to,
+                }),
+              })
+              .then(async res2 => {
+                if (!res2.ok) {
+                  const body2 = await res2.text().catch(() => 'N/A');
+                  this.logger.error(`[Zenvia] Falha no callback 2 (finalizaConversa): Status ${res2.status} | Resposta: ${body2}`);
+                } else {
+                  this.logger.log(`[Zenvia] Callback 2 (finalizaConversa) enviado com sucesso.`);
+                }
+              });
+            } catch (err) {
+              this.logger.error(`[Zenvia] Erro ao processar segundo callback: ${err}`);
+            }
+          }
+        }
+      })
+      .catch(e => this.logger.error(`[Zenvia] Erro ao disparar callback principal: ${e}`));
+    } else {
+      this.logger.warn(`[Zenvia] Nenhum callbackUrl definido para a sessão ${chatId}`);
     }
 
     const pair = this.normalizarPar(meta.from, meta.to);
