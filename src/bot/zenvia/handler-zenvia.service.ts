@@ -20,8 +20,8 @@ export class HandlerZenviaService extends HandlerService {
     super(estadoRepo);
 
     this.client = {
-      sendText: async (destino: string, texto: string) => {
-        await this.enviarNoZenvia(destino, texto);
+      sendText: async (destino: string, texto: string, chatId?: string) => {
+        await this.enviarNoZenvia(destino, texto, chatId);
       },
       sendListMessage: async (destino: string, payload: unknown) => {
           // Implementação simplificada: converte em texto para canais legados
@@ -38,17 +38,49 @@ export class HandlerZenviaService extends HandlerService {
     this.sessionContext = ctx;
   }
 
-  private async enviarNoZenvia(destino: string, texto: string): Promise<void> {
-    if (!this.sessionContext) {
-      throw new Error('Contexto Zenvia não inicializado no Handler.');
+  private async enviarNoZenvia(destino: string, texto: string, chatId?: string): Promise<void> {
+    this.zenviaLogger.log(`[Zenvia] Tentando enviar resposta para ${destino} (chatId: ${chatId})`);
+    
+    if (!this.sessionContext && chatId) {
+      this.zenviaLogger.warn(`[Zenvia] Contexto ausente em memória. Recuperando via Redis para ${chatId}...`);
+      try {
+        const sessaoRaw = await this.estadoRepo.redis.get(`session:${chatId}`);
+        if (sessaoRaw) {
+          const sessao = JSON.parse(sessaoRaw);
+          if (sessao.zenviaToken && sessao.zenviaBaseUrl) {
+            this.setContext({
+              from: sessao.from,
+              to: sessao.to,
+              token: sessao.zenviaToken,
+              baseUrl: sessao.zenviaBaseUrl,
+              headers: sessao.zenviaHeaders || {},
+            });
+          }
+        }
+      } catch (e) {
+        this.zenviaLogger.error(`Erro ao recuperar contexto do Redis: ${String(e)}`);
+      }
     }
 
-    const { from, to, token, baseUrl, headers } = this.sessionContext;
+    if (!this.sessionContext) {
+      throw new Error(`Contexto Zenvia não inicializado para o destino ${destino}.`);
+    }
+
+    const { from, token, baseUrl, headers } = this.sessionContext;
+    const to = destino; // Prioriza o destino passado pelo handler
     const tokenLimpo = token.trim().replace(/^"(.*)"$/, '$1');
 
     this.zenviaLogger.log(`[HandlerZenvia] Enviando para ${to} via ${baseUrl}`);
 
     try {
+        const body = JSON.stringify({
+            from,
+            to,
+            contents: [{ type: 'text', text: texto }],
+        });
+
+        this.zenviaLogger.log(`[Zenvia] POST ${baseUrl} | Destino: ${to} | Body: ${body}`);
+
         const response = await fetch(baseUrl, {
             method: 'POST',
             headers: {
@@ -56,16 +88,15 @@ export class HandlerZenviaService extends HandlerService {
                 'X-API-TOKEN': tokenLimpo,
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                from,
-                to,
-                contents: [{ type: 'text', text: texto }],
-            }),
+            body,
         });
 
         if (!response.ok) {
             const errData = await response.json().catch(() => ({}));
+            this.zenviaLogger.error(`[Zenvia] Falha no Envio! Status: ${response.status} | Resposta: ${JSON.stringify(errData)}`);
             throw new Error(`Zenvia API Error [${response.status}]: ${JSON.stringify(errData)}`);
+        } else {
+            this.zenviaLogger.log(`[Zenvia] Mensagem enviada com sucesso para ${to}.`);
         }
     } catch (err) {
         this.zenviaLogger.error(`Erro ao enviar mensagem Zenvia: ${err instanceof Error ? err.message : String(err)}`);

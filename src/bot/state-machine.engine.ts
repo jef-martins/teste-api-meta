@@ -249,7 +249,7 @@ export class StateMachineEngine {
     this.mensagemAtual = entradaBruta;
     this.nomeAtual = nome;
 
-    if (entradaNormalizada) {
+    if (entradaNormalizada !== undefined) {
       if (this.deveAguardarEntrada(config.config)) {
         this.logger.log(
           `[${chatId}] estado aguarda entrada -> buscando transição para "${entradaNormalizada}"`,

@@ -195,7 +195,7 @@ export class IdleExpirationService implements OnModuleInit, OnModuleDestroy {
         // Para fluxos dinâmicos Zenvia (NPS), encerramos a sessão e enviamos callback 'expired'
         this.logger.log(`[IdleExpiration][zenvia-end] nps_id=${sessao.meta?.nps_id}`);
         await this.redis.del(`${SESSION_PREFIX}${chatId}`);
-        const pair = `${sessao.meta?.from}::${sessao.meta?.to}`;
+        const pair = [sessao.meta?.from.trim(), sessao.meta?.to.trim()].sort().join('::');
         await this.redis.del(`zenvia:pair:${pair}`);
 
         if (sessao.meta?.callbackUrl) {

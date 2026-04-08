@@ -155,7 +155,9 @@ export class ZenviaService implements OnModuleDestroy {
   }
 
   private normalizarPar(from: string, to: string): string {
-    return `${from.trim()}::${to.trim()}`;
+    const p1 = from.trim();
+    const p2 = to.trim();
+    return [p1, p2].sort().join('::');
   }
 
   private nowIso(): string {
@@ -282,7 +284,8 @@ export class ZenviaService implements OnModuleDestroy {
     const to = this.toStringOrNull(query?.to) || this.toStringOrNull(payload.to);
     const zenviaToken = this.toStringOrNull(query?.token) || this.toStringOrNull(payload.zenviaToken) || this.toStringOrNull(payload.ZENVIA_TOKEN);
     const zenviaBaseUrl = this.toStringOrNull(query?.baseUrl) || this.toStringOrNull(payload.zenviaBaseUrl) || this.toStringOrNull(payload.ZENVIA_BASE_URL) || 'https://api.zenvia.com/v2/channels/whatsapp/messages';
-
+    const paddingHeaders = payload.zenviaHeaders || payload.Headers || payload.headers || {};
+    
     if (!nps_id || !conversa_id || !from || !to || !zenviaToken) {
       throw new BadRequestException('Campos obrigatórios ausentes: nps_id, conversa_id, from, to, zenviaToken.');
     }
@@ -318,7 +321,7 @@ export class ZenviaService implements OnModuleDestroy {
       tempoExpiracaoMs,
       callbackUrl: this.toStringOrNull(payload.callbackUrl),
       callbackHeaders: payload.callbackHeaders || {},
-      zenviaHeaders: payload.zenviaHeaders || {},
+      zenviaHeaders: paddingHeaders,
     };
   }
 
@@ -327,8 +330,8 @@ export class ZenviaService implements OnModuleDestroy {
     const transitions: Record<string, any> = {};
 
     itens.forEach((item, idx) => {
-      const stateId = `STEP_${idx + 1}`;
-      const nextState = idx === itens.length - 1 ? 'END' : `STEP_${idx + 2}`;
+      const stateId = idx === 0 ? 'INICIO' : `STEP_${idx}`;
+      const nextState = idx === itens.length - 1 ? 'END' : (idx === 0 ? 'STEP_1' : `STEP_${idx + 1}`);
 
       let handler = '_handlerCapturar';
       let config: any = {
@@ -380,15 +383,25 @@ export class ZenviaService implements OnModuleDestroy {
   private normalizarWebhook(body: unknown): NormalizedInbound | null {
     if (!this.isRecord(body)) return null;
     const firstMsg = Array.isArray(body.messages) ? body.messages[0] : null;
-    const from = this.toStringOrNull(body.from) || this.extrairStringPath(firstMsg, ['from']);
-    const to = this.toStringOrNull(body.to) || this.extrairStringPath(firstMsg, ['to']);
+    const from = this.toStringOrNull(body.from) || 
+                 this.extrairStringPath(body.message, ['from']) || 
+                 this.extrairStringPath(firstMsg, ['from']);
+
+    const to = this.toStringOrNull(body.to) || 
+               this.extrairStringPath(body.message, ['to']) || 
+               this.extrairStringPath(firstMsg, ['to']);
+
     const text = this.extrairStringPath(body, ['message', 'contents', 0, 'text']) || 
                  this.extrairStringPath(firstMsg, ['contents', 0, 'text']) ||
                  this.extrairStringPath(body, ['message', 'contents', 0, 'payload']) ||
                  this.extrairStringPath(firstMsg, ['contents', 0, 'payload']);
 
+    const nps_id = this.toStringOrNull(body.nps_id) || 
+                   this.toStringOrNull(this.extrairStringPath(body, ['message', 'nps_id'])) ||
+                   this.toStringOrNull(this.extrairStringPath(firstMsg, ['nps_id']));
+
     if (!from || !to || !text) return null;
-    return { from, to, text, nps_id: null, sourceType: 'text' };
+    return { from, to, text, nps_id, sourceType: 'text' };
   }
 
   async iniciarFluxo(body: unknown, query?: StartQueryInput) {
@@ -397,7 +410,7 @@ export class ZenviaService implements OnModuleDestroy {
     const flow = this.mapearParaDynamicFlow(input.itens);
 
     const sessaoData = {
-      estado: 'STEP_1',
+      estado: 'INICIO',
       ultimaAtividadeEm: this.nowIso(),
       dynamic_states: flow.states,
       dynamic_transitions: flow.transitions,
@@ -420,7 +433,6 @@ export class ZenviaService implements OnModuleDestroy {
     const pair = this.normalizarPar(input.from, input.to);
     await this.redis.set(`zenvia:pair:${pair}`, input.nps_id, 'EX', 604800);
 
-    const ctx = { from: `${input.to}@zenvia` };
     this.handlerZenvia.setContext({
       from: input.from,
       to: input.to,
@@ -429,7 +441,16 @@ export class ZenviaService implements OnModuleDestroy {
       headers: input.zenviaHeaders,
     });
 
-    await this.handlerZenvia._handlerMensagem(ctx as any, chatId, '', this.engine);
+    const mockMessage: any = {
+      chatId, // Anexa o ID da sessão para rastreio no Handler
+      from: input.to, // O celular do usuário
+      to: input.from,  // O celular da operação
+      body: '',
+      type: 'chat',
+      sender: { pushname: 'NPS' }
+    };
+
+    await this.engine.process(mockMessage, chatId, '', null, this.handlerZenvia);
 
     return { ok: true, nps_id: input.nps_id, chatId };
   }
@@ -439,7 +460,7 @@ export class ZenviaService implements OnModuleDestroy {
     if (!inbound) return { ok: false, reason: 'unsupported_format' };
 
     const pair = this.normalizarPar(inbound.from, inbound.to);
-    const nps_id = await this.redis.get(`zenvia:pair:${pair}`);
+    let nps_id = inbound.nps_id || (await this.redis.get(`zenvia:pair:${pair}`));
     if (!nps_id) return { ok: false, reason: 'no_active_session' };
 
     const chatId = `zenvia:${nps_id}`;

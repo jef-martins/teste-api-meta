@@ -3,6 +3,10 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import {
+  DEFAULT_ESTADOS,
+  DEFAULT_TRANSICOES,
+} from './default-state-machine.config';
 
 type EstadoConfigCacheItem = {
   handler: string;
@@ -32,17 +36,23 @@ type FluxoMemoriaResumo = {
   transicoes: number;
 };
 
+type SyncTask = {
+  type: 'state_update' | 'transition';
+  data: any;
+};
+
 @Injectable()
 export class EstadoRepository implements OnModuleInit {
   private readonly logger = new Logger(EstadoRepository.name);
 
   private configCache = new Map<string, EstadoConfigCacheItem>();
   private transicoesCache = new Map<string, TransicaoCacheItem[]>();
+  private variaveisGlobaisCache: Record<string, string> = {};
   private estadoInicialCache: string | null = null;
 
   constructor(
     private prisma: PrismaService,
-    private redis: RedisService,
+    public redis: RedisService,
   ) {}
 
   private getErrorMessage(err: unknown): string {
@@ -100,43 +110,120 @@ export class EstadoRepository implements OnModuleInit {
   async warmUpCache() {
     this.logger.log('{"event":"cache_refresh_start","msg":"Atualizando cache de fluxos (warmUpCache)..."}');
     try {
-      const [configs, transicoes, estadoInicialNode] = await Promise.all([
-        this.prisma.botEstadoConfig.findMany({ where: { ativo: true } }),
-        this.prisma.botEstadoTransicao.findMany({ where: { ativo: true } }),
-        this.prisma.botEstadoConfig.findFirst({
-          where: {
-            ativo: true,
-            nodeType: 'start',
-            fluxo: { ativo: true },
-          },
-          select: { estado: true },
-        }),
-      ]);
 
       const novoConfigCache = new Map<string, EstadoConfigCacheItem>();
-      configs.forEach((c) =>
-        novoConfigCache.set(c.estado, {
-          handler: c.handler,
-          descricao: c.descricao,
-          flowId: c.flowId ?? null,
-          config: c.config,
-        }),
-      );
-
       const novaTransicoesCache = new Map<string, TransicaoCacheItem[]>();
-      transicoes.forEach((t) => {
-        const lista = novaTransicoesCache.get(t.estadoOrigem) ?? [];
-        lista.push({ entrada: t.entrada, estadoDestino: t.estadoDestino });
-        novaTransicoesCache.set(t.estadoOrigem, lista);
-      });
+
+      // Constantes de chaves no Redis para o fluxo global
+      const REDIS_KEY_CONFIG = 'bot:config:states';
+      const REDIS_KEY_TRANS = 'bot:config:transitions';
+      const REDIS_KEY_START = 'bot:config:start_state';
+
+      // 1. Tenta carregar do PostgreSQL (Prioridade - Sincroniza Redis)
+      try {
+        const [configs, transicoes, estadoInicialNode] = await Promise.all([
+          this.prisma.botEstadoConfig.findMany({ where: { ativo: true } }),
+          this.prisma.botEstadoTransicao.findMany({ where: { ativo: true } }),
+          this.prisma.botEstadoConfig.findFirst({
+            where: {
+              ativo: true,
+              nodeType: 'start',
+              fluxo: { ativo: true },
+            },
+            select: { estado: true },
+          }),
+        ]);
+
+        if (configs.length > 0) {
+          configs.forEach((c) =>
+            novoConfigCache.set(c.estado, {
+              handler: c.handler,
+              descricao: c.descricao,
+              flowId: c.flowId ?? null,
+              config: c.config,
+            }),
+          );
+
+          transicoes.forEach((t) => {
+            const lista = novaTransicoesCache.get(t.estadoOrigem) ?? [];
+            lista.push({ entrada: t.entrada, estadoDestino: t.estadoDestino });
+            novaTransicoesCache.set(t.estadoOrigem, lista);
+          });
+
+          this.estadoInicialCache = estadoInicialNode?.estado || 'INICIO';
+
+          // SALVA NO REDIS PARA RESILIÊNCIA
+          await Promise.all([
+            this.redis.set(REDIS_KEY_CONFIG, JSON.stringify(Array.from(novoConfigCache.entries()))),
+            this.redis.set(REDIS_KEY_TRANS, JSON.stringify(Array.from(novaTransicoesCache.entries()))),
+            this.redis.set(REDIS_KEY_START, this.estadoInicialCache),
+          ]);
+
+          this.logger.log(`[Cache] DB -> Redis: Sincronizado (${configs.length} estados).`);
+          
+          // Sincroniza também as variáveis globais
+          await this.syncVariaveisGlobais();
+        }
+      } catch (dbErr: unknown) {
+        this.logger.warn(`[Cache] DB Offline. Buscando resiliência no Redis...`);
+        
+        // 2. Tenta carregar do Redis (Segundo nível de resiliência)
+        try {
+          const [resStates, resTrans, resStart] = await Promise.all([
+            this.redis.get(REDIS_KEY_CONFIG),
+            this.redis.get(REDIS_KEY_TRANS),
+            this.redis.get(REDIS_KEY_START),
+          ]);
+
+          if (resStates && resTrans) {
+            const parsedStates = JSON.parse(resStates) as Array<[string, EstadoConfigCacheItem]>;
+            const parsedTrans = JSON.parse(resTrans) as Array<[string, TransicaoCacheItem[]]>;
+            
+            parsedStates.forEach(([k, v]) => novoConfigCache.set(k, v));
+            parsedTrans.forEach(([k, v]) => novaTransicoesCache.set(k, v));
+            this.estadoInicialCache = resStart || 'INICIO';
+
+            this.logger.log(`[Cache] Redis -> Memória: Restaurado com sucesso.`);
+          }
+        } catch (redisErr: unknown) {
+          this.logger.error(`[Cache] Redis falhou também ao carregar baseline.`);
+        }
+      }
+
+      // 3. Fallback Final: Bot Padrão (Apenas se o cache de memória estiver vazio após DB e Redis)
+      if (novoConfigCache.size === 0) {
+        this.logger.warn(`[Cache] Redis e DB vazios/offline. Acionando Motor de Reserva (Default Bot).`);
+        Object.entries(DEFAULT_ESTADOS).forEach(([estado, c]) => {
+          novoConfigCache.set(estado, {
+            handler: c.handler,
+            descricao: c.descricao,
+            flowId: null,
+            config: c.config as Prisma.JsonValue,
+          });
+        });
+
+        Object.entries(DEFAULT_TRANSICOES).forEach(([estadoOrigem, lista]) => {
+          novaTransicoesCache.set(
+            estadoOrigem,
+            lista.map((t) => ({
+              entrada: t.entrada,
+              estadoDestino: t.estadoDestino,
+            })),
+          );
+        });
+        this.estadoInicialCache = 'INICIO';
+      }
 
       this.configCache = novoConfigCache;
       this.transicoesCache = novaTransicoesCache;
-      this.estadoInicialCache = estadoInicialNode?.estado || 'NOVO';
+      if (!this.estadoInicialCache) this.estadoInicialCache = 'INICIO';
 
       this.logger.log(
-        `{"event":"cache_refresh_ok","states":${this.configCache.size},"transitions":${this.transicoesCache.size},"msg":"Cache de fluxos atualizado com sucesso."}`,
+        `{"event":"cache_refresh_ok","states":${this.configCache.size},"transitions":${this.transicoesCache.size},"msg":"Cache de fluxos sincronizado."}`,
       );
+      
+      // Sincroniza qualquer atualização pendente feita offline
+      await this.processarFilaSincronia();
     } catch (err: unknown) {
       this.logger.error(
         `{"event":"cache_refresh_failed","msg":"Erro ao carregar cache — mantendo dados anteriores","error":"${this.getErrorMessage(err)}"}`,
@@ -382,11 +469,16 @@ export class EstadoRepository implements OnModuleInit {
         .catch((err: any) => {
           if (err?.code === 'P2003') {
             this.logger.warn(
-              `[${chatId}] Estado '${estado}' não existe mais no banco (fluxo atualizado?). Salvamento abortado, fluxo será reiniciado na próxima mensagem.`,
+              `[${chatId}] Estado '${estado}' não existe mais no banco (fluxo atualizado?). Salvamento abortado (não enfileirado).`,
             );
           } else {
+            this.logger.warn(`[Resiliência] Falha no banco para ${chatId}. Enfileirando estado "${estado}" para sincronia.`);
+            this.enfileirarSincronia({
+              type: 'state_update',
+              data: { chatId, estado, nome: nome || undefined },
+            });
             this.logger.error(
-              `Erro ao salvar no banco em background [${chatId}]: ${this.getErrorMessage(err)}`,
+              `{"event":"db_down","msg":"Erro ao salvar estado de ${chatId} no banco em background","error":"${this.getErrorMessage(err)}"}`,
             );
           }
         });
@@ -423,6 +515,11 @@ export class EstadoRepository implements OnModuleInit {
         data: { chatId, estadoAnterior, estadoNovo, mensagemGatilho },
       });
     } catch (err: unknown) {
+      this.logger.warn(`[Resiliência] Falha ao registrar transição para ${chatId}. Enfileirando histórico.`);
+      this.enfileirarSincronia({
+        type: 'transition',
+        data: { chatId, estadoAnterior, estadoNovo, mensagemGatilho },
+      });
       this.logger.error(
         `{"event":"db_down","msg":"Erro ao registrar transição ${estadoAnterior}->${estadoNovo} para ${chatId}","error":"${this.getErrorMessage(err)}"}`,
       );
@@ -472,12 +569,16 @@ export class EstadoRepository implements OnModuleInit {
   }
 
   async obterVariaveisFluxoAtivo(): Promise<Record<string, string>> {
+     return this.variaveisGlobaisCache || {};
+  }
+
+  private async syncVariaveisGlobais(): Promise<void> {
     try {
       const fluxoAtivo = await this.prisma.botFluxo.findFirst({
         where: { ativo: true },
         select: { id: true },
       });
-      if (!fluxoAtivo) return {};
+      if (!fluxoAtivo) return;
 
       const variaveis = await this.prisma.botFluxoVariavel.findMany({
         where: { flowId: fluxoAtivo.id },
@@ -490,20 +591,18 @@ export class EstadoRepository implements OnModuleInit {
           resultado[v.chave] = v.valorPadrao;
         }
       }
-      return resultado;
+      this.variaveisGlobaisCache = resultado;
     } catch (err: unknown) {
       this.logger.error(
-        `{"event":"db_down","msg":"Erro ao obter variáveis do fluxo ativo","error":"${this.getErrorMessage(err)}"}`,
+        `{"event":"db_down","msg":"Erro ao sincronizar variáveis para o cache","error":"${this.getErrorMessage(err)}"}`,
       );
-      return {};
     }
   }
 
   async obterEstadoInicial(): Promise<string | null> {
-    try {
-      if (this.estadoInicialCache) {
-        return this.estadoInicialCache;
-      }
+    if (this.estadoInicialCache) {
+      return this.estadoInicialCache;
+    }
 
     // 2. Fallback ao banco
     try {
@@ -533,6 +632,55 @@ export class EstadoRepository implements OnModuleInit {
     } catch (err: any) {
       this.logger.error(`Erro ao obter fluxo ativo: ${err.message}`);
       return null;
+    }
+  }
+
+  // ─── LÓGICA DE SINCRONIZAÇÃO ATRASADA (Write-Behind) ──────────────────────────
+
+  private async enfileirarSincronia(task: SyncTask) {
+    try {
+      await this.redis.lpush('bot:sync:queue', JSON.stringify(task));
+    } catch (err: unknown) {
+      this.logger.error(`Erro crítico ao enfileirar tarefa no Redis: ${this.getErrorMessage(err)}`);
+    }
+  }
+
+  /**
+   * Processa a fila de sincronização pendente do Redis para o PostgreSQL.
+   */
+  @OnEvent('db.reconnected')
+  async processarFilaSincronia() {
+    this.logger.log(`[Resiliência] Iniciando sincronização de dados acumulados offline...`);
+    let processados = 0;
+    try {
+      while (true) {
+        const item = await this.redis.rpop('bot:sync:queue');
+        if (!item) break;
+
+        const task = JSON.parse(item) as SyncTask;
+        try {
+          if (task.type === 'state_update') {
+            await this.prisma.botEstadoUsuario.upsert({
+              where: { chatId: task.data.chatId },
+              update: { estadoAtual: task.data.estado, nome: task.data.nome },
+              create: { chatId: task.data.chatId, estadoAtual: task.data.estado, nome: task.data.nome },
+            });
+          } else if (task.type === 'transition') {
+            await this.prisma.botEstadoHistorico.create({ data: task.data });
+          }
+          processados++;
+        } catch (err: unknown) {
+          // Se falhar o banco de novo, devolve pra fila no fim para tentar depois
+          await this.redis.lpush('bot:sync:queue', item);
+          this.logger.warn(`[Resiliência] Falha na sincronia, banco ainda indisponível? Abortando lote atual.`);
+          break;
+        }
+      }
+      if (processados > 0) {
+        this.logger.log(`[Resiliência] Sincronização concluída: ${processados} tarefas persistidas no PG.`);
+      }
+    } catch (err: unknown) {
+      this.logger.error(`Erro ao processar fila de sincronia: ${this.getErrorMessage(err)}`);
     }
   }
 }

@@ -87,7 +87,7 @@ type HandlerConfig = Record<string, unknown> & {
 };
 
 type WppClient = {
-  sendText: (destino: string, texto: string) => Promise<unknown>;
+  sendText: (destino: string, texto: string, chatId?: string) => Promise<unknown>;
   sendListMessage?: (destino: string, payload: unknown) => Promise<unknown>;
   sendButtons?: (
     destino: string,
@@ -119,7 +119,7 @@ export class HandlerService {
   /** When true, rethrow send errors instead of only logging. */
   failOnSendError = false;
 
-  constructor(private estadoRepo: EstadoRepository) {}
+  constructor(protected estadoRepo: EstadoRepository) {}
 
   private parseConfig(config: unknown): HandlerConfig {
     if (typeof config === 'string') {
@@ -311,24 +311,24 @@ export class HandlerService {
   // ─── Helper: send response and save to DB ────────────────────────────────
 
   private async enviarResposta(message: HandlerMessage, texto: string) {
+    const destino = message.from;
+    const chatId = (message as any).chatId;
+    
+    this.logger.log(`[Handler] Preparando envio para ${destino} | Texto: ${texto.substring(0, 30)}... | chatId: ${chatId}`);
+
     if (!this.client?.sendText) {
-      this.logger.error('Client não inicializado');
-      if (this.failOnSendError) {
-        throw new Error('Client não inicializado');
-      }
+      this.logger.error('[Handler] Erro Crítico: Cliente de mensageria (WppClient) não inicializado no Handler.');
       return;
     }
+    
     try {
-      const destino = message.from;
-      await this.client.sendText(destino, texto);
-      this.logger.log(`Resposta enviada para ${destino}`);
+      await this.client.sendText(destino, texto, chatId);
+      this.logger.log(`[Handler] Sucesso: Resposta enviada para ${destino} (chatId: ${chatId})`);
     } catch (err: unknown) {
       this.logger.error(
-        `Erro ao enviar resposta: ${this.getErrorMessage(err)}`,
+        `[Handler] Falha ao enviar para ${destino}: ${this.getErrorMessage(err)}`,
       );
-      if (this.failOnSendError) {
-        throw err;
-      }
+      if (this.failOnSendError) throw err;
     }
   }
 
@@ -430,9 +430,10 @@ export class HandlerService {
     engine: StateMachineEngine,
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
-    const config = this.parseConfig(
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
-    );
+    const configEstado = await this.estadoRepo.obterConfigEstado(estadoAtual, chatId);
+    const config = this.parseConfig(configEstado?.config ?? {});
+
+    this.logger.log(`[_handlerCapturar] Processando chatId: ${chatId} | Estado: ${estadoAtual} | Config: ${JSON.stringify(config)}`);
 
     // Multi-field mode
     if (Array.isArray(config.campos) && config.campos.length > 0) {

@@ -138,4 +138,52 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       })
       .map(([k]) => k);
   }
+
+  /**
+   * Adiciona um item ao início da lista (Fila - Lado Esquerdo).
+   */
+  async lpush(key: string, value: string): Promise<void> {
+    if (this.client) {
+      try {
+        await this.client.lpush(key, value);
+        return;
+      } catch (err) {
+        this.logger.error(`Erro ao fazer LPUSH no Redis (chave: ${key}): ${String(err)}`);
+      }
+    }
+    // Fallback básico in-memory se o Redis estiver fora
+    const existing = await this.get(key) || '[]';
+    try {
+      const list = JSON.parse(existing);
+      if (Array.isArray(list)) {
+        list.unshift(value);
+        await this.set(key, JSON.stringify(list));
+      }
+    } catch {}
+  }
+
+  /**
+   * Remove e retorna o último item da lista (Fila - Lado Direito).
+   */
+  async rpop(key: string): Promise<string | null> {
+    if (this.client) {
+      try {
+        return await this.client.rpop(key);
+      } catch (err) {
+        this.logger.error(`Erro ao fazer RPOP no Redis (chave: ${key}): ${String(err)}`);
+      }
+    }
+    // Fallback básico in-memory
+    const existing = await this.get(key);
+    if (!existing) return null;
+    try {
+      const list = JSON.parse(existing);
+      if (Array.isArray(list) && list.length > 0) {
+        const item = list.pop();
+        await this.set(key, JSON.stringify(list));
+        return item;
+      }
+    } catch {}
+    return null;
+  }
 }
