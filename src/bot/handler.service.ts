@@ -285,7 +285,7 @@ export class HandlerService {
     gatilho?: string,
   ) {
     await engine.avancarEstado(chatId, proximo, gatilho ?? corpo);
-    const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
+    const configProximo = await this.estadoRepo.obterConfigEstado(proximo, chatId);
     if (configProximo) {
       await this.executarHandler(
         configProximo.handler,
@@ -342,7 +342,7 @@ export class HandlerService {
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
     const config = this.parseConfig(
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+      (await this.estadoRepo.obterConfigEstado(estadoAtual, chatId))?.config ?? {},
     );
 
     // Como o motor já filtrou transições exatas, se houver corpo, tentamos a transição curinga (*)
@@ -405,6 +405,8 @@ export class HandlerService {
       const proximoAuto = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
         '*',
+        true,
+        chatId,
       );
       if (proximoAuto) {
         await this.avancarEExecutar(
@@ -460,12 +462,12 @@ export class HandlerService {
       return;
     }
 
-    let proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, corpo);
+    let proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, corpo, true, chatId);
     if (
       !proximo &&
       (config.transicaoAutomatica || config.transicao_automatica)
     ) {
-      proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+      proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*', true, chatId);
     }
 
     if (!proximo) {
@@ -559,7 +561,7 @@ export class HandlerService {
       await this.enviarResposta(message, texto);
     }
 
-    const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+    const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*', true, chatId);
     if (!proximo) {
       await engine.finalizarSessao(chatId);
       return;
@@ -585,13 +587,15 @@ export class HandlerService {
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
     const config = this.parseConfig(
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+      (await this.estadoRepo.obterConfigEstado(estadoAtual, chatId))?.config ?? {},
     );
 
     if (corpo) {
       let proximo = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
         corpo,
+        true,
+        chatId,
       );
 
       // Fallback: match by option label (for clients that return label text instead of rowId)
@@ -609,6 +613,8 @@ export class HandlerService {
           proximo = await this.estadoRepo.buscarProximoEstado(
             estadoAtual,
             match.entrada,
+            true,
+            chatId,
           );
         }
       }
@@ -628,6 +634,8 @@ export class HandlerService {
       const proximoPadrao = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
         '*',
+        true,
+        chatId,
       );
       if (proximoPadrao) {
         return await this.avancarEExecutar(
@@ -705,13 +713,15 @@ export class HandlerService {
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
     const config = this.parseConfig(
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+      (await this.estadoRepo.obterConfigEstado(estadoAtual, chatId))?.config ?? {},
     );
 
     if (corpo) {
       let proximo = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
         corpo,
+        true,
+        chatId,
       );
 
       // Fallback: match by button label (for text replies of buttons)
@@ -729,6 +739,8 @@ export class HandlerService {
           proximo = await this.estadoRepo.buscarProximoEstado(
             estadoAtual,
             match.entrada,
+            true,
+            chatId,
           );
         }
       }
@@ -749,6 +761,8 @@ export class HandlerService {
       const proximoPadrao = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
         '*',
+        true,
+        chatId,
       );
       if (proximoPadrao) {
         await this.avancarEExecutar(
@@ -837,7 +851,7 @@ export class HandlerService {
   ) {
     const estadoAtual = engine.estadosUsuarios.get(chatId)!;
     let config = this.parseConfig(
-      (await this.estadoRepo.obterConfigEstado(estadoAtual))?.config ?? {},
+      (await this.estadoRepo.obterConfigEstado(estadoAtual, chatId))?.config ?? {},
     );
 
     const dadosMemoria = engine.obterDados(chatId);
@@ -854,11 +868,13 @@ export class HandlerService {
       const proximo = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
         corpo,
+        true,
+        chatId,
       );
       if (proximo) {
         engine.limparDados(chatId);
         await engine.avancarEstado(chatId, proximo, corpo);
-        const configProximo = await this.estadoRepo.obterConfigEstado(proximo);
+        const configProximo = await this.estadoRepo.obterConfigEstado(proximo, chatId);
         if (configProximo) {
           await this.executarHandler(
             configProximo.handler,
@@ -1073,9 +1089,11 @@ export class HandlerService {
       let proximo = await this.estadoRepo.buscarProximoEstado(
         estadoAtual,
         valorParaTransicao,
+        true,
+        chatId,
       );
       if (!proximo && valorParaTransicao !== '*') {
-        proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+        proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*', true, chatId);
       }
       if (proximo) {
         await this.avancarEExecutar(
@@ -1125,7 +1143,7 @@ export class HandlerService {
     }
 
     // Transição automática
-    const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+    const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*', true, chatId);
     if (proximo) {
       await this.avancarEExecutar(
         proximo,
@@ -1165,7 +1183,7 @@ export class HandlerService {
     const tempoReal = Math.min(ms, 300000);
     await new Promise((resolve) => setTimeout(resolve, tempoReal));
 
-    const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*');
+    const proximo = await this.estadoRepo.buscarProximoEstado(estadoAtual, '*', true, chatId);
     if (proximo) {
       await this.avancarEExecutar(
         proximo,

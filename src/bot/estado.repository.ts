@@ -331,19 +331,32 @@ export class EstadoRepository implements OnModuleInit {
           const sessao = JSON.parse(sessaoRaw) as any;
           if (sessao.dynamic_transitions && sessao.dynamic_transitions[estadoAtual]) {
             const transicoes = sessao.dynamic_transitions[estadoAtual] as TransicaoCacheItem[];
+            this.logger.debug(`[${chatId}] Transições dinâmicas encontradas para ${estadoAtual}: ${JSON.stringify(transicoes)}`);
             
             // Exact match
             const exact = transicoes.find(t => t.entrada === entrada);
-            if (exact) return exact.estadoDestino;
+            if (exact) {
+              this.logger.debug(`[${chatId}] Match exato dinâmico: ${estadoAtual} + ${entrada} -> ${exact.estadoDestino}`);
+              return exact.estadoDestino;
+            }
 
             // Wildcard
             if (acceptWildcard && entrada !== '*') {
               const wildcard = transicoes.find(t => t.entrada === '*');
-              if (wildcard) return wildcard.estadoDestino;
+              if (wildcard) {
+                this.logger.debug(`[${chatId}] Match wildcard dinâmico: ${estadoAtual} + * -> ${wildcard.estadoDestino}`);
+                return wildcard.estadoDestino;
+              }
             }
+          } else {
+            this.logger.debug(`[${chatId}] Nenhuma transição dinâmica encontrada no Redis para o estado ${estadoAtual}`);
           }
+        } else {
+          this.logger.debug(`[${chatId}] Sessão não encontrada no Redis para busca de transição`);
         }
-      } catch {}
+      } catch (err) {
+        this.logger.error(`[${chatId}] Erro ao buscar transição dinâmica no Redis: ${err.message}`);
+      }
     }
 
     try {

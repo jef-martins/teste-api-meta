@@ -94,6 +94,12 @@ export class StateMachineEngine {
     this.dadosCapturados.delete(chatId);
   }
 
+  limparSessaoCompleta(chatId: string) {
+    this.estadosUsuarios.delete(chatId);
+    this.dadosCapturados.delete(chatId);
+    this.estadosAvisados.delete(chatId);
+  }
+
   private obterHandlerDelegate(
     actionDelegate: unknown,
     handlerNome: string,
@@ -151,7 +157,7 @@ export class StateMachineEngine {
 
       if (estadoSalvo && !this.estadosAvisados.has(chatId)) {
         this.logger.log(
-          `[${chatId}] estado restaurado do banco: ${estadoSalvo}`,
+          `[${chatId}] estado restaurado do DB/Redis/Motor: ${estadoAtualUsuario}`,
         );
         this.estadosAvisados.add(chatId);
       }

@@ -409,6 +409,9 @@ export class ZenviaService implements OnModuleDestroy {
     const chatId = `zenvia:${input.nps_id}`;
     const flow = this.mapearParaDynamicFlow(input.itens);
 
+    // Ensure absolute clean slate in memory for repeated flow initiation
+    this.engine.limparSessaoCompleta(chatId);
+
     const sessaoData = {
       estado: 'INICIO',
       ultimaAtividadeEm: this.nowIso(),
@@ -429,6 +432,11 @@ export class ZenviaService implements OnModuleDestroy {
       }
     };
 
+    this.logger.log(`[Zenvia] Salvando sessão no Redis para ${chatId}: ${JSON.stringify({
+      nps_id: sessaoData.meta.nps_id,
+      transitions: Object.keys(sessaoData.dynamic_transitions || {}),
+      inicio_trans: sessaoData.dynamic_transitions?.['INICIO']
+    })}`);
     await this.redis.set(`session:${chatId}`, JSON.stringify(sessaoData), 'EX', 604800);
     const pair = this.normalizarPar(input.from, input.to);
     await this.redis.set(`zenvia:pair:${pair}`, input.nps_id, 'EX', 604800);
@@ -520,7 +528,7 @@ export class ZenviaService implements OnModuleDestroy {
     const pair = this.normalizarPar(meta.from, meta.to);
     await this.redis.del(`session:${chatId}`);
     await this.redis.del(`zenvia:pair:${pair}`);
-    this.engine.limparDados(chatId);
+    this.engine.limparSessaoCompleta(chatId);
   }
 
   async encerrarSessao(nps_id: string) {
