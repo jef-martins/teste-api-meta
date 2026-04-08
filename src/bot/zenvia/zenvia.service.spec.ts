@@ -25,14 +25,14 @@ describe('ZenviaService', () => {
       message: {
         contents: [{ payload: 'OPCAO_1', text: 'Opcao 1' }],
       },
-      metadata: { nps_id: 'exec-1' },
+      metadata: { pesquisa_id: 'exec-1' },
     });
 
     expect(normalized).toEqual({
       from: '5511999999999',
       to: '5511888888888',
       text: 'OPCAO_1',
-      nps_id: 'exec-1',
+      pesquisa_id: 'exec-1',
       sourceType: 'interactive',
     });
   });
@@ -50,7 +50,7 @@ describe('ZenviaService', () => {
       from: '5511777777777',
       to: '5511666666666',
       text: 'CONFIRMAR',
-      nps_id: null,
+      pesquisa_id: null,
       sourceType: 'button',
     });
   });
@@ -99,7 +99,7 @@ describe('ZenviaService', () => {
       .mockResolvedValue({ messageId: 'msg-button', payload: { ok: true } });
 
     const snapshot = await service.iniciarFluxo({
-      nps_id: 'exec-button-native-1',
+      pesquisa_id: 'exec-button-native-1',
       conversa_id: 'conversa-button-native-1',
       from: '558599968524',
       to: '5514998089672',
@@ -131,7 +131,7 @@ describe('ZenviaService', () => {
       .mockResolvedValue({ messageId: 'msg-list', payload: { ok: true } });
 
     const snapshot = await service.iniciarFluxo({
-      nps_id: 'exec-list-native-1',
+      pesquisa_id: 'exec-list-native-1',
       conversa_id: 'conversa-list-native-1',
       from: '558599968524',
       to: '5514998089672',
@@ -163,7 +163,7 @@ describe('ZenviaService', () => {
       .mockResolvedValue({ messageId: 'msg-1', payload: { ok: true } });
 
     const snapshot = await service.iniciarFluxo({
-      nps_id: 'exec-start-send-1',
+      pesquisa_id: 'exec-start-send-1',
       conversa_id: 'conversa-start-send-1',
       from: '558599968524',
       to: '5514998089672',
@@ -190,7 +190,7 @@ describe('ZenviaService', () => {
       .mockResolvedValue({ messageId: 'msg-btn', payload: { ok: true } });
 
     await service.iniciarFluxo({
-      nps_id: 'exec-next-step-1',
+      pesquisa_id: 'exec-next-step-1',
       conversa_id: 'conversa-next-step-1',
       from: '558599968524',
       to: '5514998089672',
@@ -230,7 +230,7 @@ describe('ZenviaService', () => {
       .mockRejectedValue(erroEtapa2);
 
     await service.iniciarFluxo({
-      nps_id: 'exec-next-step-fail-1',
+      pesquisa_id: 'exec-next-step-fail-1',
       conversa_id: 'conversa-next-step-fail-1',
       from: '558599968524',
       to: '5514998089672',
@@ -258,10 +258,10 @@ describe('ZenviaService', () => {
     expect(enviarMensagemTextoSpy).toHaveBeenCalledTimes(2);
   });
 
-  it('encerra sessao ativa via nps_id', () => {
-    const nps_id = 'exec-encerrar-1';
+  it('encerra sessao ativa via pesquisa_id', () => {
+    const pesquisa_id = 'exec-encerrar-1';
     const sessaoFake = {
-      nps_id,
+      pesquisa_id,
       from: '5511999999999',
       to: '5511888888888',
       status: 'active',
@@ -285,43 +285,43 @@ describe('ZenviaService', () => {
       runtime: {},
     } as any;
 
-    (service as any).sessoes.set(nps_id, sessaoFake);
+    (service as any).sessoes.set(pesquisa_id, sessaoFake);
     (service as any).sessoesAtivasPorPar.set(
       '5511999999999::5511888888888',
-      nps_id,
+      pesquisa_id,
     );
-    MEMORY_SESSIONS[nps_id] = {
+    MEMORY_SESSIONS[pesquisa_id] = {
       nome: 'Sessao teste',
       configs: {},
       transicoes: {},
     };
 
-    const result = service.encerrarSessao(nps_id);
+    const result = service.encerrarSessao(pesquisa_id);
 
     expect(result).toEqual({
       ok: true,
-      nps_id,
+      pesquisa_id,
       mensagem: 'apagado com sucesso',
     });
-    expect((service as any).sessoes.has(nps_id)).toBe(false);
+    expect((service as any).sessoes.has(pesquisa_id)).toBe(false);
     expect((service as any).sessoesAtivasPorPar.size).toBe(0);
-    expect(MEMORY_SESSIONS[nps_id]).toBeUndefined();
+    expect(MEMORY_SESSIONS[pesquisa_id]).toBeUndefined();
   });
 
-  it('retorna nao encontrado sem erro ao encerrar nps_id inexistente', () => {
+  it('retorna nao encontrado sem erro ao encerrar pesquisa_id inexistente', () => {
     const result = service.encerrarSessao('exec-inexistente');
 
     expect(result).toEqual({
       ok: true,
-      nps_id: 'exec-inexistente',
+      pesquisa_id: 'exec-inexistente',
       mensagem: 'apagado com sucesso',
     });
   });
 
-  it('webhook usa fallback por par quando nps_id inbound nao existe', async () => {
-    const nps_idAtivo = 'exec-ativo-par-1';
+  it('webhook usa fallback por par quando pesquisa_id inbound nao existe', async () => {
+    const pesquisa_idAtivo = 'exec-ativo-par-1';
     const sessaoFake = {
-      nps_id: nps_idAtivo,
+      pesquisa_id: pesquisa_idAtivo,
       from: '558599968524',
       to: '5514998089672',
       status: 'active',
@@ -345,10 +345,10 @@ describe('ZenviaService', () => {
       runtime: {},
     } as any;
 
-    (service as any).sessoes.set(nps_idAtivo, sessaoFake);
+    (service as any).sessoes.set(pesquisa_idAtivo, sessaoFake);
     (service as any).sessoesAtivasPorPar.set(
       '558599968524::5514998089672',
-      nps_idAtivo,
+      pesquisa_idAtivo,
     );
 
     const registrarSpy = jest
@@ -357,7 +357,7 @@ describe('ZenviaService', () => {
 
     const result = await service.processarWebhook(
       {
-        nps_id: 'exec-inbound-inexistente',
+        pesquisa_id: 'exec-inbound-inexistente',
         from: '5514998089672',
         to: '558599968524',
         text: 'ok',
@@ -365,10 +365,10 @@ describe('ZenviaService', () => {
       {},
     );
 
-    expect(registrarSpy).toHaveBeenCalledWith(nps_idAtivo, 'ok');
+    expect(registrarSpy).toHaveBeenCalledWith(pesquisa_idAtivo, 'ok');
     expect(result).toEqual({
       ok: true,
-      nps_id: nps_idAtivo,
+      pesquisa_id: pesquisa_idAtivo,
       snapshot: { status: 'active', currentIndex: 1 },
     });
   });

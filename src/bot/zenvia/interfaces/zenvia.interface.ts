@@ -35,7 +35,7 @@ export interface ItemResposta {
 export type SessaoStatus = 'active' | 'completed';
 
 export interface StartInput {
-  nps_id?: string;
+  pesquisa_id?: string;
   conversa_id?: string;
   from?: string;
   to?: string;
@@ -63,7 +63,7 @@ export interface NormalizedInbound {
   from: string;
   to: string;
   text: string;
-  nps_id: string | null;
+  pesquisa_id: string | null;
   sourceType: SourceType;
 }
 
@@ -109,7 +109,7 @@ export interface StartQueryInput {
   token?: string;
   baseUrl?: string;
   webhookSecret?: string;
-  nps_id?: string;
+  pesquisa_id?: string;
 }
 
 export interface ZenviaSessionContext {

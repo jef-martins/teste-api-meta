@@ -191,7 +191,7 @@ export class IdleExpirationService implements OnModuleInit, OnModuleDestroy {
       // 2. Comportamento pós-expiração
       if (chatId.startsWith('zenvia:')) {
         // Para fluxos dinâmicos Zenvia (NPS), encerramos a sessão e enviamos callback 'expired'
-        this.logger.log(`[IdleExpiration][zenvia-end] nps_id=${sessao.meta?.nps_id}`);
+        this.logger.log(`[IdleExpiration][zenvia-end] pesquisa_id=${sessao.meta?.pesquisa_id}`);
         await this.redis.del(`${SESSION_PREFIX}${chatId}`);
         const pair = [sessao.meta?.from.trim(), sessao.meta?.to.trim()].sort().join('::');
         await this.redis.del(`zenvia:pair:${pair}`);
@@ -201,7 +201,7 @@ export class IdleExpirationService implements OnModuleInit, OnModuleDestroy {
              method: 'POST',
              headers: { ...sessao.meta.callbackHeaders, 'Content-Type': 'application/json' },
              body: JSON.stringify({
-               nps_id: sessao.meta.nps_id,
+               pesquisa_id: sessao.meta.pesquisa_id,
                conversa_id: sessao.meta.conversa_id,
                status: 'expired',
                motivo: 'idle_timeout'

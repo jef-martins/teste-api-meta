@@ -179,7 +179,7 @@ export class ZenviaService implements OnModuleDestroy {
     if (Array.isArray(body)) payload.itens = body as InputItem[];
     else if (this.isRecord(body)) payload = body as StartInput;
 
-    const nps_id = this.toStringOrNull(query?.nps_id) || this.toStringOrNull(payload.nps_id);
+    const pesquisa_id = this.toStringOrNull(query?.pesquisa_id) || this.toStringOrNull(payload.pesquisa_id);
     const conversa_id = this.toStringOrNull(payload.conversa_id);
     const from = this.toStringOrNull(query?.from) || this.toStringOrNull(payload.from) || this.toStringOrNull(payload.ZENVIA_WHATSAPP_FROM);
     const to = this.toStringOrNull(query?.to) || this.toStringOrNull(payload.to);
@@ -187,8 +187,8 @@ export class ZenviaService implements OnModuleDestroy {
     const zenviaBaseUrl = this.toStringOrNull(query?.baseUrl) || this.toStringOrNull(payload.zenviaBaseUrl) || this.toStringOrNull(payload.ZENVIA_BASE_URL) || 'https://api.zenvia.com/v2/channels/whatsapp/messages';
     const paddingHeaders = payload.zenviaHeaders || payload.Headers || payload.headers || {};
     
-    if (!nps_id || !conversa_id || !from || !to || !zenviaToken) {
-      throw new BadRequestException('Campos obrigatórios ausentes: nps_id, conversa_id, from, to, zenviaToken.');
+    if (!pesquisa_id || !conversa_id || !from || !to || !zenviaToken) {
+      throw new BadRequestException('Campos obrigatórios ausentes: pesquisa_id, conversa_id, from, to, zenviaToken.');
     }
 
     const sourceItens = payload.itens ?? payload.mensagens ?? [];
@@ -212,7 +212,7 @@ export class ZenviaService implements OnModuleDestroy {
     const tempoExpiracaoMs = tempoExpiracaoMinutos && tempoExpiracaoMinutos > 0 ? tempoExpiracaoMinutos * 60 * 1000 : null;
 
     return {
-      nps_id,
+      pesquisa_id,
       conversa_id,
       from,
       to,
@@ -297,22 +297,22 @@ export class ZenviaService implements OnModuleDestroy {
                  this.extrairStringPath(body, ['message', 'contents', 0, 'payload']) ||
                  this.extrairStringPath(firstMsg, ['contents', 0, 'payload']);
 
-    const nps_id = this.toStringOrNull(body.nps_id) || 
-                   this.toStringOrNull(this.extrairStringPath(body, ['message', 'nps_id'])) ||
-                   this.toStringOrNull(this.extrairStringPath(firstMsg, ['nps_id']));
+    const pesquisa_id = this.toStringOrNull(body.pesquisa_id) || 
+                   this.toStringOrNull(this.extrairStringPath(body, ['message', 'pesquisa_id'])) ||
+                   this.toStringOrNull(this.extrairStringPath(firstMsg, ['pesquisa_id']));
 
     if (!from || !to || !text) return null;
-    return { from, to, text, nps_id, sourceType: 'text' };
+    return { from, to, text, pesquisa_id, sourceType: 'text' };
   }
 
   async iniciarFluxo(body: unknown, query?: StartQueryInput) {
     const input = this.normalizeStartInput(body, query);
-    const chatId = `zenvia:${input.nps_id}`;
+    const chatId = `zenvia:${input.pesquisa_id}`;
 
     const existingSession = await this.redis.get(`session:${chatId}`);
     if (existingSession) {
       throw new ConflictException(
-        `O fluxo para o NPS ${input.nps_id} já está em andamento. Encerre-o primeiro realizando uma requisição DELETE para /api/zenvia/${input.nps_id}`
+        `O fluxo para a pesquisa ${input.pesquisa_id} já está em andamento. Encerre-o primeiro realizando uma requisição DELETE para /api/zenvia/${input.pesquisa_id}`
       );
     }
 
@@ -328,7 +328,7 @@ export class ZenviaService implements OnModuleDestroy {
       dynamic_transitions: flow.transitions,
       meta: {
         channel: 'zenvia',
-        nps_id: input.nps_id,
+        pesquisa_id: input.pesquisa_id,
         conversa_id: input.conversa_id,
         from: input.from,
         to: input.to,
@@ -342,13 +342,13 @@ export class ZenviaService implements OnModuleDestroy {
     };
 
     this.logger.log(`[Zenvia] Salvando sessão no Redis para ${chatId}: ${JSON.stringify({
-      nps_id: sessaoData.meta.nps_id,
+      pesquisa_id: sessaoData.meta.pesquisa_id,
       transitions: Object.keys(sessaoData.dynamic_transitions || {}),
       inicio_trans: sessaoData.dynamic_transitions?.['INICIO']
     })}`);
     await this.redis.set(`session:${chatId}`, JSON.stringify(sessaoData), 'EX', 604800);
     const pair = this.normalizarPar(input.from, input.to);
-    await this.redis.set(`zenvia:pair:${pair}`, input.nps_id, 'EX', 604800);
+    await this.redis.set(`zenvia:pair:${pair}`, input.pesquisa_id, 'EX', 604800);
 
     this.handlerZenvia.setContext({
       from: input.from,
@@ -369,7 +369,7 @@ export class ZenviaService implements OnModuleDestroy {
 
     await this.engine.process(mockMessage, chatId, '', null, this.handlerZenvia);
 
-    return { ok: true, nps_id: input.nps_id, chatId };
+    return { ok: true, pesquisa_id: input.pesquisa_id, chatId };
   }
 
   async processarWebhook(body: unknown) {
@@ -377,10 +377,10 @@ export class ZenviaService implements OnModuleDestroy {
     if (!inbound) return { ok: false, reason: 'unsupported_format' };
 
     const pair = this.normalizarPar(inbound.from, inbound.to);
-    let nps_id = inbound.nps_id || (await this.redis.get(`zenvia:pair:${pair}`));
-    if (!nps_id) return { ok: false, reason: 'no_active_session' };
+    let pesquisa_id = inbound.pesquisa_id || (await this.redis.get(`zenvia:pair:${pair}`));
+    if (!pesquisa_id) return { ok: false, reason: 'no_active_session' };
 
-    const chatId = `zenvia:${nps_id}`;
+    const chatId = `zenvia:${pesquisa_id}`;
     const rawSessao = await this.redis.get(`session:${chatId}`);
     if (rawSessao) {
       const sessao = JSON.parse(rawSessao);
@@ -408,7 +408,7 @@ export class ZenviaService implements OnModuleDestroy {
       await this.finalizarFluxoUnificado(chatId);
     }
 
-    return { ok: true, nps_id };
+    return { ok: true, pesquisa_id };
   }
 
   private async finalizarFluxoUnificado(chatId: string) {
@@ -426,12 +426,12 @@ export class ZenviaService implements OnModuleDestroy {
       .map(k => ({ chave: k, resposta: dados[k] }));
 
     if (meta.callbackUrl) {
-      this.logger.log(`[Zenvia] Enviando callback para ${meta.callbackUrl} | NPS: ${meta.nps_id} | Respostas: ${respostas.length}`);
+      this.logger.log(`[Zenvia] Enviando callback para ${meta.callbackUrl} | Pesquisa: ${meta.pesquisa_id} | Respostas: ${respostas.length}`);
       await fetch(meta.callbackUrl, {
         method: 'POST',
         headers: { ...meta.callbackHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          nps_id: meta.nps_id,
+          pesquisa_id: meta.pesquisa_id,
           conversa_id: meta.conversa_id,
           status: 'completed',
           respostas,
@@ -495,10 +495,10 @@ export class ZenviaService implements OnModuleDestroy {
     this.engine.limparSessaoCompleta(chatId);
   }
 
-  async encerrarSessao(nps_id: string) {
-    const chatId = `zenvia:${nps_id}`;
+  async encerrarSessao(pesquisa_id: string) {
+    const chatId = `zenvia:${pesquisa_id}`;
     await this.finalizarFluxoUnificado(chatId);
-    return { ok: true, nps_id, mensagem: 'encerrada' };
+    return { ok: true, pesquisa_id, mensagem: 'encerrada' };
   }
 
   async listarSessoesAtivas() {
@@ -517,7 +517,7 @@ export class ZenviaService implements OnModuleDestroy {
         const totalItens = Object.keys(s.dynamic_states || {}).filter(k => k.startsWith('STEP_')).length;
 
         result.push({
-          nps_id: s.meta?.nps_id,
+          pesquisa_id: s.meta?.pesquisa_id,
           from: s.meta?.from,
           to: s.meta?.to,
           estado: s.estado,
@@ -535,13 +535,13 @@ export class ZenviaService implements OnModuleDestroy {
     await this.idleExpiration.verificarTodosOciosos();
   }
 
-  async atualizarTempoExpiracao(nps_id: string, minutos: number | null) {
-    const chatId = `zenvia:${nps_id}`;
+  async atualizarTempoExpiracao(pesquisa_id: string, minutos: number | null) {
+    const chatId = `zenvia:${pesquisa_id}`;
     const raw = await this.redis.get(`session:${chatId}`);
     if (!raw) throw new NotFoundException('Sessão não encontrada.');
     const sessao = JSON.parse(raw);
     sessao.meta.tempoExpiracaoMs = minutos && minutos > 0 ? minutos * 60 * 1000 : null;
     await this.redis.set(`session:${chatId}`, JSON.stringify(sessao), 'EX', 604800);
-    return { ok: true, nps_id, tempoExpiracaoMs: sessao.meta.tempoExpiracaoMs };
+    return { ok: true, pesquisa_id, tempoExpiracaoMs: sessao.meta.tempoExpiracaoMs };
   }
 }

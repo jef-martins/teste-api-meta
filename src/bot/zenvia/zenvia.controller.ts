@@ -22,7 +22,7 @@ export class ZenviaController {
   @Post()
   iniciar(
     @Body() body: unknown,
-    @Query('nps_id') nps_id?: string,
+    @Query('pesquisa_id') pesquisa_id?: string,
     @Query('to') to?: string,
     @Query('from') from?: string,
     @Query('token') token?: string,
@@ -30,7 +30,7 @@ export class ZenviaController {
     @Query('webhookSecret') webhookSecret?: string,
   ) {
     return this.zenviaService.iniciarFluxo(body, {
-      nps_id,
+      pesquisa_id,
       to,
       from,
       token,
@@ -50,13 +50,13 @@ export class ZenviaController {
   /**
    * Atualiza o tempo de expiração por ociosidade de uma sessão ativa.
    */
-  @Patch(':nps_id/expiracao')
+  @Patch(':pesquisa_id/expiracao')
   @HttpCode(200)
   atualizarExpiracao(
-    @Param('nps_id') nps_id: string,
+    @Param('pesquisa_id') pesquisa_id: string,
     @Body() body: { tempoExpiracaoMinutos: number | null },
   ) {
-    return this.zenviaService.atualizarTempoExpiracao(nps_id, body?.tempoExpiracaoMinutos ?? null);
+    return this.zenviaService.atualizarTempoExpiracao(pesquisa_id, body?.tempoExpiracaoMinutos ?? null);
   }
 
   /**
@@ -67,8 +67,8 @@ export class ZenviaController {
     return this.zenviaService.processarWebhook(body);
   }
 
-  @Delete(':nps_id')
-  encerrar(@Param('nps_id') nps_id: string) {
-    return this.zenviaService.encerrarSessao(nps_id);
+  @Delete(':pesquisa_id')
+  encerrar(@Param('pesquisa_id') pesquisa_id: string) {
+    return this.zenviaService.encerrarSessao(pesquisa_id);
   }
 }

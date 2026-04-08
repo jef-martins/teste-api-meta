@@ -219,8 +219,8 @@ export class AdminService {
 
         mapaMemoria.set(id, {
           id,
-          nome: `NPS Zenvia: ${id.replace('zenvia:', '')}`,
-          descricao: `Sessão ativa unificada para NPS Zenvia. ChatId: ${id}`,
+          nome: `Pesquisa Zenvia: ${id.replace('zenvia:', '')}`,
+          descricao: `Sessão ativa unificada para Pesquisa Zenvia. ChatId: ${id}`,
           ativo: true,
           origem: 'sessao_zenvia',
           estados,

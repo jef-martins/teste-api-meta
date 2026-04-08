@@ -8,7 +8,7 @@ import { ZenviaSessionContext } from './interfaces/zenvia.interface';
 export class HandlerZenviaService extends HandlerService {
   private readonly zenviaLogger = new Logger(HandlerZenviaService.name);
 
-  /** Configuração para o contexto de execução atual (NPS context) */
+  /** Configuração para o contexto de execução atual (Pesquisa context) */
   private sessionContext: ZenviaSessionContext | null = null;
 
   constructor(estadoRepo: EstadoRepository) {
