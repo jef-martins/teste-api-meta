@@ -161,12 +161,10 @@ export class GlobalKeywordRepository {
       );
     }
     try {
-      const encontrado = await this.prisma.botKeywordGlobal.findUnique({
+      const encontrado = await this.prisma.botKeywordGlobal.findFirst({
         where: {
-          keyword_flowId: {
-            keyword,
-            flowId: flowIdNorm,
-          },
+          keyword,
+          flowId: flowIdNorm,
         },
         select: {
           id: true,
