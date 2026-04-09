@@ -231,9 +231,23 @@ export class ZenviaService implements OnModuleDestroy {
     const states: Record<string, any> = {};
     const transitions: Record<string, any> = {};
 
-    itens.forEach((item, idx) => {
+    // 1. Separa o que são perguntas reais e o que são mensagens finais de encerramento
+    let lastRealItemIdx = -1;
+    for (let i = itens.length - 1; i >= 0; i--) {
+      if (itens[i].tipo !== 'encerramento') {
+        lastRealItemIdx = i;
+        break;
+      }
+    }
+
+    // Itens que se tornarão estados (INICIO, STEP_N)
+    const itensPerguntas = lastRealItemIdx === -1 ? [] : itens.slice(0, lastRealItemIdx + 1);
+    // Mensagens que irão para o estado END
+    const itensEncerramento = lastRealItemIdx === -1 ? itens : itens.slice(lastRealItemIdx + 1);
+
+    itensPerguntas.forEach((item, idx) => {
       const stateId = idx === 0 ? 'INICIO' : `STEP_${idx}`;
-      const nextState = idx === itens.length - 1 ? 'END' : (idx === 0 ? 'STEP_1' : `STEP_${idx + 1}`);
+      const nextState = idx === itensPerguntas.length - 1 ? 'END' : `STEP_${idx + 1}`;
 
       let handler = '_handlerCapturar';
       let config: any = {
@@ -251,10 +265,10 @@ export class ZenviaService implements OnModuleDestroy {
         config.titulo = item.mensagem;
         config.opcoes = item.opcoesValidacao.map(o => ({ id: o, title: o }));
       } else if (item.tipo === 'encerramento') {
+        // Encerramento no meio das perguntas ainda se comporta como um nó de mensagem
         handler = '_handlerMensagem';
         config.mensagens = [item.mensagem];
         config.transicaoAutomatica = true;
-        item.exigeResposta = false;
       }
 
       if (item.mensagemInvalida) config.mensagemInvalida = item.mensagemInvalida;
@@ -264,7 +278,17 @@ export class ZenviaService implements OnModuleDestroy {
       transitions[stateId] = this.criarTransicoesPorValidacao(item.opcoesValidacao, nextState, item.opcoesValidacao.length === 0 || item.tipo === 'descritiva');
     });
 
-    states['END'] = { handler: '_handlerMensagem', config: { mensagens: [], aguardarEntrada: false } };
+    // 2. Configura o estado END com as mensagens de encerramento colhidas
+    const mensagensFinais = itensEncerramento.map(i => i.mensagem).filter(m => !!m);
+
+    states['END'] = { 
+      handler: '_handlerMensagem', 
+      config: { 
+        mensagens: mensagensFinais, 
+        aguardarEntrada: false 
+      } 
+    };
+
     return { states, transitions };
   }
 
