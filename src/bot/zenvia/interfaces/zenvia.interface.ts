@@ -55,8 +55,6 @@ export interface StartInput {
   ZENVIA_WEBHOOK_SECRET?: string;
   tempo_expiracao_minutos?: number | null;
   tempoExpiracaoMinutos?: number | null;
-  executionId?: string;
-  execution_id?: string;
 }
 
 export type SourceType = 'interactive' | 'button' | 'text' | 'unknown';

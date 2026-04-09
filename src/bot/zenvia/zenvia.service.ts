@@ -393,12 +393,13 @@ export class ZenviaService implements OnModuleDestroy {
       sender: { pushname: 'NPS' }
     };
 
-    await this.engine.process(mockMessage, chatId, '', null, this.handlerZenvia);
+      await this.engine.process(mockMessage, chatId, '', null, this.handlerZenvia);
 
     return { ok: true, pesquisa_id: input.pesquisa_id, chatId };
   }
 
   async processarWebhook(body: unknown) {
+    this.logger.log(`[Zenvia] Webhook recebido: ${JSON.stringify(body)}`);
     const inbound = this.normalizarWebhook(body);
     if (!inbound) return { ok: false, reason: 'unsupported_format' };
 
