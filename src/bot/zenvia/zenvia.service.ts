@@ -180,9 +180,7 @@ export class ZenviaService implements OnModuleDestroy {
     else if (this.isRecord(body)) payload = body as StartInput;
 
     const pesquisa_id = this.toStringOrNull(query?.pesquisa_id) || 
-                        this.toStringOrNull(payload.pesquisa_id) || 
-                        this.toStringOrNull(payload.executionId) || 
-                        this.toStringOrNull(payload.execution_id);
+                        this.toStringOrNull(payload.pesquisa_id);
     const conversa_id = this.toStringOrNull(payload.conversa_id);
     const from = this.toStringOrNull(query?.from) || this.toStringOrNull(payload.from) || this.toStringOrNull(payload.ZENVIA_WHATSAPP_FROM);
     const to = this.toStringOrNull(query?.to) || this.toStringOrNull(payload.to);
@@ -256,6 +254,7 @@ export class ZenviaService implements OnModuleDestroy {
         handler = '_handlerMensagem';
         config.mensagens = [item.mensagem];
         config.transicaoAutomatica = true;
+        item.exigeResposta = false;
       }
 
       if (item.mensagemInvalida) config.mensagemInvalida = item.mensagemInvalida;
@@ -301,12 +300,8 @@ export class ZenviaService implements OnModuleDestroy {
                  this.extrairStringPath(firstMsg, ['contents', 0, 'payload']);
 
     const pesquisa_id = this.toStringOrNull(body.pesquisa_id) || 
-                   this.toStringOrNull(body.executionId) ||
-                   this.toStringOrNull(body.execution_id) ||
                    this.toStringOrNull(this.extrairStringPath(body, ['message', 'pesquisa_id'])) ||
-                   this.toStringOrNull(this.extrairStringPath(body, ['message', 'executionId'])) ||
-                   this.toStringOrNull(this.extrairStringPath(firstMsg, ['pesquisa_id'])) ||
-                   this.toStringOrNull(this.extrairStringPath(firstMsg, ['executionId']));
+                   this.toStringOrNull(this.extrairStringPath(firstMsg, ['pesquisa_id']));
 
     if (!from || !to || !text) return null;
     return { from, to, text, pesquisa_id, sourceType: 'text' };
