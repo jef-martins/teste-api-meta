@@ -584,16 +584,17 @@ export class HandlerService {
       return;
     }
 
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(
+    let timeoutId: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(
         () => reject(new Error('sendListMessage timeout após 5s')),
         5000,
-      ),
-    );
+      );
+    });
 
     try {
       await Promise.race([
-        this.client.sendListMessage(destino, {
+        this.client.sendListMessage!(destino, {
           buttonText: config.botaoTexto || 'Selecione:',
           description: titulo,
           sections: [
@@ -618,6 +619,8 @@ export class HandlerService {
         .map((o: ItemInterativoNormalizado) => `*${o.entrada}* - ${o.label}`)
         .join('\n');
       await this.enviarResposta(message, `${titulo}\n\n${linhas}`);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
   }
 
@@ -709,24 +712,29 @@ export class HandlerService {
     const titulo = config.titulo ?? 'Escolha uma opção:';
     const rodape = config.rodape ?? '';
 
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('sendButtons timeout após 5s')), 5000),
-    );
-
     try {
       if (this.client.sendButtons) {
-        await Promise.race([
-          this.client.sendButtons(
-            destino,
-            titulo,
-            botoes.map((b: ItemInterativoNormalizado) => ({
-              id: String(b.entrada),
-              text: String(b.label || b.entrada),
-            })),
-            rodape,
-          ),
-          timeout,
-        ]);
+        let timeoutId: NodeJS.Timeout | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('sendButtons timeout após 5s')), 5000);
+        });
+
+        try {
+          await Promise.race([
+            this.client.sendButtons(
+              destino,
+              titulo,
+              botoes.map((b: ItemInterativoNormalizado) => ({
+                id: String(b.entrada),
+                text: String(b.label || b.entrada),
+              })),
+              rodape,
+            ),
+            timeout,
+          ]);
+        } finally {
+          if (timeoutId) clearTimeout(timeoutId);
+        }
       } else if (this.client.sendButtonsMessage) {
         const botoesPayload = botoes.slice(0, 3).map((b) => ({
           id: String(b.entrada),
