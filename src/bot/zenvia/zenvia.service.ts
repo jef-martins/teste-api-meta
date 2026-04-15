@@ -234,7 +234,7 @@ export class ZenviaService implements OnModuleDestroy {
     };
   }
 
-  private mapearParaDynamicFlow(itens: ItemResposta[]) {
+  private mapearParaDynamicFlow(itens: ItemResposta[], input: any) {
     const states: Record<string, any> = {};
     const transitions: Record<string, any> = {};
 
@@ -299,19 +299,80 @@ export class ZenviaService implements OnModuleDestroy {
     };
     transitions['MENSAGEM_FINAL'] = [{ entrada: '*', estadoDestino: 'ZENVIA_CALLBACK' }];
 
+    // Determina URL de finalização extraindo dinamicamente
+    let finalizaUrl = '';
+    const urlObj = input.callbackUrl ? new URL(input.callbackUrl) : null;
+    if (input.callbackUrl && input.callbackUrl.includes('/chatboot/')) {
+        const pathBeforeChatboot = input.callbackUrl.split('/chatboot/')[0];
+        finalizaUrl = `${pathBeforeChatboot}/chatboot/finalizaConversa`;
+    } else if (urlObj) {
+        const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+        finalizaUrl = `${baseUrl}/api-chatboot-proxy-telezap/chatboot/finalizaConversa`;
+    }
+
+    const appKey = input.callbackHeaders?.['access-application-key'] || 
+                   input.callbackHeaders?.['Access-Application-Key'] ||
+                   input.zenviaHeaders?.['access-application-key'] ||
+                   '555078a0ec066392a7e50c44a4342a97902e6430';
+
     // 3. Estado de Callback das Respostas
-    states['ZENVIA_CALLBACK'] = {
-      handler: '_handlerZenviaCallback',
-      config: { transicaoAutomatica: true }
-    };
-    transitions['ZENVIA_CALLBACK'] = [{ entrada: '*', estadoDestino: 'ZENVIA_FINALIZE' }];
+    if (input.callbackUrl) {
+      states['ZENVIA_CALLBACK'] = {
+        handler: '_handlerRequisicao',
+        config: {
+          url: input.callbackUrl,
+          metodo: 'POST',
+          headers: { ...input.callbackHeaders },
+          body: {
+            pesquisa_id: input.pesquisa_id,
+            conversa_id: input.conversa_id,
+            status: 'completed',
+            respostas: itensPerguntas.map((_, idx) => ({
+              chave: `item_${idx}_ans`,
+              resposta: `{{item_${idx}_ans}}`
+            }))
+          },
+          transicaoAutomatica: true,
+          limparDados: false
+        }
+      };
+      transitions['ZENVIA_CALLBACK'] = [{ entrada: '*', estadoDestino: 'ZENVIA_FINALIZE' }];
+    } else {
+      states['ZENVIA_CALLBACK'] = {
+        handler: '_handlerMensagem',
+        config: { mensagens: [], transicaoAutomatica: true, aguardarEntrada: false }
+      };
+      transitions['ZENVIA_CALLBACK'] = [{ entrada: '*', estadoDestino: 'ZENVIA_FINALIZE' }];
+    }
 
     // 4. Estado de Finalização do Proxy
-    states['ZENVIA_FINALIZE'] = {
-      handler: '_handlerZenviaFinalize',
-      config: { transicaoAutomatica: true }
-    };
-    transitions['ZENVIA_FINALIZE'] = [{ entrada: '*', estadoDestino: 'END' }];
+    if (finalizaUrl) {
+      states['ZENVIA_FINALIZE'] = {
+        handler: '_handlerRequisicao',
+        config: {
+          url: finalizaUrl,
+          metodo: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'access-application-key': appKey,
+            ...(input.callbackHeaders?.['Access-Env'] ? { 'Access-Env': input.callbackHeaders['Access-Env'] } : {})
+          },
+          body: {
+            fluxo: input.tipoPesquisa || 'csat',
+            celular: input.to
+          },
+          transicaoAutomatica: true,
+          limparDados: false
+        }
+      };
+      transitions['ZENVIA_FINALIZE'] = [{ entrada: '*', estadoDestino: 'END' }];
+    } else {
+      states['ZENVIA_FINALIZE'] = {
+        handler: '_handlerMensagem',
+        config: { mensagens: [], transicaoAutomatica: true, aguardarEntrada: false }
+      };
+      transitions['ZENVIA_FINALIZE'] = [{ entrada: '*', estadoDestino: 'END' }];
+    }
 
     // 5. Estado Terminal
     states['END'] = {
@@ -372,7 +433,7 @@ export class ZenviaService implements OnModuleDestroy {
       );
     }
 
-    const flow = this.mapearParaDynamicFlow(input.itens);
+    const flow = this.mapearParaDynamicFlow(input.itens, input);
 
     // Ensure absolute clean slate in memory for repeated flow initiation
     this.engine.limparSessaoCompleta(chatId);
