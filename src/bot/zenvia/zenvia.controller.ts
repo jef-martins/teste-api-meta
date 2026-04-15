@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Headers,
 } from '@nestjs/common';
 import { ZenviaService } from './zenvia.service';
 
@@ -28,6 +29,7 @@ export class ZenviaController {
     @Query('token') token?: string,
     @Query('baseUrl') baseUrl?: string,
     @Query('webhookSecret') webhookSecret?: string,
+    @Headers() headers?: Record<string, string>,
   ) {
     return this.zenviaService.iniciarFluxo(body, {
       pesquisa_id,
@@ -36,7 +38,7 @@ export class ZenviaController {
       token,
       baseUrl,
       webhookSecret,
-    });
+    }, headers);
   }
 
   /**

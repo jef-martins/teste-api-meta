@@ -174,7 +174,7 @@ export class ZenviaService implements OnModuleDestroy {
     return Array.from(new Set(parts.map((p) => p.trim()).filter((p) => !!p)));
   }
 
-  private normalizeStartInput(body: unknown, query?: StartQueryInput) {
+  private normalizeStartInput(body: unknown, query?: StartQueryInput, requestHeaders?: Record<string, string>) {
     let payload: StartInput = {};
     if (Array.isArray(body)) payload.itens = body as InputItem[];
     else if (this.isRecord(body)) payload = body as StartInput;
@@ -187,7 +187,7 @@ export class ZenviaService implements OnModuleDestroy {
                          this.toStringOrNull(query?.fluxo) || 
                          this.toStringOrNull(payload.tipoPesquisa) || 
                          this.toStringOrNull(payload.fluxo) || 
-                         'csat';
+                         'whatsapp';
     const from = this.toStringOrNull(query?.from) || this.toStringOrNull(payload.from) || this.toStringOrNull(payload.ZENVIA_WHATSAPP_FROM);
     const to = this.toStringOrNull(query?.to) || this.toStringOrNull(payload.to);
     const zenviaToken = this.toStringOrNull(query?.token) || this.toStringOrNull(payload.zenviaToken) || this.toStringOrNull(payload.ZENVIA_TOKEN);
@@ -231,7 +231,12 @@ export class ZenviaService implements OnModuleDestroy {
                    this.toStringOrNull(payload.callbackUrl) || 
                    this.toStringOrNull(payload.callback_url) || 
                    this.toStringOrNull(payload.host_callback),
-      callbackHeaders: payload.callbackHeaders || payload.callback_headers || {},
+      callbackHeaders: {
+        ...((payload.callbackHeaders || payload.callback_headers) || {}),
+        ...(requestHeaders ? Object.keys(requestHeaders)
+          .filter(k => k.toLowerCase().startsWith('access-'))
+          .reduce((acc, k) => ({ ...acc, [k.toLowerCase()]: requestHeaders[k] }), {}) : {})
+      },
       zenviaHeaders: paddingHeaders,
       tipoPesquisa,
     };
@@ -327,7 +332,7 @@ export class ZenviaService implements OnModuleDestroy {
     const appKey = input.callbackHeaders?.['access-application-key'] || 
                    input.callbackHeaders?.['Access-Application-Key'] ||
                    input.zenviaHeaders?.['access-application-key'] ||
-                   '555078a0ec066392a7e50c44a4342a97902e6430';
+                   '9a2a4e71f8457120000d1258d663119c12637315';
 
     // 3. Estado de Callback das Respostas (Requisicao Invisivel)
     if (callbackUrl) {
@@ -346,7 +351,7 @@ export class ZenviaService implements OnModuleDestroy {
             conversa_id: input.conversa_id,
             status: 'completed',
             respostas: itensPerguntas.map((_, idx) => ({
-              chave: `item_${idx}_ans`,
+              ordem: String(idx),
               resposta: `{{item_${idx}_ans}}`
             }))
           },
@@ -378,7 +383,7 @@ export class ZenviaService implements OnModuleDestroy {
             'Access-Env': input.callbackHeaders?.['Access-Env'] || 'HOMOLOGATION'
           },
           body: {
-            fluxo: input.tipoPesquisa || 'csat',
+            fluxo: input.tipoPesquisa || 'whatsapp',
             celular: input.to
           },
           transicaoAutomatica: true,
@@ -438,8 +443,8 @@ export class ZenviaService implements OnModuleDestroy {
     return { from, to, text, pesquisa_id, sourceType: 'text' };
   }
 
-  async iniciarFluxo(body: unknown, query?: StartQueryInput) {
-    const input = this.normalizeStartInput(body, query);
+  async iniciarFluxo(body: unknown, query?: StartQueryInput, requestHeaders?: Record<string, string>) {
+    const input = this.normalizeStartInput(body, query, requestHeaders);
     const chatId = `zenvia:${input.pesquisa_id}`;
 
     const existingSession = await this.redis.get(`session:${chatId}`);

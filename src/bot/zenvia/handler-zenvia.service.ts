@@ -20,24 +20,37 @@ export class HandlerZenviaService extends HandlerService {
       },
       sendListMessage: async (destino: string, payload: any, chatId?: string) => {
         const zenviaPayload: any = {
-          type: 'list',
-          body: (payload.description || 'Escolha uma opção abaixo:').slice(0, 1024),
-          button: (payload.buttonText || 'Ver Opções').slice(0, 20),
-          sections: (payload.sections || []).slice(0, 1).map((s: any) => ({
-            title: (s.title || 'Opções').slice(0, 24),
-            rows: (s.rows || []).slice(0, 10).map((r: any) => ({
-              id: String(r.rowId),
-              title: (r.title || r.rowId || 'Opção').slice(0, 24),
-              description: (r.description || '').slice(0, 72),
-            })),
-          })),
+          type: 'interactive',
+          interactive: {
+            type: 'list',
+            body: {
+              text: (payload.description || 'Escolha uma opção abaixo:').slice(0, 1024),
+            },
+            action: {
+              button: (payload.buttonText || 'Ver Opções').slice(0, 20),
+              sections: (payload.sections || []).slice(0, 1).map((s: any) => ({
+                title: (s.title || 'Opções').slice(0, 24),
+                rows: (s.rows || []).slice(0, 10).map((r: any) => ({
+                  id: String(r.rowId),
+                  title: (r.title || r.rowId || 'Opção').slice(0, 24),
+                  description: (r.description || '').slice(0, 72),
+                })),
+              })),
+            },
+          },
         };
 
         if (payload.header) {
-            zenviaPayload.header = String(payload.header).slice(0, 60);
+          zenviaPayload.interactive.header = {
+            type: 'text',
+            text: String(payload.header).slice(0, 60),
+          };
         }
+
         if (payload.footer) {
-            zenviaPayload.footer = String(payload.footer).slice(0, 60);
+          zenviaPayload.interactive.footer = {
+            text: String(payload.footer).slice(0, 60),
+          };
         }
 
         await this.enviarNoZenvia(destino, zenviaPayload, chatId);
@@ -118,9 +131,9 @@ export class HandlerZenviaService extends HandlerService {
         });
 
         if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            this.zenviaLogger.error(`[Zenvia] Falha no Envio! Status: ${response.status} | Resposta: ${JSON.stringify(errData)}`);
-            throw new Error(`Zenvia API Error [${response.status}]: ${JSON.stringify(errData)}`);
+            const errBody = await response.text().catch(() => '{}');
+            this.zenviaLogger.error(`[Zenvia] Falha no Envio! Status: ${response.status} | Resposta: ${errBody}`);
+            throw new Error(`Zenvia API Error [${response.status}]: ${errBody}`);
         } else {
             this.zenviaLogger.log(`[Zenvia] Mensagem enviada com sucesso para ${to}.`);
         }
