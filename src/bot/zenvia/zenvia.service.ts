@@ -181,7 +181,13 @@ export class ZenviaService implements OnModuleDestroy {
 
     const pesquisa_id = this.toStringOrNull(query?.pesquisa_id) || 
                         this.toStringOrNull(payload.pesquisa_id);
-    const conversa_id = this.toStringOrNull(payload.conversa_id);
+    const conversa_id = this.toStringOrNull(query?.conversa_id) || 
+                        this.toStringOrNull(payload.conversa_id);
+    const tipoPesquisa = this.toStringOrNull(query?.tipoPesquisa) || 
+                         this.toStringOrNull(query?.fluxo) || 
+                         this.toStringOrNull(payload.tipoPesquisa) || 
+                         this.toStringOrNull(payload.fluxo) || 
+                         'csat';
     const from = this.toStringOrNull(query?.from) || this.toStringOrNull(payload.from) || this.toStringOrNull(payload.ZENVIA_WHATSAPP_FROM);
     const to = this.toStringOrNull(query?.to) || this.toStringOrNull(payload.to);
     const zenviaToken = this.toStringOrNull(query?.token) || this.toStringOrNull(payload.zenviaToken) || this.toStringOrNull(payload.ZENVIA_TOKEN);
@@ -224,6 +230,7 @@ export class ZenviaService implements OnModuleDestroy {
       callbackUrl: this.toStringOrNull(payload.callbackUrl),
       callbackHeaders: payload.callbackHeaders || {},
       zenviaHeaders: paddingHeaders,
+      tipoPesquisa,
     };
   }
 
@@ -247,7 +254,8 @@ export class ZenviaService implements OnModuleDestroy {
 
     itensPerguntas.forEach((item, idx) => {
       const stateId = idx === 0 ? 'INICIO' : `STEP_${idx}`;
-      const nextState = idx === itensPerguntas.length - 1 ? 'END' : `STEP_${idx + 1}`;
+      const isLastQuestion = idx === itensPerguntas.length - 1;
+      const nextState = isLastQuestion ? 'MENSAGEM_FINAL' : `STEP_${idx + 1}`;
 
       let handler = '_handlerCapturar';
       let config: any = {
@@ -278,15 +286,37 @@ export class ZenviaService implements OnModuleDestroy {
       transitions[stateId] = this.criarTransicoesPorValidacao(item.opcoesValidacao, nextState, item.opcoesValidacao.length === 0 || item.tipo === 'descritiva');
     });
 
-    // 2. Configura o estado END com as mensagens de encerramento colhidas
+    // 2. Configura o estado de mensagem de encerramento
     const mensagensFinais = itensEncerramento.map(i => i.mensagem).filter(m => !!m);
 
-    states['END'] = { 
+    states['MENSAGEM_FINAL'] = { 
       handler: '_handlerMensagem', 
       config: { 
         mensagens: mensagensFinais, 
+        transicaoAutomatica: true,
         aguardarEntrada: false 
       } 
+    };
+    transitions['MENSAGEM_FINAL'] = [{ entrada: '*', estadoDestino: 'ZENVIA_CALLBACK' }];
+
+    // 3. Estado de Callback das Respostas
+    states['ZENVIA_CALLBACK'] = {
+      handler: '_handlerZenviaCallback',
+      config: { transicaoAutomatica: true }
+    };
+    transitions['ZENVIA_CALLBACK'] = [{ entrada: '*', estadoDestino: 'ZENVIA_FINALIZE' }];
+
+    // 4. Estado de Finalização do Proxy
+    states['ZENVIA_FINALIZE'] = {
+      handler: '_handlerZenviaFinalize',
+      config: { transicaoAutomatica: true }
+    };
+    transitions['ZENVIA_FINALIZE'] = [{ entrada: '*', estadoDestino: 'END' }];
+
+    // 5. Estado Terminal
+    states['END'] = {
+        handler: '_handlerMensagem',
+        config: { mensagens: [], aguardarEntrada: false }
     };
 
     return { states, transitions };
@@ -364,6 +394,7 @@ export class ZenviaService implements OnModuleDestroy {
         callbackUrl: input.callbackUrl,
         callbackHeaders: input.callbackHeaders,
         tempoExpiracaoMs: input.tempoExpiracaoMs,
+        tipoPesquisa: (input as any).tipoPesquisa,
       }
     };
 
@@ -446,76 +477,9 @@ export class ZenviaService implements OnModuleDestroy {
     }
     const sessao = JSON.parse(sessaoRaw);
     const meta = sessao.meta;
-    const dados = this.engine.obterDados(chatId);
-
-    const respostas = Object.keys(dados)
-      .filter(k => k.startsWith('item_'))
-      .map(k => ({ chave: k, resposta: dados[k] }));
-
-    if (meta.callbackUrl) {
-      this.logger.log(`[Zenvia] Enviando callback para ${meta.callbackUrl} | Pesquisa: ${meta.pesquisa_id} | Respostas: ${respostas.length}`);
-      await fetch(meta.callbackUrl, {
-        method: 'POST',
-        headers: { ...meta.callbackHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pesquisa_id: meta.pesquisa_id,
-          conversa_id: meta.conversa_id,
-          status: 'completed',
-          respostas,
-        }),
-      })
-      .then(async res => {
-        if (!res.ok) {
-          const body = await res.text().catch(() => 'N/A');
-          this.logger.error(`[Zenvia] Falha no callback 1 (salvaRespostaNps): Status ${res.status} | Resposta: ${body}`);
-        } else {
-          this.logger.log(`[Zenvia] Callback 1 (salvaRespostaNps) enviado com sucesso.`);
-
-          // Se sucesso (200, 201, 204), realiza o segundo disparo (finalizaConversa)
-          if ([200, 201, 204].includes(res.status)) {
-            try {
-              // Constrói a URL para o segundo callback baseada na URL do primeiro
-              const urlObj = new URL(meta.callbackUrl);
-              const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
-              const finalizaUrl = `${baseUrl}/api-chatboot-proxy-telezap/chatboot/finalizaConversa`;
-              
-              // Busca a chave de aplicação nos headers salvos (case-insensitive)
-              const appKey = meta.zenviaHeaders?.['access-application-key'] || 
-                             meta.zenviaHeaders?.['Access-Application-Key'] ||
-                             meta.zenviaHeaders?.['access_application_key'];
-
-              this.logger.log(`[Zenvia] Enviando callback 2 (finalizaConversa) para ${finalizaUrl}`);
-              
-              await fetch(finalizaUrl, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'access-application-key': appKey || '',
-                },
-                body: JSON.stringify({
-                  fluxo: 'whatsapp',
-                  celular: meta.to,
-                }),
-              })
-              .then(async res2 => {
-                if (!res2.ok) {
-                  const body2 = await res2.text().catch(() => 'N/A');
-                  this.logger.error(`[Zenvia] Falha no callback 2 (finalizaConversa): Status ${res2.status} | Resposta: ${body2}`);
-                } else {
-                  this.logger.log(`[Zenvia] Callback 2 (finalizaConversa) enviado com sucesso.`);
-                }
-              });
-            } catch (err) {
-              this.logger.error(`[Zenvia] Erro ao processar segundo callback: ${err}`);
-            }
-          }
-        }
-      })
-      .catch(e => this.logger.error(`[Zenvia] Erro ao disparar callback principal: ${e}`));
-    } else {
-      this.logger.warn(`[Zenvia] Nenhum callbackUrl definido para a sessão ${chatId}`);
-    }
-
+    
+    this.logger.log(`[Zenvia] Finalizando sessão ${chatId} (Pesquisa: ${meta.pesquisa_id}). Limpando dados...`);
+    
     const pair = this.normalizarPar(meta.from, meta.to);
     await this.redis.del(`session:${chatId}`);
     await this.redis.del(`zenvia:pair:${pair}`);

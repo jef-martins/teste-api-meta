@@ -55,6 +55,8 @@ export interface StartInput {
   ZENVIA_WEBHOOK_SECRET?: string;
   tempo_expiracao_minutos?: number | null;
   tempoExpiracaoMinutos?: number | null;
+  tipoPesquisa?: string;
+  fluxo?: string;
 }
 
 export type SourceType = 'interactive' | 'button' | 'text' | 'unknown';
@@ -110,6 +112,9 @@ export interface StartQueryInput {
   baseUrl?: string;
   webhookSecret?: string;
   pesquisa_id?: string;
+  tipoPesquisa?: string;
+  fluxo?: string;
+  conversa_id?: string;
 }
 
 export interface ZenviaSessionContext {
