@@ -19,15 +19,10 @@ export class HandlerZenviaService extends HandlerService {
         await this.enviarNoZenvia(destino, { type: 'text', text: texto }, chatId);
       },
       sendListMessage: async (destino: string, payload: any, chatId?: string) => {
-        const zenviaPayload = {
+        const zenviaPayload: any = {
           type: 'list',
-          header: {
-            type: 'text',
-            text: (payload.buttonText || 'Selecione:').slice(0, 60),
-          },
           body: (payload.description || 'Escolha uma opção abaixo:').slice(0, 1024),
           button: (payload.buttonText || 'Ver Opções').slice(0, 20),
-          footer: (payload.footer || '').slice(0, 60),
           sections: (payload.sections || []).slice(0, 1).map((s: any) => ({
             title: (s.title || 'Opções').slice(0, 24),
             rows: (s.rows || []).slice(0, 10).map((r: any) => ({
@@ -37,6 +32,14 @@ export class HandlerZenviaService extends HandlerService {
             })),
           })),
         };
+
+        if (payload.header) {
+            zenviaPayload.header = String(payload.header).slice(0, 60);
+        }
+        if (payload.footer) {
+            zenviaPayload.footer = String(payload.footer).slice(0, 60);
+        }
+
         await this.enviarNoZenvia(destino, zenviaPayload, chatId);
       },
       sendButtonsMessage: async (destino: string, payload: any, chatId?: string) => {
