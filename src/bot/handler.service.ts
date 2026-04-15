@@ -840,16 +840,18 @@ export class HandlerService {
         );
         return;
       }
-      config = {
-        ...config,
-        url: rota.url,
-        metodo: rota.metodo,
-        headers: rota.headers,
-      };
     }
 
+    const metodo = (config.metodo ?? 'GET').toUpperCase();
+    const urlBase = engine.interpolar(config.url ?? '', dadosMemoria); // Interpola URL base primeiro
+
+    this.logger.log(`[Request] ${metodo} ${urlBase} | Config: ${JSON.stringify({
+      metodo,
+      hasBody: !!config.body,
+      hasHeaders: !!config.headers
+    })}`);
+
     try {
-      const metodo = (config.metodo ?? 'GET').toUpperCase();
       const from = message.from ?? chatId;
       const numero = from.split('@')[0];
       const tudo: Record<string, unknown> = {
@@ -923,6 +925,8 @@ export class HandlerService {
         respostaBody = await res.json().catch(() => ({}));
       }
 
+      this.logger.log(`[Response] ${urlBase} | Status: ${statusHttp}`);
+
       const respostaTexto = JSON.stringify(respostaBody);
 
       // Salva a resposta completa na variável nomeada (acessível em estados seguintes)
@@ -932,10 +936,10 @@ export class HandlerService {
       }
 
       if (statusHttp !== 200) {
-        await this.enviarResposta(
-          message,
-          config.mensagemErro ?? '❌ Erro ao processar a solicitação.',
-        );
+        if (config.mensagemErro && config.mensagemErro.trim() !== "") {
+          const msgErro = engine.interpolar(config.mensagemErro, tudo);
+          await this.enviarResposta(message, msgErro);
+        }
       } else {
         const valorExtraido = engine.extrairValorPath(
           respostaBody,
@@ -989,11 +993,13 @@ export class HandlerService {
           if (typeof valorExtraido === 'object' && valorExtraido !== null) {
             variaveis = { ...variaveis, ...this.limparHtml(valorExtraido) };
           }
-          const msgSucesso = engine.interpolar(
-            config.mensagemSucesso ?? '✅ Resposta: {{resposta}}',
-            variaveis,
-          );
-          await this.enviarResposta(message, msgSucesso);
+          const msgSucesso = config.mensagemSucesso !== undefined 
+            ? engine.interpolar(config.mensagemSucesso, variaveis)
+            : engine.interpolar('✅ Resposta: {{resposta}}', variaveis);
+          
+          if (msgSucesso && msgSucesso.trim() !== "") {
+            await this.enviarResposta(message, msgSucesso);
+          }
         }
       }
     } catch (err: unknown) {

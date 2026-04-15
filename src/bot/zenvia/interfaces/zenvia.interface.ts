@@ -57,6 +57,9 @@ export interface StartInput {
   tempoExpiracaoMinutos?: number | null;
   tipoPesquisa?: string;
   fluxo?: string;
+  callback_url?: string;
+  host_callback?: string;
+  callback_headers?: Record<string, string>;
 }
 
 export type SourceType = 'interactive' | 'button' | 'text' | 'unknown';
@@ -115,6 +118,7 @@ export interface StartQueryInput {
   tipoPesquisa?: string;
   fluxo?: string;
   conversa_id?: string;
+  callbackUrl?: string;
 }
 
 export interface ZenviaSessionContext {

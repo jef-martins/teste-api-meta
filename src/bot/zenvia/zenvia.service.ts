@@ -227,8 +227,11 @@ export class ZenviaService implements OnModuleDestroy {
       zenviaToken,
       zenviaBaseUrl,
       tempoExpiracaoMs,
-      callbackUrl: this.toStringOrNull(payload.callbackUrl),
-      callbackHeaders: payload.callbackHeaders || {},
+      callbackUrl: this.toStringOrNull(query?.callbackUrl) || 
+                   this.toStringOrNull(payload.callbackUrl) || 
+                   this.toStringOrNull(payload.callback_url) || 
+                   this.toStringOrNull(payload.host_callback),
+      callbackHeaders: payload.callbackHeaders || payload.callback_headers || {},
       zenviaHeaders: paddingHeaders,
       tipoPesquisa,
     };
@@ -298,31 +301,46 @@ export class ZenviaService implements OnModuleDestroy {
       } 
     };
     transitions['MENSAGEM_FINAL'] = [{ entrada: '*', estadoDestino: 'ZENVIA_CALLBACK' }];
+    
+    // Fallbacks do .env para URLs da API
+    const apiBaseUrl = process.env.API_BASE_URL || '';
+    const endpointFinaliza = process.env.REQ1 || 'finalizaConversa';
+    const endpointSalva = process.env.REQ2 || 'salvaRespostaNps';
 
-    // Determina URL de finalização extraindo dinamicamente
+    // Determina URL de finalização extraindo dinamicamente ou usando fallback
     let finalizaUrl = '';
     const urlObj = input.callbackUrl ? new URL(input.callbackUrl) : null;
+    
     if (input.callbackUrl && input.callbackUrl.includes('/chatboot/')) {
         const pathBeforeChatboot = input.callbackUrl.split('/chatboot/')[0];
-        finalizaUrl = `${pathBeforeChatboot}/chatboot/finalizaConversa`;
+        finalizaUrl = `${pathBeforeChatboot}/chatboot/${endpointFinaliza}`;
     } else if (urlObj) {
         const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
-        finalizaUrl = `${baseUrl}/api-chatboot-proxy-telezap/chatboot/finalizaConversa`;
+        finalizaUrl = `${baseUrl}/chatboot/${endpointFinaliza}`;
+    } else if (apiBaseUrl) {
+        finalizaUrl = apiBaseUrl.endsWith('/') ? `${apiBaseUrl}${endpointFinaliza}` : `${apiBaseUrl}/${endpointFinaliza}`;
     }
+
+    // URL para salvar respostas (Callback Principal)
+    const callbackUrl = input.callbackUrl || (apiBaseUrl ? (apiBaseUrl.endsWith('/') ? `${apiBaseUrl}${endpointSalva}` : `${apiBaseUrl}/${endpointSalva}`) : '');
 
     const appKey = input.callbackHeaders?.['access-application-key'] || 
                    input.callbackHeaders?.['Access-Application-Key'] ||
                    input.zenviaHeaders?.['access-application-key'] ||
                    '555078a0ec066392a7e50c44a4342a97902e6430';
 
-    // 3. Estado de Callback das Respostas
-    if (input.callbackUrl) {
+    // 3. Estado de Callback das Respostas (Requisicao Invisivel)
+    if (callbackUrl) {
       states['ZENVIA_CALLBACK'] = {
         handler: '_handlerRequisicao',
         config: {
-          url: input.callbackUrl,
+          url: callbackUrl,
           metodo: 'POST',
-          headers: { ...input.callbackHeaders },
+          headers: { 
+            ...input.callbackHeaders,
+            'access-application-key': appKey,
+            'Access-Env': input.callbackHeaders?.['Access-Env'] || 'HOMOLOGATION'
+          },
           body: {
             pesquisa_id: input.pesquisa_id,
             conversa_id: input.conversa_id,
@@ -333,7 +351,9 @@ export class ZenviaService implements OnModuleDestroy {
             }))
           },
           transicaoAutomatica: true,
-          limparDados: false
+          limparDados: false,
+          mensagemSucesso: "", // Silencioso
+          mensagemErro: ""    // Silencioso
         }
       };
       transitions['ZENVIA_CALLBACK'] = [{ entrada: '*', estadoDestino: 'ZENVIA_FINALIZE' }];
@@ -345,7 +365,7 @@ export class ZenviaService implements OnModuleDestroy {
       transitions['ZENVIA_CALLBACK'] = [{ entrada: '*', estadoDestino: 'ZENVIA_FINALIZE' }];
     }
 
-    // 4. Estado de Finalização do Proxy
+    // 4. Estado de Finalização do Proxy (Requisicao Invisivel)
     if (finalizaUrl) {
       states['ZENVIA_FINALIZE'] = {
         handler: '_handlerRequisicao',
@@ -355,21 +375,17 @@ export class ZenviaService implements OnModuleDestroy {
           headers: {
             'Content-Type': 'application/json',
             'access-application-key': appKey,
-            ...(input.callbackHeaders?.['Access-Env'] ? { 'Access-Env': input.callbackHeaders['Access-Env'] } : {})
+            'Access-Env': input.callbackHeaders?.['Access-Env'] || 'HOMOLOGATION'
           },
           body: {
             fluxo: input.tipoPesquisa || 'csat',
             celular: input.to
           },
           transicaoAutomatica: true,
-          limparDados: false
+          limparDados: false,
+          mensagemSucesso: "", // Silencioso
+          mensagemErro: ""    // Silencioso
         }
-      };
-      transitions['ZENVIA_FINALIZE'] = [{ entrada: '*', estadoDestino: 'END' }];
-    } else {
-      states['ZENVIA_FINALIZE'] = {
-        handler: '_handlerMensagem',
-        config: { mensagens: [], transicaoAutomatica: true, aguardarEntrada: false }
       };
       transitions['ZENVIA_FINALIZE'] = [{ entrada: '*', estadoDestino: 'END' }];
     }
