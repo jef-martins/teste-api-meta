@@ -174,7 +174,8 @@ export class IdleExpirationService implements OnModuleInit, OnModuleDestroy {
 
   private async expirarChatId(chatId: string, sessao: any, msgOverride?: string | null): Promise<void> {
     try {
-      const estadoAtual = sessao.estado || (await this.estadoRepository.obterEstadoInicial());
+      const estadoInicialRecuperado = await this.estadoRepository.obterEstadoInicial();
+      const estadoAtual = sessao.estado || estadoInicialRecuperado || 'INICIO';
       const configEstado = await this.estadoRepository.obterConfigEstado(estadoAtual, chatId);
 
       // PRIORIDADE DE MENSAGEM: Estado > Fluxo/Sessão (msgOverride)
@@ -210,7 +211,7 @@ export class IdleExpirationService implements OnModuleInit, OnModuleDestroy {
         }
       } else {
         // Para Meta/WPP, resetamos para o estado inicial
-        const estadoInicial = await this.estadoRepository.obterEstadoInicial();
+        const estadoInicial = estadoInicialRecuperado || 'INICIO';
         await this.estadoRepository.salvarEstadoUsuario(chatId, estadoInicial, sessao.nome);
         this.logger.log(`[IdleExpiration][reset] chatId=${chatId} -> ${estadoInicial}`);
       }

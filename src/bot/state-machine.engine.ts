@@ -125,9 +125,9 @@ export class StateMachineEngine {
       typeof entradaOriginal === 'string' ? entradaOriginal.trim() : '';
     const entradaNormalizada = entradaBruta.toLowerCase();
 
-    const estadoPadrao = await this.estadoRepo.obterConfigEstado('INICIO', chatId)
+    const estadoPadrao = (await this.estadoRepo.obterConfigEstado('INICIO', chatId))
       ? 'INICIO'
-      : await this.estadoRepo.obterEstadoInicial();
+      : (await this.estadoRepo.obterEstadoInicial()) || 'INICIO';
 
     let estadoAtualUsuario = this.estadosUsuarios.get(chatId);
     if (!estadoAtualUsuario) {
